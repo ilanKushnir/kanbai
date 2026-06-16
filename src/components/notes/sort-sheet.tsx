@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea, Label } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
 import { api } from "@/lib/client-api";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import type { NoteT, AgentLite } from "@/lib/types";
 
@@ -84,6 +85,7 @@ export function SortSheet({
   const [memo, setMemo] = React.useState<{ dataUrl: string; mimeType: string; durationMs: number } | null>(null);
   const [busy, setBusy] = React.useState(false);
   const rec = useRecorder();
+  const { toast } = useToast();
 
   async function toggleRecord() {
     if (rec.recording) {
@@ -107,9 +109,11 @@ export function SortSheet({
       const { note: updated } = await api<{ note: NoteT }>(`/api/notes/${note.id}/queue`, {
         body: { agentId, sortContext: context.trim() || undefined },
       });
+      const agentName = agents.find((a) => a.id === agentId)?.name ?? "the agent";
+      toast({ title: `Sent to ${agentName} to sort`, variant: "success" });
       onQueued(updated);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to send");
+      toast({ title: "Couldn't send note", description: e instanceof Error ? e.message : undefined, variant: "error" });
       setBusy(false);
     }
   }

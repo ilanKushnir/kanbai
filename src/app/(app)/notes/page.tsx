@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { getCurrentContext } from "@/lib/auth";
@@ -5,6 +6,7 @@ import { listNotesForUser } from "@/lib/services/notes";
 import { NotesView } from "@/components/notes/notes-view";
 
 export const metadata: Metadata = { title: "Notes" };
+export const dynamic = "force-dynamic";
 
 export default async function NotesPage() {
   const { workspace, user } = await getCurrentContext();
@@ -18,5 +20,9 @@ export default async function NotesPage() {
     }),
   ]);
 
-  return <NotesView notes={notes} agents={agents} />;
+  return (
+    <Suspense fallback={null}>
+      <NotesView notes={notes} agents={agents} />
+    </Suspense>
+  );
 }

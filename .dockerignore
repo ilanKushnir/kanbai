@@ -1,0 +1,24 @@
+node_modules
+.next
+.git
+.github
+.claude
+.vscode
+npm-debug.log*
+*.tsbuildinfo
+
+# secrets & local db (regenerated/migrated at runtime)
+.env
+.env.*
+!.env.example
+prisma/*.db
+prisma/*.db-journal
+prisma/build.db
+
+# generated at build time
+src/generated
+
+# docker meta
+Dockerfile
+.dockerignore
+docker-compose.yml

@@ -17,9 +17,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Menu, MenuItem } from "@/components/ui/menu";
+import { Markdown, toggleTask } from "@/components/ui/markdown";
+import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
-import { priorityMeta } from "@/lib/display";
+import { priorityMeta, dueMeta } from "@/lib/display";
 import { timeAgo, cn } from "@/lib/utils";
 import type { SerializedTicket } from "@/lib/serialize";
 
@@ -46,9 +48,11 @@ export function TicketModal({
   onUpdated: (t: SerializedTicket) => void;
   onDeleted: (id: string) => void;
 }) {
+  const { toast } = useToast();
   const [t, setT] = React.useState(ticket);
   const [title, setTitle] = React.useState(ticket.title);
   const [desc, setDesc] = React.useState(ticket.description);
+  const [editingDesc, setEditingDesc] = React.useState(false);
   const [comment, setComment] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
@@ -66,7 +70,7 @@ export function TicketModal({
       });
       apply(next);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to save");
+      toast({ title: "Couldn't save", description: e instanceof Error ? e.message : undefined, variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -84,7 +88,7 @@ export function TicketModal({
       const next = { ...t, comments: [...t.comments, c], commentCount: t.commentCount + 1 };
       apply(next);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to comment");
+      toast({ title: "Couldn't comment", description: e instanceof Error ? e.message : undefined, variant: "error" });
     }
   }
 
@@ -94,8 +98,16 @@ export function TicketModal({
     onDeleted(t.id);
   }
 
+  function setDueIn(days: number) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(12, 0, 0, 0);
+    patch({ dueDate: d.toISOString() });
+  }
+
   const column = columns.find((c) => c.id === t.columnId);
   const pr = priorityMeta(t.priority);
+  const due = dueMeta(t.dueDate);
   const dueValue = t.dueDate ? t.dueDate.slice(0, 10) : "";
 
   const labelIds = new Set(t.labels.map((l) => l.id));
@@ -195,33 +207,43 @@ export function TicketModal({
         </Menu>
 
         {/* Due date */}
-        <label
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2 cursor-pointer",
-          )}
-        >
-          <CalendarClock className="h-3.5 w-3.5 text-fg-muted" />
-          <input
-            type="date"
-            value={dueValue}
-            onChange={(e) =>
-              patch({ dueDate: e.target.value ? new Date(e.target.value + "T12:00:00").toISOString() : null })
-            }
-            className="bg-transparent outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"
-          />
-          {t.dueDate && (
-            <span
-              role="button"
-              onClick={(e) => {
-                e.preventDefault();
-                patch({ dueDate: null });
-              }}
-              className="text-fg-subtle hover:text-danger"
+        <Menu
+          trigger={
+            <button
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2 cursor-pointer",
+                due?.tone === "rose" ? "border-danger/40 text-danger" : "border-border",
+              )}
             >
-              <X className="h-3 w-3" />
-            </span>
+              <CalendarClock className="h-3.5 w-3.5 text-fg-muted" />
+              {due ? due.label : <span className="text-fg-muted">Due date</span>}
+            </button>
+          }
+        >
+          {(close) => (
+            <>
+              <MenuItem onClick={() => { close(); setDueIn(0); }}>Today</MenuItem>
+              <MenuItem onClick={() => { close(); setDueIn(1); }}>Tomorrow</MenuItem>
+              <MenuItem onClick={() => { close(); setDueIn(7); }}>In a week</MenuItem>
+              <div className="px-1.5 py-1.5">
+                <input
+                  type="date"
+                  value={dueValue}
+                  onChange={(e) => {
+                    patch({ dueDate: e.target.value ? new Date(e.target.value + "T12:00:00").toISOString() : null });
+                    close();
+                  }}
+                  className="w-full rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none [color-scheme:light] dark:[color-scheme:dark]"
+                />
+              </div>
+              {t.dueDate && (
+                <MenuItem className="text-danger hover:bg-danger-soft" onClick={() => { close(); patch({ dueDate: null }); }}>
+                  Clear due date
+                </MenuItem>
+              )}
+            </>
           )}
-        </label>
+        </Menu>
 
         {/* Assignee */}
         <Menu
@@ -313,14 +335,31 @@ export function TicketModal({
       {/* Description */}
       <div className="mt-4">
         <div className="mb-1.5 text-xs font-medium text-fg-muted">Description</div>
-        <textarea
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          onBlur={() => desc !== t.description && patch({ description: desc })}
-          rows={4}
-          placeholder="Add more detail…"
-          className="w-full resize-y rounded-xl border border-border bg-surface-2/40 px-3 py-2 text-sm leading-relaxed outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-        />
+        {editingDesc || !t.description ? (
+          <textarea
+            value={desc}
+            autoFocus={editingDesc}
+            onChange={(e) => setDesc(e.target.value)}
+            onBlur={() => {
+              setEditingDesc(false);
+              if (desc !== t.description) patch({ description: desc });
+            }}
+            rows={4}
+            placeholder="Add more detail…  Markdown &amp; - [ ] checklists supported"
+            className="w-full resize-y rounded-xl border border-border bg-surface-2/40 px-3 py-2 text-sm leading-relaxed outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+          />
+        ) : (
+          <div
+            className="cursor-text rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-border hover:bg-surface-2/40"
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest("a, input, button")) return;
+              setDesc(t.description);
+              setEditingDesc(true);
+            }}
+          >
+            <Markdown content={t.description} onToggleCheckbox={(i) => patch({ description: toggleTask(t.description, i) })} />
+          </div>
+        )}
       </div>
 
       {/* Comments / activity */}

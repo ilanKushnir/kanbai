@@ -18,3 +18,11 @@ export async function assertAgentAccess(agentId: string, workspaceId: string) {
   const agent = await db.agent.findUnique({ where: { id: agentId }, select: { workspaceId: true } });
   if (!agent || agent.workspaceId !== workspaceId) throw new HttpError(404, "Agent not found");
 }
+
+export async function assertColumnAccess(columnId: string, workspaceId: string) {
+  const col = await db.column.findUnique({
+    where: { id: columnId },
+    select: { board: { select: { workspaceId: true } } },
+  });
+  if (!col || col.board.workspaceId !== workspaceId) throw new HttpError(404, "Column not found");
+}

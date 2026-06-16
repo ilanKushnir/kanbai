@@ -6,6 +6,8 @@ import { getBoardWithData } from "@/lib/services/boards";
 import { BoardViewClient } from "@/components/board/board-view-client";
 import { tone } from "@/components/ui/badge";
 
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({
   params,
 }: {
@@ -20,8 +22,15 @@ export async function generateMetadata({
   return { title: board?.name ?? "Board" };
 }
 
-export default async function BoardPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function BoardPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ ticket?: string }>;
+}) {
   const { slug } = await params;
+  const { ticket: initialTicketId } = await searchParams;
   const { workspace, user } = await getCurrentContext();
 
   let board;
@@ -58,6 +67,7 @@ export default async function BoardPage({ params }: { params: Promise<{ slug: st
           board={board}
           agents={agents}
           currentUser={user ? { id: user.id, name: user.name } : null}
+          initialTicketId={initialTicketId}
         />
       </div>
     </div>

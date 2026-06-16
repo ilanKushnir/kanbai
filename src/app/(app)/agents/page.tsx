@@ -5,6 +5,7 @@ import { AgentsView } from "@/components/agents/agents-view";
 import type { AgentFull } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Agents" };
+export const dynamic = "force-dynamic";
 
 export default async function AgentsPage() {
   const { workspace } = await getCurrentContext();

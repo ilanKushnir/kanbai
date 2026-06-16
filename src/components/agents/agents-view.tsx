@@ -26,6 +26,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Menu, MenuItem } from "@/components/ui/menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { api } from "@/lib/client-api";
+import { useToast } from "@/components/ui/toast";
 import { AGENT_KINDS, AGENT_META, ALL_SCOPES } from "@/lib/constants";
 import { timeAgo, cn } from "@/lib/utils";
 import type { AgentFull } from "@/lib/types";
@@ -184,6 +185,7 @@ function AgentCard({
   onDeleted: () => void;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [webhookUrl, setWebhookUrl] = React.useState(agent.webhookUrl ?? "");
   const [secret, setSecret] = React.useState(agent.webhookSecret ?? "");
   const [showSecret, setShowSecret] = React.useState(false);
@@ -198,8 +200,9 @@ function AgentCard({
         body: partial,
       });
       onUpdate({ ...agent, ...next, webhookSecret: next.webhookSecret ?? secret });
+      if (tag === "save") toast({ title: "Webhook URL saved", variant: "success" });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed");
+      toast({ title: "Update failed", description: e instanceof Error ? e.message : undefined, variant: "error" });
     } finally {
       setBusy(null);
     }
@@ -211,6 +214,7 @@ function AgentCard({
     try {
       const { apiKey } = await api<{ apiKey: string }>(`/api/agents/${agent.id}/rotate-key`, { method: "POST" });
       onRevealKey(apiKey);
+      toast({ title: "New API key generated", description: "The old key no longer works.", variant: "success" });
       router.refresh();
     } finally {
       setBusy(null);
@@ -224,6 +228,7 @@ function AgentCard({
       setSecret(s);
       setShowSecret(true);
       onUpdate({ ...agent, webhookSecret: s });
+      toast({ title: "New signing secret generated", variant: "success" });
     } finally {
       setBusy(null);
     }
@@ -233,9 +238,10 @@ function AgentCard({
     setBusy("test");
     try {
       await api(`/api/agents/${agent.id}/test`, { method: "POST" });
+      toast({ title: "Test webhook sent", description: "Check the delivery log below.", variant: "success" });
       setTimeout(() => router.refresh(), 600);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to send test");
+      toast({ title: "Couldn't send test", description: e instanceof Error ? e.message : undefined, variant: "error" });
     } finally {
       setTimeout(() => setBusy(null), 600);
     }
@@ -481,6 +487,7 @@ function CreateAgentModal({
   onClose: () => void;
   onCreated: (agent: AgentFull, key: string) => void;
 }) {
+  const { toast } = useToast();
   const [name, setName] = React.useState("");
   const [kind, setKind] = React.useState<string>("hermes");
   const [busy, setBusy] = React.useState(false);
@@ -492,9 +499,10 @@ function CreateAgentModal({
       const { agent, apiKey } = await api<{ agent: AgentFull; apiKey: string }>("/api/agents", {
         body: { name: name.trim(), kind, color: AGENT_META[kind as keyof typeof AGENT_META]?.color },
       });
+      toast({ title: `${agent.name} connected`, variant: "success" });
       onCreated({ ...agent, deliveries: [] }, apiKey);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to create agent");
+      toast({ title: "Couldn't create agent", description: e instanceof Error ? e.message : undefined, variant: "error" });
       setBusy(false);
     }
   }

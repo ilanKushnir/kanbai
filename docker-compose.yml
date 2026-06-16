@@ -1,0 +1,39 @@
+# Kanbai — self-hosted (homelab) deployment.
+#
+#   1. cp .env.example .env   (optional — values below override anyway)
+#   2. Set a strong KANBAI_KEY_PEPPER:  openssl rand -hex 32
+#   3. docker compose up -d --build
+#   4. Open http://<host>:3000   (set KANBAI_SEED=true once to load demo data)
+#
+# SQLite is stored on the named volume `kanbai-data`, so your boards/notes
+# survive restarts and rebuilds. To use Postgres instead, see README.
+
+services:
+  kanbai:
+    build: .
+    # Or use a prebuilt image instead of `build: .`:
+    # image: ghcr.io/ilankushnir/kanbai:latest
+    container_name: kanbai
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # SQLite database file lives on the persistent volume below.
+      DATABASE_URL: "file:/app/data/kanbai.db"
+      # Public URL of this instance (used in docs/links shown to agents).
+      NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+      # Secret mixed into API-key hashing. CHANGE THIS: openssl rand -hex 32
+      KANBAI_KEY_PEPPER: "change-me-to-a-long-random-value"
+      # Set to "true" on first boot to seed demo data (boards, notes, Hermes).
+      KANBAI_SEED: "false"
+    volumes:
+      - kanbai-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/v1/me').then(r=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  kanbai-data:

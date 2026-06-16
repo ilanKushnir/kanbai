@@ -3,6 +3,7 @@
   <h1>Kanbai</h1>
   <p><strong>Capture fast. Let agents sort. Keep serious Kanban when it counts.</strong></p>
   <p>The bridge between fast human capture and serious agentic execution.</p>
+  <p><sub><strong>Self-hosted</strong> · open source (MIT) · Docker-ready · Next.js + Prisma</sub></p>
 </div>
 
 ---
@@ -70,6 +71,40 @@ curl http://localhost:3000/api/v1/me -H "Authorization: Bearer <key>"
 ```
 
 On desktop you land on **Boards**; on mobile, on **Notes**.
+
+## Self-host with Docker
+
+Kanbai is **self-hosted and open source (MIT)** — perfect for a homelab. The
+image bundles everything and stores SQLite on a named volume, so your data
+survives restarts and rebuilds. No external database required.
+
+```bash
+# 1. Set a strong key pepper in docker-compose.yml (or an .env):
+#    openssl rand -hex 32   →   KANBAI_KEY_PEPPER
+# 2. Build & run:
+docker compose up -d --build
+# 3. Open http://<host>:3000
+```
+
+To load the demo data (boards, notes, a Hermes agent) on first boot, set
+`KANBAI_SEED=true` in `docker-compose.yml` for the first `up`, then set it back
+to `false`. The container runs `prisma migrate deploy` automatically on every
+start, so upgrades just need a rebuilt image.
+
+Want a quick, no-Compose run:
+
+```bash
+docker build -t kanbai .
+docker run -d -p 3000:3000 \
+  -e DATABASE_URL="file:/app/data/kanbai.db" \
+  -e KANBAI_KEY_PEPPER="$(openssl rand -hex 32)" \
+  -v kanbai-data:/app/data \
+  --name kanbai kanbai
+```
+
+**Prefer Postgres?** Set `provider = "postgresql"` in
+[`prisma/schema.prisma`](prisma/schema.prisma), point `DATABASE_URL` at your
+Postgres service, add it to `docker-compose.yml`, and re-run migrations.
 
 ## Connecting an agent
 

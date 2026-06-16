@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { ToastProvider } from "@/components/ui/toast";
 import { db } from "@/lib/db";
 import { getCurrentContext } from "@/lib/auth";
 
@@ -15,13 +16,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
 
   return (
-    <AppShell
-      boards={boards}
-      workspaceName={workspace.name}
-      userName={user?.name ?? "You"}
-      inboxCount={inboxCount}
-    >
-      {children}
-    </AppShell>
+    <ToastProvider>
+      <AppShell
+        boards={boards}
+        workspaceName={workspace.name}
+        userName={user?.name ?? "You"}
+        inboxCount={inboxCount}
+      >
+        {children}
+      </AppShell>
+    </ToastProvider>
   );
 }

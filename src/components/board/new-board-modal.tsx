@@ -9,10 +9,12 @@ import { Input, Textarea, Label } from "@/components/ui/input";
 import { api } from "@/lib/client-api";
 import { BOARD_COLORS } from "@/lib/constants";
 import { tone } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 export function NewBoardButton({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [open, setOpen] = React.useState(defaultOpen);
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -29,10 +31,11 @@ export function NewBoardButton({ defaultOpen = false }: { defaultOpen?: boolean 
       setOpen(false);
       setName("");
       setDescription("");
+      toast({ title: "Board created", variant: "success" });
       router.push(`/boards/${board.slug}`);
       router.refresh();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to create board");
+      toast({ title: "Couldn't create board", description: e instanceof Error ? e.message : undefined, variant: "error" });
     } finally {
       setBusy(false);
     }

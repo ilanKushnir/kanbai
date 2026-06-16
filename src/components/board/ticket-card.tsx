@@ -18,13 +18,15 @@ export function TicketCard({
 }) {
   const pr = priorityMeta(ticket.priority);
   const due = dueMeta(ticket.dueDate);
+  const accent = ticket.priority === "urgent" || ticket.priority === "high";
 
   return (
     <div
       onClick={onClick}
+      style={accent ? { borderLeftWidth: 3, borderLeftColor: pr.color } : undefined}
       className={cn(
         "group rounded-xl border border-border bg-surface p-3 shadow-card transition-all",
-        "hover:border-border-strong hover:shadow-md cursor-pointer",
+        "hover:border-border-strong hover:shadow-md hover:-translate-y-px active:translate-y-0 cursor-pointer",
         dragging && "opacity-40",
         className,
       )}

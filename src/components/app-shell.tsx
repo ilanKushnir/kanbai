@@ -3,8 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NotebookPen, Columns3, Bot, Plus } from "lucide-react";
+import { NotebookPen, Columns3, Bot, Plus, Search } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
+import { CommandPalette } from "@/components/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar } from "@/components/ui/avatar";
 import { tone } from "@/components/ui/badge";
@@ -33,6 +34,26 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+      // "/" opens search when not typing in a field
+      const el = e.target as HTMLElement | null;
+      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      if (e.key === "/" && !typing && !paletteOpen) {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [paletteOpen]);
 
   return (
     <div className="flex min-h-screen">
@@ -42,6 +63,17 @@ export function AppShell({
           <Link href="/boards" className="flex items-center">
             <Logo />
           </Link>
+        </div>
+
+        <div className="px-3 mb-2">
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="flex w-full items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2 text-sm text-fg-subtle transition-colors hover:bg-surface-2 hover:text-fg-muted cursor-pointer"
+          >
+            <Search className="h-4 w-4" />
+            <span>Search…</span>
+            <kbd className="ml-auto rounded border border-border bg-surface px-1.5 py-0.5 text-[0.625rem]">⌘K</kbd>
+          </button>
         </div>
 
         <nav className="px-3 mt-1 space-y-0.5">
@@ -118,7 +150,16 @@ export function AppShell({
         {/* Mobile top bar */}
         <header className="md:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface/80 backdrop-blur-md px-4">
           <Logo markClassName="h-7 w-7" />
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Search"
+              className="grid h-9 w-9 place-items-center rounded-lg text-fg-muted hover:bg-surface-2 hover:text-fg transition-colors cursor-pointer"
+            >
+              <Search className="h-4.5 w-4.5" />
+            </button>
+            <ThemeToggle />
+          </div>
         </header>
 
         <main className="flex-1 min-w-0 pb-20 md:pb-0">{children}</main>
@@ -153,6 +194,8 @@ export function AppShell({
           })}
         </div>
       </nav>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} boards={boards} />
     </div>
   );
 }

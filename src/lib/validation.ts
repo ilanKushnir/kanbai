@@ -42,6 +42,11 @@ export const createCommentSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
 });
 
+export const updateColumnSchema = z.object({
+  name: z.string().trim().min(1).max(40).optional(),
+  wipLimit: z.number().int().min(1).max(99).nullable().optional(),
+});
+
 export const createNoteSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
 });

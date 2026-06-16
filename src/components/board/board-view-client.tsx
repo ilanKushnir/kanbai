@@ -19,6 +19,7 @@ export function BoardViewClient(props: {
   board: BoardData;
   agents: AgentLite[];
   currentUser?: { id: string; name: string } | null;
+  initialTicketId?: string;
 }) {
   return <BoardView {...props} />;
 }
