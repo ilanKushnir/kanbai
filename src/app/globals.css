@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+/* Class-based dark mode */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Kanbai design tokens
+  ────────────────────
+  Palette: "serious & young"
+  - Ink/slate neutrals for the serious, focused base
+  - Iris (indigo-violet) as the primary brand color
+  - Aqua (cyan) as the energetic young accent
+  - Emerald / Amber / Rose for status semantics
+*/
+:root {
+  --radius: 0.875rem;
+
+  /* Brand */
+  --iris-50:  #eef0ff;
+  --iris-100: #e0e3ff;
+  --iris-200: #c6cbff;
+  --iris-300: #a3a8ff;
+  --iris-400: #837ffb;
+  --iris-500: #6d5dfb;
+  --iris-600: #5b45f0;
+  --iris-700: #4c36d4;
+  --iris-800: #3f2faa;
+  --iris-900: #362d86;
+
+  --aqua-400: #34d6ee;
+  --aqua-500: #15bcd6;
+  --aqua-600: #0e97ad;
+
+  /* Light theme */
+  --bg:           #f7f8fb;
+  --bg-subtle:    #eef0f5;
+  --surface:      #ffffff;
+  --surface-2:    #f4f5f9;
+  --surface-3:    #eceef4;
+  --border:       #e5e7ef;
+  --border-strong:#d3d6e2;
+  --fg:           #11131a;
+  --fg-muted:     #5c6173;
+  --fg-subtle:    #8b90a3;
+
+  --primary:      var(--iris-500);
+  --primary-hover:var(--iris-600);
+  --primary-fg:   #ffffff;
+  --primary-soft: var(--iris-50);
+  --primary-soft-fg: var(--iris-700);
+
+  --accent:       var(--aqua-500);
+  --accent-fg:    #06343c;
+
+  --success: #0ea96b;
+  --success-soft: #d8f6e8;
+  --warning: #d98a00;
+  --warning-soft: #fcefcf;
+  --danger:  #e23d59;
+  --danger-soft: #fbe0e6;
+
+  --ring: var(--iris-400);
+
+  --shadow-sm: 0 1px 2px 0 rgb(17 19 26 / 0.05);
+  --shadow-md: 0 4px 16px -4px rgb(17 19 26 / 0.10), 0 2px 6px -2px rgb(17 19 26 / 0.06);
+  --shadow-lg: 0 16px 48px -12px rgb(17 19 26 / 0.20);
+  --shadow-card: 0 1px 2px rgb(17 19 26 / 0.04), 0 1px 3px rgb(17 19 26 / 0.06);
+}
+
+.dark {
+  --bg:           #0a0b10;
+  --bg-subtle:    #0e1018;
+  --surface:      #14161f;
+  --surface-2:    #1a1d28;
+  --surface-3:    #222634;
+  --border:       #262a38;
+  --border-strong:#343a4d;
+  --fg:           #f2f3f7;
+  --fg-muted:     #a3a8bd;
+  --fg-subtle:    #6e748c;
+
+  --primary:      var(--iris-400);
+  --primary-hover:var(--iris-300);
+  --primary-fg:   #0a0b10;
+  --primary-soft: #1c1b3a;
+  --primary-soft-fg: #c6cbff;
+
+  --accent:       var(--aqua-400);
+  --accent-fg:    #04282e;
+
+  --success: #2fd896;
+  --success-soft: #0f2e22;
+  --warning: #f0b73e;
+  --warning-soft: #2e2410;
+  --danger:  #ff6b82;
+  --danger-soft: #2e131a;
+
+  --ring: var(--iris-400);
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 16px 48px -12px rgb(0 0 0 / 0.7);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-fg: var(--primary-soft-fg);
+
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --color-ring: var(--ring);
+
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 0.25rem);
+  --radius-2xl: calc(var(--radius) + 0.5rem);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Thin, unobtrusive scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--color-fg-subtle); background-clip: content-box; }
+
+/* Focus ring */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Utility: subtle brand gradient text */
+.text-gradient {
+  background: linear-gradient(100deg, var(--iris-500), var(--aqua-500));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.dark .text-gradient {
+  background: linear-gradient(100deg, var(--iris-300), var(--aqua-400));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.bg-brand-gradient {
+  background: linear-gradient(135deg, var(--iris-500) 0%, var(--iris-600) 45%, var(--aqua-500) 130%);
+}
+
+/* Animations */
+@keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes scale-in { from { opacity: 0; transform: scale(0.97) translateY(4px) } to { opacity: 1; transform: scale(1) translateY(0) } }
+@keyframes slide-up { from { opacity: 0; transform: translateY(100%) } to { opacity: 1; transform: translateY(0) } }
+@keyframes slide-down-fade { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes pulse-soft { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
+
+.animate-fade-in { animation: fade-in 0.18s ease-out both; }
+.animate-scale-in { animation: scale-in 0.16s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-slide-up { animation: slide-up 0.26s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-slide-down-fade { animation: slide-down-fade 0.16s ease-out both; }
+.animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+/* Card drag affordance */
+.kb-dragging { box-shadow: var(--shadow-lg); transform: rotate(1.5deg) scale(1.02); cursor: grabbing; }

@@ -1,0 +1,37 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kanbai">
+  <defs>
+    <linearGradient id="kb-bg" x1="64" y1="48" x2="448" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C6BF5"/>
+      <stop offset="0.5" stop-color="#5B45F0"/>
+      <stop offset="1" stop-color="#15BCD6"/>
+    </linearGradient>
+    <linearGradient id="kb-node" x1="318" y1="120" x2="384" y2="186" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#C9FBFF"/>
+    </linearGradient>
+    <filter id="kb-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Squircle background -->
+  <rect x="16" y="16" width="480" height="480" rx="124" fill="url(#kb-bg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="124" fill="white" fill-opacity="0.04"/>
+
+  <!-- Kanban columns: ascending progress -->
+  <g>
+    <rect x="132" y="300" width="58" height="80"  rx="20" fill="white" fill-opacity="0.82"/>
+    <rect x="227" y="244" width="58" height="136" rx="20" fill="white" fill-opacity="0.92"/>
+    <rect x="322" y="188" width="58" height="192" rx="20" fill="white"/>
+  </g>
+
+  <!-- Connector hinting an agent lifting a card upward -->
+  <path d="M351 188 C 351 160, 351 150, 351 140" stroke="white" stroke-opacity="0.7" stroke-width="10" stroke-linecap="round" stroke-dasharray="1 26"/>
+
+  <!-- AI agent node -->
+  <g filter="url(#kb-glow)">
+    <circle cx="351" cy="132" r="30" fill="url(#kb-node)"/>
+    <circle cx="351" cy="132" r="12" fill="#15BCD6"/>
+  </g>
+</svg>

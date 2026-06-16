@@ -1,0 +1,579 @@
+"use client";
+
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import {
+  Plus,
+  Bot,
+  KeyRound,
+  Webhook,
+  Copy,
+  Check,
+  RefreshCw,
+  Send,
+  Trash2,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  TriangleAlert,
+  BookOpen,
+} from "lucide-react";
+import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
+import { Input, Label } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
+import { Menu, MenuItem } from "@/components/ui/menu";
+import { EmptyState } from "@/components/ui/empty-state";
+import { api } from "@/lib/client-api";
+import { AGENT_KINDS, AGENT_META, ALL_SCOPES } from "@/lib/constants";
+import { timeAgo, cn } from "@/lib/utils";
+import type { AgentFull } from "@/lib/types";
+
+function useCopy() {
+  const [copied, setCopied] = React.useState(false);
+  const copy = React.useCallback((text: string) => {
+    navigator.clipboard?.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1400);
+  }, []);
+  return { copied, copy };
+}
+
+function CopyBtn({ value, className }: { value: string; className?: string }) {
+  const { copied, copy } = useCopy();
+  return (
+    <button
+      onClick={() => copy(value)}
+      className={cn(
+        "grid h-8 w-8 shrink-0 place-items-center rounded-lg text-fg-subtle hover:bg-surface-2 hover:text-fg transition-colors cursor-pointer",
+        className,
+      )}
+      aria-label="Copy"
+    >
+      {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+    </button>
+  );
+}
+
+export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; appUrl: string }) {
+  const router = useRouter();
+  const [agents, setAgents] = React.useState(initial);
+  const [creating, setCreating] = React.useState(false);
+  const [revealKey, setRevealKey] = React.useState<{ name: string; key: string } | null>(null);
+
+  React.useEffect(() => setAgents(initial), [initial]);
+
+  function update(a: AgentFull) {
+    setAgents((prev) => prev.map((x) => (x.id === a.id ? { ...x, ...a } : x)));
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6 md:py-8">
+      <header className="mb-5 flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Agents</h1>
+          <p className="mt-1 text-sm text-fg-muted">
+            Connect AI agents securely. They authenticate with a key and verify a signed webhook.
+          </p>
+        </div>
+        <Button variant="primary" onClick={() => setCreating(true)}>
+          <Plus className="h-4 w-4" /> Add agent
+        </Button>
+      </header>
+
+      {/* How it works */}
+      <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-3">
+        <Step n={1} icon={KeyRound} title="Give it a key">
+          The agent calls Kanbai with <code className="text-primary">Authorization: Bearer</code> its key.
+        </Step>
+        <Step n={2} icon={Webhook} title="It sets a webhook">
+          The agent points a webhook at itself to receive new work and inbox notes.
+        </Step>
+        <Step n={3} icon={ShieldCheck} title="You sign it">
+          You set a secret; Kanbai signs every payload so the agent can trust it.
+        </Step>
+      </div>
+
+      {agents.length === 0 ? (
+        <EmptyState
+          icon={Bot}
+          title="No agents connected"
+          description="Add Hermes, Open Claw, Claude Code, Codex — or any agent that speaks the Kanbai protocol."
+          action={
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              <Plus className="h-4 w-4" /> Add your first agent
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-4">
+          {agents.map((a) => (
+            <AgentCard
+              key={a.id}
+              agent={a}
+              appUrl={appUrl}
+              onUpdate={update}
+              onRevealKey={(key) => setRevealKey({ name: a.name, key })}
+              onDeleted={() => setAgents((p) => p.filter((x) => x.id !== a.id))}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="mt-6 flex items-center justify-center gap-1.5 text-sm text-fg-subtle">
+        <BookOpen className="h-4 w-4" />
+        Full protocol in{" "}
+        <code className="rounded bg-surface-2 px-1.5 py-0.5 text-xs">docs/AGENT_PROTOCOL.md</code>
+      </div>
+
+      {creating && (
+        <CreateAgentModal
+          onClose={() => setCreating(false)}
+          onCreated={(agent, key) => {
+            setAgents((p) => [...p, agent]);
+            setCreating(false);
+            setRevealKey({ name: agent.name, key });
+            router.refresh();
+          }}
+        />
+      )}
+
+      {revealKey && (
+        <KeyRevealModal title={`API key for ${revealKey.name}`} value={revealKey.key} onClose={() => setRevealKey(null)} />
+      )}
+    </div>
+  );
+}
+
+function Step({
+  n,
+  icon: Icon,
+  title,
+  children,
+}: {
+  n: number;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary-soft text-primary-soft-fg">
+          <Icon className="h-4 w-4" />
+        </span>
+        <span className="text-sm font-semibold">{title}</span>
+      </div>
+      <p className="text-xs leading-relaxed text-fg-muted">{children}</p>
+    </div>
+  );
+}
+
+function AgentCard({
+  agent,
+  appUrl,
+  onUpdate,
+  onRevealKey,
+  onDeleted,
+}: {
+  agent: AgentFull;
+  appUrl: string;
+  onUpdate: (a: AgentFull) => void;
+  onRevealKey: (key: string) => void;
+  onDeleted: () => void;
+}) {
+  const router = useRouter();
+  const [webhookUrl, setWebhookUrl] = React.useState(agent.webhookUrl ?? "");
+  const [secret, setSecret] = React.useState(agent.webhookSecret ?? "");
+  const [showSecret, setShowSecret] = React.useState(false);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const meta = AGENT_META[agent.kind as keyof typeof AGENT_META] ?? AGENT_META.custom;
+
+  async function patch(partial: Record<string, unknown>, tag = "save") {
+    setBusy(tag);
+    try {
+      const { agent: next } = await api<{ agent: AgentFull }>(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        body: partial,
+      });
+      onUpdate({ ...agent, ...next, webhookSecret: next.webhookSecret ?? secret });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function rotateKey() {
+    if (!confirm("Rotate the API key? The old key stops working immediately.")) return;
+    setBusy("rotate");
+    try {
+      const { apiKey } = await api<{ apiKey: string }>(`/api/agents/${agent.id}/rotate-key`, { method: "POST" });
+      onRevealKey(apiKey);
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function regenSecret() {
+    setBusy("secret");
+    try {
+      const { secret: s } = await api<{ secret: string }>(`/api/agents/${agent.id}/secret`, { method: "POST" });
+      setSecret(s);
+      setShowSecret(true);
+      onUpdate({ ...agent, webhookSecret: s });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function sendTest() {
+    setBusy("test");
+    try {
+      await api(`/api/agents/${agent.id}/test`, { method: "POST" });
+      setTimeout(() => router.refresh(), 600);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to send test");
+    } finally {
+      setTimeout(() => setBusy(null), 600);
+    }
+  }
+
+  async function remove() {
+    if (!confirm(`Delete agent "${agent.name}"? This revokes its key and webhook.`)) return;
+    await api(`/api/agents/${agent.id}`, { method: "DELETE" });
+    onDeleted();
+  }
+
+  async function toggleScope(scope: string) {
+    const has = agent.scopes.includes(scope);
+    const next = has ? agent.scopes.filter((s) => s !== scope) : [...agent.scopes, scope];
+    patch({ scopes: next }, "scopes");
+  }
+
+  const disabled = agent.status !== "active";
+
+  return (
+    <div className={cn("rounded-2xl border border-border bg-surface p-4 shadow-card", disabled && "opacity-70")}>
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Avatar name={agent.name} color={agent.color} isAgent size={40} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-base font-semibold">{agent.name}</h3>
+            <Badge tone={disabled ? "slate" : "emerald"} dot>
+              {disabled ? "disabled" : "active"}
+            </Badge>
+          </div>
+          <div className="mt-0.5 flex items-center gap-2 text-xs text-fg-subtle">
+            <span>{meta.label}</span>
+            <span>·</span>
+            <span suppressHydrationWarning>
+              {agent.lastSeenAt ? `seen ${timeAgo(agent.lastSeenAt)} ago` : "never connected"}
+            </span>
+          </div>
+        </div>
+        <Menu
+          align="end"
+          trigger={
+            <button className="grid h-8 w-8 place-items-center rounded-lg text-fg-subtle hover:bg-surface-2 hover:text-fg cursor-pointer">
+              ⋯
+            </button>
+          }
+        >
+          {(close) => (
+            <>
+              <MenuItem
+                onClick={() => {
+                  close();
+                  patch({ status: disabled ? "active" : "disabled" }, "status");
+                }}
+              >
+                {disabled ? "Enable" : "Disable"} agent
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  close();
+                  rotateKey();
+                }}
+              >
+                Rotate API key
+              </MenuItem>
+              <MenuItem
+                className="text-danger hover:bg-danger-soft"
+                onClick={() => {
+                  close();
+                  remove();
+                }}
+              >
+                Delete agent
+              </MenuItem>
+            </>
+          )}
+        </Menu>
+      </div>
+
+      {/* API key */}
+      <Field icon={KeyRound} label="API key">
+        <div className="flex items-center gap-1">
+          <code className="flex-1 truncate rounded-lg bg-surface-2 px-2.5 py-1.5 font-mono text-xs">
+            {agent.apiKeyPrefix ? `${agent.apiKeyPrefix}••••••••${agent.apiKeyLast4}` : "no key"}
+          </code>
+          <Button size="sm" variant="outline" onClick={rotateKey} disabled={busy === "rotate"}>
+            <RefreshCw className={cn("h-3.5 w-3.5", busy === "rotate" && "animate-spin")} /> Rotate
+          </Button>
+        </div>
+      </Field>
+
+      {/* Webhook URL */}
+      <Field icon={Webhook} label="Webhook URL (the agent's own endpoint)">
+        <div className="flex items-center gap-1">
+          <Input
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            placeholder="https://your-agent.example.com/kanbai/webhook"
+            className="font-mono text-xs"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={webhookUrl === (agent.webhookUrl ?? "") || busy === "save"}
+            onClick={() => patch({ webhookUrl })}
+          >
+            Save
+          </Button>
+        </div>
+      </Field>
+
+      {/* Signing secret */}
+      <Field icon={ShieldCheck} label="Signing secret (you set this; the agent verifies with it)">
+        <div className="flex items-center gap-1">
+          <code className="flex-1 truncate rounded-lg bg-surface-2 px-2.5 py-1.5 font-mono text-xs">
+            {secret ? (showSecret ? secret : "•".repeat(Math.min(secret.length, 28))) : "none"}
+          </code>
+          {secret && (
+            <>
+              <button
+                onClick={() => setShowSecret((s) => !s)}
+                className="grid h-8 w-8 place-items-center rounded-lg text-fg-subtle hover:bg-surface-2 hover:text-fg cursor-pointer"
+                aria-label="Toggle"
+              >
+                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+              <CopyBtn value={secret} />
+            </>
+          )}
+          <Button size="sm" variant="outline" onClick={regenSecret} disabled={busy === "secret"}>
+            <RefreshCw className={cn("h-3.5 w-3.5", busy === "secret" && "animate-spin")} />
+          </Button>
+        </div>
+        <div className="mt-1.5 flex items-center gap-2">
+          <Input
+            placeholder="…or paste your own secret"
+            className="font-mono text-xs"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const v = (e.target as HTMLInputElement).value.trim();
+                if (v) {
+                  setSecret(v);
+                  patch({ webhookSecret: v }, "secret");
+                  (e.target as HTMLInputElement).value = "";
+                }
+              }
+            }}
+          />
+          <Button size="sm" variant="primary" onClick={sendTest} disabled={busy === "test" || !agent.webhookUrl}>
+            <Send className="h-3.5 w-3.5" /> {busy === "test" ? "Sent" : "Send test"}
+          </Button>
+        </div>
+      </Field>
+
+      {/* Scopes */}
+      <Field icon={ShieldCheck} label="Scopes">
+        <div className="flex flex-wrap gap-1.5">
+          {ALL_SCOPES.map((s) => {
+            const on = agent.scopes.includes(s);
+            return (
+              <button
+                key={s}
+                onClick={() => toggleScope(s)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors cursor-pointer",
+                  on
+                    ? "border-primary bg-primary-soft text-primary-soft-fg"
+                    : "border-border text-fg-subtle hover:bg-surface-2",
+                )}
+              >
+                {s}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+
+      {/* Deliveries */}
+      <div className="mt-3 border-t border-border pt-3">
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-xs font-medium text-fg-muted">Recent webhook deliveries</span>
+          <button
+            onClick={() => router.refresh()}
+            className="text-xs text-fg-subtle hover:text-fg cursor-pointer"
+          >
+            Refresh
+          </button>
+        </div>
+        {agent.deliveries.length === 0 ? (
+          <p className="text-xs text-fg-subtle">No deliveries yet. Send a test to check your setup.</p>
+        ) : (
+          <div className="space-y-1">
+            {agent.deliveries.map((d) => (
+              <div key={d.id} className="flex items-center gap-2 rounded-lg bg-surface-2/50 px-2.5 py-1.5 text-xs">
+                <span
+                  className={cn(
+                    "h-2 w-2 shrink-0 rounded-full",
+                    d.status === "success" ? "bg-success" : d.status === "failed" ? "bg-danger" : "bg-warning",
+                  )}
+                />
+                <span className="font-mono font-medium">{d.event}</span>
+                <span className="text-fg-subtle">{d.statusCode ? `HTTP ${d.statusCode}` : d.status}</span>
+                {d.error && (
+                  <span className="inline-flex items-center gap-1 truncate text-danger" title={d.error}>
+                    <TriangleAlert className="h-3 w-3" /> {d.error}
+                  </span>
+                )}
+                <span suppressHydrationWarning className="ml-auto shrink-0 text-fg-subtle">
+                  {timeAgo(d.createdAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mt-3">
+      <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-fg-muted">
+        <Icon className="h-3.5 w-3.5" /> {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CreateAgentModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (agent: AgentFull, key: string) => void;
+}) {
+  const [name, setName] = React.useState("");
+  const [kind, setKind] = React.useState<string>("hermes");
+  const [busy, setBusy] = React.useState(false);
+
+  async function create() {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      const { agent, apiKey } = await api<{ agent: AgentFull; apiKey: string }>("/api/agents", {
+        body: { name: name.trim(), kind, color: AGENT_META[kind as keyof typeof AGENT_META]?.color },
+      });
+      onCreated({ ...agent, deliveries: [] }, apiKey);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to create agent");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Add an agent" size="sm">
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="agent-name">Name</Label>
+          <Input
+            id="agent-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Hermes"
+            autoFocus
+            onKeyDown={(e) => e.key === "Enter" && create()}
+          />
+        </div>
+        <div>
+          <Label>Type</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {AGENT_KINDS.map((k) => (
+              <button
+                key={k}
+                onClick={() => {
+                  setKind(k);
+                  if (!name) setName(AGENT_META[k].label === "Custom" ? "" : AGENT_META[k].label);
+                }}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl border p-2.5 text-left transition-colors cursor-pointer",
+                  kind === k ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
+                )}
+              >
+                <span className="h-7 w-7 shrink-0 rounded-lg" style={{ background: AGENT_META[k].color }} />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{AGENT_META[k].label}</div>
+                  <div className="truncate text-[0.625rem] text-fg-subtle">{AGENT_META[k].blurb}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={create} disabled={!name.trim() || busy}>
+            {busy ? "Creating…" : "Create agent"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function KeyRevealModal({ title, value, onClose }: { title: string; value: string; onClose: () => void }) {
+  const { copied, copy } = useCopy();
+  return (
+    <Modal open onClose={onClose} title={title} size="sm">
+      <div className="space-y-3">
+        <div className="flex items-start gap-2 rounded-xl bg-warning-soft px-3 py-2 text-sm text-fg">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <span>Copy this now — it’s shown only once and can’t be retrieved later.</span>
+        </div>
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 p-2">
+          <code className="flex-1 break-all font-mono text-sm">{value}</code>
+        </div>
+        <Button variant="primary" className="w-full" onClick={() => copy(value)}>
+          {copied ? (
+            <>
+              <Check className="h-4 w-4" /> Copied
+            </>
+          ) : (
+            <>
+              <Copy className="h-4 w-4" /> Copy key
+            </>
+          )}
+        </Button>
+      </div>
+    </Modal>
+  );
+}

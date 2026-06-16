@@ -1,0 +1,246 @@
+// Kanbai data model
+// SQLite for zero-config local dev; swap `provider`/url for Postgres in prod.
+// Enums are modeled as String + app-level (Zod) validation since SQLite has no enums.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+
+  workspaces   WorkspaceMember[]
+  notes        Note[]
+  createdTickets Ticket[] @relation("TicketCreator")
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  members WorkspaceMember[]
+  boards  Board[]
+  agents  Agent[]
+}
+
+model WorkspaceMember {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String   @default("owner") // owner | admin | member
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Board {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  slug        String
+  description String?
+  color       String   @default("iris") // brand color key
+  icon        String   @default("kanban")
+  position    Int      @default(0)
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  columns   Column[]
+  tickets   Ticket[]
+  labels    Label[]
+  activity  ActivityLog[]
+
+  @@unique([workspaceId, slug])
+}
+
+model Column {
+  id       String  @id @default(cuid())
+  boardId  String
+  name     String
+  position Int     @default(0)
+  wipLimit Int?
+  isDone   Boolean @default(false) // tickets here count as completed
+
+  board   Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  tickets Ticket[]
+}
+
+model Ticket {
+  id          String   @id @default(cuid())
+  boardId     String
+  columnId    String
+  title       String
+  description String   @default("")
+  position    Int      @default(0)
+  priority    String   @default("medium") // none | low | medium | high | urgent
+  dueDate     DateTime?
+
+  // Assignee can be a human user or an AI agent (or unassigned)
+  assigneeType String? // "user" | "agent"
+  assigneeUserId  String?
+  assigneeAgentId String?
+
+  createdByType String  @default("user") // "user" | "agent"
+  createdById   String?
+  createdBy     User?   @relation("TicketCreator", fields: [createdById], references: [id])
+
+  sourceNoteId String? @unique // if this ticket was sorted from a Note
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board    Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  column   Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  agent    Agent?       @relation(fields: [assigneeAgentId], references: [id])
+  labels   TicketLabel[]
+  comments Comment[]
+  sourceNote Note?      @relation("NoteToTicket", fields: [sourceNoteId], references: [id])
+
+  @@index([boardId])
+  @@index([columnId])
+}
+
+model Label {
+  id      String @id @default(cuid())
+  boardId String
+  name    String
+  color   String @default("slate")
+  board   Board       @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  tickets TicketLabel[]
+}
+
+model TicketLabel {
+  ticketId String
+  labelId  String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  label    Label  @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, labelId])
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  ticketId   String
+  authorType String   @default("user") // "user" | "agent"
+  authorId   String?
+  authorName String
+  body       String
+  createdAt  DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+/// A fast-capture "scrap" from the mobile notes surface.
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  body      String
+  status    String   @default("inbox") // inbox | queued | sorting | sorted | archived
+  pinned    Boolean  @default(false)
+
+  // Context the user attaches when sending to an agent to sort
+  sortContext     String? // free-text instruction
+  assignedAgentId String?
+  queuedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedAgent Agent?    @relation(fields: [assignedAgentId], references: [id])
+  attachments Attachment[]
+  ticket      Ticket?     @relation("NoteToTicket")
+
+  @@index([userId, status])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  noteId    String
+  kind      String   @default("audio") // audio | image | file
+  mimeType  String
+  filename  String?
+  dataUrl   String   // base64 data URL (small memos only); swap for object storage in prod
+  durationMs Int?
+  createdAt DateTime @default(now())
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+}
+
+/// A connected AI agent (Hermes, Open Claw, Claude Code, Codex, custom).
+model Agent {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  kind        String   @default("custom") // hermes | openclaw | claudecode | codex | custom
+  color       String   @default("iris")
+  status      String   @default("active") // active | disabled
+
+  // API key (for the agent → Kanbai). Only the hash is stored.
+  apiKeyHash   String?  @unique
+  apiKeyPrefix String?  // e.g. "kbai_live_a1b2" for display
+  apiKeyLast4  String?
+
+  // Webhook (Kanbai → agent). The agent sets the URL to itself.
+  webhookUrl    String?
+  // Signing secret the USER sets; Kanbai signs payloads, the agent verifies.
+  webhookSecret String?
+  webhookActive Boolean @default(true)
+
+  scopes    String   @default("boards:read,boards:write,tickets:read,tickets:write,inbox:read,inbox:write")
+  lastSeenAt DateTime?
+  createdAt DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tickets   Ticket[]
+  notes     Note[]
+  deliveries WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id         String   @id @default(cuid())
+  agentId    String
+  event      String
+  payload    String   // JSON
+  signature  String   // hex HMAC sent in X-Kanbai-Signature
+  status     String   @default("pending") // pending | success | failed
+  statusCode Int?
+  error      String?
+  attempts   Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, createdAt])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  boardId   String?
+  ticketId  String?
+  actorType String   // "user" | "agent" | "system"
+  actorId   String?
+  actorName String
+  action    String   // "ticket.created", "ticket.moved", ...
+  meta      String?  // JSON
+  createdAt DateTime @default(now())
+
+  board Board? @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, createdAt])
+}

@@ -1,0 +1,56 @@
+import type { Metadata, Viewport } from "next";
+import Script from "next/script";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: { default: "Kanbai — capture fast, let agents sort", template: "%s · Kanbai" },
+  description:
+    "The bridge between fast human capture and serious agentic execution. Notes on the go, Kanban when it counts, AI agents that sort the rest.",
+  applicationName: "Kanbai",
+  manifest: "/manifest.webmanifest",
+  icons: { icon: "/favicon.svg", apple: "/icon.svg" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Kanbai" },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f7f8fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0b10" },
+  ],
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
+// Set the theme class before paint to avoid a flash.
+const themeScript = `
+(function() {
+  try {
+    var t = localStorage.getItem('kanbai-theme');
+    var d = t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (d) document.documentElement.classList.add('dark');
+  } catch (e) {}
+})();
+`;
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      suppressHydrationWarning
+    >
+      <body className="min-h-full">
+        <Script id="kanbai-theme-no-flash" strategy="beforeInteractive">
+          {themeScript}
+        </Script>
+        {children}
+      </body>
+    </html>
+  );
+}
