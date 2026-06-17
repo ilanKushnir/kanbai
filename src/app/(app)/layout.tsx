@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import { ToastProvider } from "@/components/ui/toast";
+import { ServiceWorkerRegister } from "@/components/sw-register";
 import { db } from "@/lib/db";
 import { getCurrentContext } from "@/lib/auth";
 
@@ -17,6 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <ToastProvider>
+      <ServiceWorkerRegister />
       <AppShell
         boards={boards}
         workspaceName={workspace.name}

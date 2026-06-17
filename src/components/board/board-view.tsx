@@ -125,7 +125,11 @@ export function BoardView({
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [selectedId, setSelectedId] = React.useState<string | null>(initialTicketId ?? null);
   const [celebrateId, setCelebrateId] = React.useState<string | null>(null);
+  const [focusedId, setFocusedId] = React.useState<string | null>(null);
   const liveRef = React.useRef<HTMLDivElement>(null);
+  const gridRef = React.useRef<{ colId: string; ids: string[] }[]>([]);
+  const focusedRef = React.useRef<string | null>(null);
+  focusedRef.current = focusedId;
 
   const [filters, setFilters] = React.useState<Filters>({
     q: "",
@@ -329,6 +333,58 @@ export function BoardView({
     toast({ title: "Ticket deleted", variant: "default" });
   }
 
+  // Keyboard navigation across cards (arrows move, Enter opens). Skips when
+  // a modal/palette is open or the user is typing.
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (selectedId) return;
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) return;
+      if (document.querySelector("[role=dialog]")) return;
+      if (!["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Enter"].includes(e.key)) return;
+      const all = gridRef.current;
+      if (!all.some((c) => c.ids.length)) return;
+      e.preventDefault();
+      const cur = focusedRef.current;
+      let ci = all.findIndex((c) => c.ids.includes(cur ?? ""));
+      if (ci < 0) {
+        setFocusedId(all.find((c) => c.ids.length)!.ids[0]);
+        return;
+      }
+      if (e.key === "Enter") {
+        if (cur) setSelectedId(cur);
+        return;
+      }
+      let ri = all[ci].ids.indexOf(cur!);
+      if (e.key === "ArrowDown") ri = Math.min(ri + 1, all[ci].ids.length - 1);
+      else if (e.key === "ArrowUp") ri = Math.max(ri - 1, 0);
+      else {
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        let nc = ci + dir;
+        while (nc >= 0 && nc < all.length && all[nc].ids.length === 0) nc += dir;
+        if (nc >= 0 && nc < all.length) {
+          ci = nc;
+          ri = Math.min(ri, all[ci].ids.length - 1);
+        }
+      }
+      setFocusedId(all[ci].ids[ri]);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [selectedId]);
+
+  React.useEffect(() => {
+    if (focusedId)
+      document.getElementById(`tk-${focusedId}`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [focusedId]);
+
+  const grid = cols.map((col) => {
+    const ids = containers[col.id] ?? [];
+    const visibleIds = activeFilterCount ? ids.filter((id) => ticketsById[id] && matches(ticketsById[id])) : ids;
+    return { col, allIds: ids, visibleIds };
+  });
+  gridRef.current = grid.map((g) => ({ colId: g.col.id, ids: g.visibleIds }));
+
   const activeTicket = activeId ? ticketsById[activeId] : null;
   const selectedTicket = selectedId ? ticketsById[selectedId] : null;
 
@@ -351,30 +407,27 @@ export function BoardView({
         onDragEnd={onDragEnd}
       >
         <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto px-4 pb-4 md:px-6 lg:px-8">
-          {cols.map((col, i) => {
-            const ids = containers[col.id] ?? [];
-            const visibleIds = activeFilterCount ? ids.filter((id) => ticketsById[id] && matches(ticketsById[id])) : ids;
-            return (
-              <Column
-                key={col.id}
-                col={col}
-                index={i}
-                total={cols.length}
-                totalCount={ids.length}
-                visibleIds={visibleIds}
-                allIds={ids}
-                ticketsById={ticketsById}
-                celebrateId={celebrateId}
-                onCardClick={(id) => setSelectedId(id)}
-                onCreate={(title) => handleCreate(col.id, title)}
-                onRename={(name) => renameColumn(col.id, name)}
-                onSetWip={(n) => setWip(col.id, n)}
-                onToggleDone={(d) => toggleDone(col.id, d)}
-                onMove={(dir) => moveColumn(col.id, dir)}
-                onDelete={() => deleteColumn(col.id)}
-              />
-            );
-          })}
+          {grid.map(({ col, allIds, visibleIds }, i) => (
+            <Column
+              key={col.id}
+              col={col}
+              index={i}
+              total={cols.length}
+              totalCount={allIds.length}
+              visibleIds={visibleIds}
+              allIds={allIds}
+              ticketsById={ticketsById}
+              celebrateId={celebrateId}
+              focusedId={focusedId}
+              onCardClick={(id) => setSelectedId(id)}
+              onCreate={(title) => handleCreate(col.id, title)}
+              onRename={(name) => renameColumn(col.id, name)}
+              onSetWip={(n) => setWip(col.id, n)}
+              onToggleDone={(d) => toggleDone(col.id, d)}
+              onMove={(dir) => moveColumn(col.id, dir)}
+              onDelete={() => deleteColumn(col.id)}
+            />
+          ))}
 
           <AddColumn onCreate={addColumn} />
         </div>
@@ -545,6 +598,7 @@ function Column({
   allIds,
   ticketsById,
   celebrateId,
+  focusedId,
   onCardClick,
   onCreate,
   onRename,
@@ -561,6 +615,7 @@ function Column({
   allIds: string[];
   ticketsById: Record<string, SerializedTicket>;
   celebrateId: string | null;
+  focusedId: string | null;
   onCardClick: (id: string) => void;
   onCreate: (title: string) => void;
   onRename: (name: string) => void;
@@ -703,6 +758,7 @@ function Column({
                 key={id}
                 ticket={t}
                 celebrate={celebrateId === id}
+                focused={focusedId === id}
                 onClick={() => onCardClick(id)}
               />
             );
@@ -722,22 +778,30 @@ function Column({
 function SortableTicket({
   ticket,
   celebrate,
+  focused,
   onClick,
 }: {
   ticket: SerializedTicket;
   celebrate: boolean;
+  focused: boolean;
   onClick: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   return (
     <div
       ref={setNodeRef}
+      id={`tk-${ticket.id}`}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       {...attributes}
       {...listeners}
       className="relative"
     >
-      <TicketCard ticket={ticket} onClick={onClick} dragging={isDragging} />
+      <TicketCard
+        ticket={ticket}
+        onClick={onClick}
+        dragging={isDragging}
+        className={focused ? "ring-2 ring-primary ring-offset-2 ring-offset-surface-2" : undefined}
+      />
       {celebrate && (
         <span className="pointer-events-none absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-success text-white shadow-md animate-check-pop">
           <Check className="h-3.5 w-3.5" />

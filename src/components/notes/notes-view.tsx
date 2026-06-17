@@ -107,6 +107,40 @@ function groupByDate(notes: NoteT[]) {
   return groups.filter((g) => g.notes.length);
 }
 
+const QUEUE_KEY = "kanbai-note-queue";
+type QueueItem = { tempId: string; body: string };
+function readQueue(): QueueItem[] {
+  try {
+    return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+function writeQueue(q: QueueItem[]) {
+  try {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  } catch {
+    /* noop */
+  }
+}
+function makeTempNote(body: string): NoteT {
+  const now = new Date().toISOString();
+  return {
+    id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    body,
+    status: "inbox",
+    pinned: false,
+    sortContext: null,
+    assignedAgent: null,
+    attachments: [],
+    ticket: null,
+    queuedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    pending: true,
+  };
+}
+
 export function NotesView({
   notes: initial,
   agents,
@@ -145,14 +179,42 @@ export function NotesView({
     const body = draft.trim();
     if (!body) return;
     setDraft("");
+    const optimistic = makeTempNote(body); // instant + offline-safe
+    setNotes((prev) => [optimistic, ...prev]);
     try {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("offline");
       const { note } = await api<{ note: NoteT }>("/api/notes", { body: { body } });
-      upsert(note);
+      setNotes((prev) => [note, ...prev.filter((n) => n.id !== optimistic.id)]);
       router.refresh();
-    } catch (e) {
-      toast({ title: "Couldn't add note", description: e instanceof Error ? e.message : undefined, variant: "error" });
+    } catch {
+      writeQueue([...readQueue(), { tempId: optimistic.id, body }]);
+      toast({ title: "Saved offline", description: "It'll sync when you're back online.", variant: "info" });
     }
   }
+
+  // Replay queued offline captures on load and whenever we reconnect.
+  const flush = React.useCallback(() => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    if (readQueue().length === 0) return;
+    (async () => {
+      for (const item of readQueue()) {
+        try {
+          const { note } = await api<{ note: NoteT }>("/api/notes", { body: { body: item.body } });
+          setNotes((prev) => [note, ...prev.filter((n) => n.id !== item.tempId)]);
+          writeQueue(readQueue().filter((x) => x.tempId !== item.tempId));
+        } catch {
+          break; // stay queued; retry next reconnect
+        }
+      }
+      router.refresh();
+    })();
+  }, [router]);
+
+  React.useEffect(() => {
+    flush();
+    window.addEventListener("online", flush);
+    return () => window.removeEventListener("online", flush);
+  }, [flush]);
 
   async function saveBody(id: string, body: string) {
     const trimmed = body;
@@ -432,6 +494,7 @@ function NoteCard({
   onArchive: () => void;
 }) {
   const queued = note.status === "queued";
+  const locked = queued || !!note.pending; // queued or offline-pending → read-only
   const [editing, setEditing] = React.useState(false);
   const [body, setBody] = React.useState(note.body);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -453,7 +516,7 @@ function NoteCard({
     >
       <div className="flex items-start gap-2">
         {note.pinned && <Pin className="mt-1 h-3.5 w-3.5 shrink-0 fill-primary text-primary" />}
-        {queued ? (
+        {locked ? (
           <div className="min-w-0 flex-1">
             <Markdown content={note.body} />
           </div>
@@ -502,9 +565,15 @@ function NoteCard({
 
       <div className="mt-2 flex items-center justify-between">
         <span suppressHydrationWarning className="text-[0.6875rem] text-fg-subtle">
-          {timeAgo(note.createdAt)}
+          {note.pending ? (
+            <span className="inline-flex items-center gap-1 text-primary">
+              <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+            </span>
+          ) : (
+            timeAgo(note.createdAt)
+          )}
         </span>
-        {!queued && (
+        {!locked && (
           <div className="flex items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
             <IconBtn label="Pin" onClick={onPin} active={note.pinned}>
               <Pin className={cn("h-4 w-4", note.pinned && "fill-current")} />

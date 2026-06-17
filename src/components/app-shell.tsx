@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NotebookPen, Columns3, Bot, Plus, Search } from "lucide-react";
+import { NotebookPen, Columns3, Bot, Plus, Search, CalendarDays } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 export type NavBoard = { id: string; name: string; slug: string; color: string };
 
 const NAV = [
+  { href: "/my-day", label: "My Day", icon: CalendarDays, key: "my-day" },
   { href: "/notes", label: "Notes", icon: NotebookPen, key: "notes" },
   { href: "/boards", label: "Boards", icon: Columns3, key: "boards" },
   { href: "/agents", label: "Agents", icon: Bot, key: "agents" },
@@ -167,7 +168,7 @@ export function AppShell({
 
       {/* ── Mobile bottom nav ───────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-surface/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-3">
+        <div className="grid grid-cols-4">
           {NAV.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);

@@ -91,6 +91,11 @@ To load the demo data (boards, notes, a Hermes agent) on first boot, set
 to `false`. The container runs `prisma migrate deploy` automatically on every
 start, so upgrades just need a rebuilt image.
 
+**Prebuilt image:** a GitHub Action publishes `ghcr.io/ilankushnir/kanbai:latest`
+on every push to `main`. To skip local builds, swap `build: .` in
+`docker-compose.yml` for `image: ghcr.io/ilankushnir/kanbai:latest` and run
+`docker compose pull && docker compose up -d`.
+
 Want a quick, no-Compose run:
 
 ```bash

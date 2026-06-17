@@ -61,4 +61,6 @@ export type NoteT = {
   queuedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Client-only: note captured offline, awaiting sync. */
+  pending?: boolean;
 };

@@ -8,7 +8,7 @@ export default function Home() {
   const router = useRouter();
   useEffect(() => {
     const mobile = window.matchMedia("(max-width: 767px)").matches;
-    router.replace(mobile ? "/notes" : "/boards");
+    router.replace(mobile ? "/notes" : "/my-day");
   }, [router]);
 
   return (
