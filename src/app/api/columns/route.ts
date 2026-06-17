@@ -1,14 +1,14 @@
 import { handler, created } from "@/lib/api";
 import { getCurrentContext } from "@/lib/auth";
-import { assertBoardAccess } from "@/lib/access";
+import { assertBoardAccess } from "@/lib/authz";
 import { parse, readJson } from "@/lib/parse";
 import { createColumnSchema } from "@/lib/validation";
 import { db } from "@/lib/db";
 
 export const POST = handler(async (req: Request) => {
-  const { workspace } = await getCurrentContext();
+  const ctx = await getCurrentContext();
   const input = parse(createColumnSchema, await readJson(req));
-  await assertBoardAccess(input.boardId, workspace.id);
+  await assertBoardAccess(ctx, input.boardId, true);
 
   const count = await db.column.count({ where: { boardId: input.boardId } });
   const column = await db.column.create({

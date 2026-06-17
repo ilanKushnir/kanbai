@@ -1,7 +1,10 @@
 import { PrismaClient } from "../src/generated/prisma";
 import { generateApiKey, generateWebhookSecret } from "../src/lib/crypto";
+import { hashPassword } from "../src/lib/password";
 
 const db = new PrismaClient();
+const DEMO_EMAIL = "you@kanbai.app";
+const DEMO_PASSWORD = "kanbai1234";
 
 async function main() {
   console.log("🌱 Seeding Kanbai…");
@@ -9,6 +12,9 @@ async function main() {
   // Clean slate (dev only)
   await db.webhookDelivery.deleteMany();
   await db.activityLog.deleteMany();
+  await db.invite.deleteMany();
+  await db.boardAccess.deleteMany();
+  await db.session.deleteMany();
   await db.attachment.deleteMany();
   await db.comment.deleteMany();
   await db.ticketLabel.deleteMany();
@@ -23,13 +29,19 @@ async function main() {
   await db.user.deleteMany();
 
   const user = await db.user.create({
-    data: { email: "you@kanbai.app", name: "You" },
+    data: {
+      email: DEMO_EMAIL,
+      name: "You",
+      passwordHash: hashPassword(DEMO_PASSWORD),
+      systemRole: "admin", // first user is the instance super-admin
+    },
   });
 
   const ws = await db.workspace.create({
     data: {
       name: "My Workspace",
       slug: "my-workspace",
+      ownerId: user.id,
       members: { create: { userId: user.id, role: "owner" } },
     },
   });
@@ -219,6 +231,10 @@ async function main() {
 
   console.log("\n✅ Seed complete.");
   console.log("\n────────────────────────────────────────────────────────");
+  console.log("  Sign in (system admin):");
+  console.log(`    email:    ${DEMO_EMAIL}`);
+  console.log(`    password: ${DEMO_PASSWORD}`);
+  console.log("────────────────────────────────────────────────────────");
   console.log("  Hermes API key (shown once — copy it now):\n");
   console.log("   " + hermesKey.key);
   console.log("\n  Use it as:  Authorization: Bearer " + hermesKey.key);

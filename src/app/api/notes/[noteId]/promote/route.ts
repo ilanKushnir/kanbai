@@ -1,6 +1,6 @@
 import { handler, created, HttpError } from "@/lib/api";
 import { getCurrentContext } from "@/lib/auth";
-import { assertBoardAccess } from "@/lib/access";
+import { assertBoardAccess } from "@/lib/authz";
 import { parse, readJson } from "@/lib/parse";
 import { promoteNoteSchema } from "@/lib/validation";
 import { fulfillNote } from "@/lib/services/notes";
@@ -13,19 +13,18 @@ function hash(s: string) {
   return Math.abs(h);
 }
 
-/** Turn a captured note into a ticket as the user (no agent), resolving label names. */
+/** Turn a captured note into a ticket as the user, resolving label names. */
 export const POST = handler(
   async (req: Request, { params }: { params: Promise<{ noteId: string }> }) => {
-    const { workspace, user } = await getCurrentContext();
+    const ctx = await getCurrentContext();
     const { noteId } = await params;
 
     const note = await db.note.findUnique({ where: { id: noteId }, select: { userId: true } });
-    if (!note || note.userId !== user!.id) throw new HttpError(404, "Note not found");
+    if (!note || note.userId !== ctx.user.id) throw new HttpError(404, "Note not found");
 
     const input = parse(promoteNoteSchema, await readJson(req));
-    await assertBoardAccess(input.boardId, workspace.id);
+    await assertBoardAccess(ctx, input.boardId, true);
 
-    // Resolve label names → ids, creating any that don't exist on the board.
     const labelIds: string[] = [];
     if (input.labelNames?.length) {
       const existing = await db.label.findMany({ where: { boardId: input.boardId } });
@@ -55,7 +54,7 @@ export const POST = handler(
         dueDate: input.dueDate ?? null,
         labelIds,
       },
-      { type: "user", id: user?.id, name: user?.name ?? "You" },
+      { type: "user", id: ctx.user.id, name: ctx.user.name },
     );
     return created({ ticket });
   },

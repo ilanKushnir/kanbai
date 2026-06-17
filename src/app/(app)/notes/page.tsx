@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { getCurrentContext } from "@/lib/auth";
+import { getContext } from "@/lib/auth";
+import { boardWhereForContext } from "@/lib/authz";
 import { listNotesForUser } from "@/lib/services/notes";
 import { NotesView } from "@/components/notes/notes-view";
 
@@ -9,17 +10,17 @@ export const metadata: Metadata = { title: "Notes" };
 export const dynamic = "force-dynamic";
 
 export default async function NotesPage() {
-  const { workspace, user } = await getCurrentContext();
+  const ctx = await getContext();
 
   const [notes, agents, boards] = await Promise.all([
-    listNotesForUser(user!.id),
+    listNotesForUser(ctx.user.id),
     db.agent.findMany({
-      where: { workspaceId: workspace.id, status: "active" },
+      where: { workspaceId: ctx.workspace.id, status: "active" },
       select: { id: true, name: true, color: true, kind: true },
       orderBy: { createdAt: "asc" },
     }),
     db.board.findMany({
-      where: { workspaceId: workspace.id, archived: false },
+      where: boardWhereForContext(ctx),
       orderBy: { position: "asc" },
       select: {
         id: true,

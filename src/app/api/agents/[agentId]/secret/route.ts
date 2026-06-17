@@ -1,14 +1,15 @@
 import { handler, ok } from "@/lib/api";
-import { getCurrentContext } from "@/lib/auth";
-import { assertAgentAccess } from "@/lib/access";
+import { getCurrentContext, assertManager } from "@/lib/auth";
+import { assertAgentInWorkspace } from "@/lib/access";
 import { regenerateSecret } from "@/lib/services/agents";
 
 export const POST = handler(
   async (_req: Request, { params }: { params: Promise<{ agentId: string }> }) => {
-    const { workspace } = await getCurrentContext();
+    const ctx = await getCurrentContext();
+    assertManager(ctx);
     const { agentId } = await params;
-    await assertAgentAccess(agentId, workspace.id);
+    await assertAgentInWorkspace(agentId, ctx.workspace.id);
     const result = await regenerateSecret(agentId);
-    return ok(result); // { secret, agent }
+    return ok(result);
   },
 );

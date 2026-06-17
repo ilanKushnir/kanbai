@@ -5,19 +5,23 @@ import { db } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 export const GET = handler(async (req: Request) => {
-  const { workspace, user } = await getCurrentContext();
+  const ctx = await getCurrentContext();
   const q = new URL(req.url).searchParams.get("q")?.trim() ?? "";
   if (q.length < 1) return ok({ boards: [], tickets: [], notes: [] });
 
-  // SQLite LIKE is case-insensitive for ASCII, so `contains` works for fuzzy-ish search.
+  // Boards (and tickets within) the user may see.
+  const boardScope = ctx.isManager
+    ? { workspaceId: ctx.workspace.id }
+    : { workspaceId: ctx.workspace.id, access: { some: { userId: ctx.user.id } } };
+
   const [boards, tickets, notes] = await Promise.all([
     db.board.findMany({
-      where: { workspaceId: workspace.id, archived: false, name: { contains: q } },
+      where: { ...boardScope, archived: false, name: { contains: q } },
       take: 5,
       select: { id: true, name: true, slug: true, color: true },
     }),
     db.ticket.findMany({
-      where: { board: { workspaceId: workspace.id }, title: { contains: q } },
+      where: { board: boardScope, title: { contains: q } },
       take: 6,
       orderBy: { updatedAt: "desc" },
       select: {
@@ -29,7 +33,7 @@ export const GET = handler(async (req: Request) => {
       },
     }),
     db.note.findMany({
-      where: { userId: user!.id, body: { contains: q }, status: { not: "archived" } },
+      where: { userId: ctx.user.id, body: { contains: q }, status: { not: "archived" } },
       take: 6,
       orderBy: { updatedAt: "desc" },
       select: { id: true, body: true, status: true },

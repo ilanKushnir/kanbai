@@ -1,14 +1,14 @@
 import { handler, ok, HttpError } from "@/lib/api";
 import { getCurrentContext } from "@/lib/auth";
-import { assertBoardAccess } from "@/lib/access";
+import { assertBoardAccess } from "@/lib/authz";
 import { parse, readJson } from "@/lib/parse";
 import { reorderColumnsSchema } from "@/lib/validation";
 import { db } from "@/lib/db";
 
 export const POST = handler(async (req: Request) => {
-  const { workspace } = await getCurrentContext();
+  const ctx = await getCurrentContext();
   const { boardId, orderedIds } = parse(reorderColumnsSchema, await readJson(req));
-  await assertBoardAccess(boardId, workspace.id);
+  await assertBoardAccess(ctx, boardId, true);
 
   const cols = await db.column.findMany({ where: { boardId }, select: { id: true } });
   const valid = new Set(cols.map((c) => c.id));

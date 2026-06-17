@@ -13,26 +13,81 @@ datasource db {
 }
 
 model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  avatarUrl    String?
+  passwordHash String?
+  systemRole   String   @default("user") // "user" | "admin" (instance-wide super admin)
+  status       String   @default("active") // "active" | "disabled"
+  createdAt    DateTime @default(now())
+
+  workspaces     WorkspaceMember[]
+  notes          Note[]
+  createdTickets Ticket[]          @relation("TicketCreator")
+  sessions       Session[]
+  boardAccess    BoardAccess[]
+  sentInvites    Invite[]          @relation("InviteSender")
+  ownedWorkspaces Workspace[]      @relation("WorkspaceOwner")
+}
+
+model Session {
   id        String   @id @default(cuid())
-  email     String   @unique
-  name      String
-  avatarUrl String?
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
   createdAt DateTime @default(now())
 
-  workspaces   WorkspaceMember[]
-  notes        Note[]
-  createdTickets Ticket[] @relation("TicketCreator")
+  @@index([userId])
 }
 
 model Workspace {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
+  ownerId   String?
   createdAt DateTime @default(now())
 
+  owner   User? @relation("WorkspaceOwner", fields: [ownerId], references: [id])
   members WorkspaceMember[]
   boards  Board[]
   agents  Agent[]
+  invites Invite[]
+}
+
+/// Per-board access grant for a workspace member (owners/admins implicitly access all).
+model BoardAccess {
+  id      String @id @default(cuid())
+  boardId String
+  userId  String
+  level   String @default("edit") // "view" | "edit"
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, userId])
+  @@index([userId])
+}
+
+/// An invitation: either to join a workspace, or to create a brand-new account.
+model Invite {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  email       String?
+  kind        String   @default("workspace") // "workspace" | "account"
+  role        String   @default("member") // workspace role to grant: admin | member
+  workspaceId String?
+  boardAccess String? // JSON: [{ boardId, level }] presets for new members
+  invitedById String
+  status      String   @default("pending") // pending | accepted | revoked
+  acceptedById String?
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User       @relation("InviteSender", fields: [invitedById], references: [id])
+
+  @@index([workspaceId])
 }
 
 model WorkspaceMember {
@@ -64,6 +119,7 @@ model Board {
   tickets   Ticket[]
   labels    Label[]
   activity  ActivityLog[]
+  access    BoardAccess[]
 
   @@unique([workspaceId, slug])
 }

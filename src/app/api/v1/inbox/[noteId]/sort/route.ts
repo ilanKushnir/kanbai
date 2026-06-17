@@ -1,6 +1,6 @@
 import { handler, created } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertBoardAccess } from "@/lib/access";
+import { assertBoardInWorkspace } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { fulfillNoteSchema } from "@/lib/validation";
 import { fulfillNote, getNoteForAgent } from "@/lib/services/notes";
@@ -15,7 +15,7 @@ export const POST = handler(
     const { noteId } = await params;
     await getNoteForAgent(noteId, agent.id); // 404s if not in this agent's inbox
     const input = parse(fulfillNoteSchema, await readJson(req));
-    await assertBoardAccess(input.boardId, agent.workspaceId);
+    await assertBoardInWorkspace(input.boardId, agent.workspaceId);
 
     const ticket = await fulfillNote(noteId, input, { type: "agent", id: agent.id, name: agent.name });
     return created({ ticket, noteId });

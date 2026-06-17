@@ -1,6 +1,32 @@
 import { z } from "zod";
 import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS } from "./constants";
 
+export const signupSchema = z.object({
+  email: z.email().max(200),
+  name: z.string().trim().min(1).max(60),
+  password: z.string().min(8).max(200),
+  inviteToken: z.string().optional(),
+});
+
+export const loginSchema = z.object({
+  email: z.email().max(200),
+  password: z.string().min(1).max(200),
+});
+
+export const createInviteSchema = z.object({
+  kind: z.enum(["workspace", "account"]),
+  email: z.email().max(200).optional().or(z.literal("")),
+  role: z.enum(["admin", "member"]).optional(),
+  boardAccess: z
+    .array(z.object({ boardId: z.string(), level: z.enum(["view", "edit"]) }))
+    .optional(),
+});
+
+export const updateMemberSchema = z.object({
+  role: z.enum(["admin", "member"]).optional(),
+  boardAccess: z.array(z.object({ boardId: z.string(), level: z.enum(["view", "edit"]) })).optional(),
+});
+
 export const createBoardSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().max(500).optional(),

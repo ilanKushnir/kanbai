@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { getCurrentContext } from "@/lib/auth";
+import { getContext } from "@/lib/auth";
+import { assertBoardAccess } from "@/lib/authz";
 import { getBoardWithData } from "@/lib/services/boards";
 import { BoardViewClient } from "@/components/board/board-view-client";
 import { tone } from "@/components/ui/badge";
@@ -14,9 +15,9 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const { workspace } = await getCurrentContext();
+  const ctx = await getContext();
   const board = await db.board.findFirst({
-    where: { workspaceId: workspace.id, slug },
+    where: { workspaceId: ctx.workspace.id, slug },
     select: { name: true },
   });
   return { title: board?.name ?? "Board" };
@@ -31,17 +32,18 @@ export default async function BoardPage({
 }) {
   const { slug } = await params;
   const { ticket: initialTicketId } = await searchParams;
-  const { workspace, user } = await getCurrentContext();
+  const ctx = await getContext();
 
   let board;
   try {
-    board = await getBoardWithData(workspace.id, { slug });
+    board = await getBoardWithData(ctx.workspace.id, { slug });
+    await assertBoardAccess(ctx, board.id); // members need an explicit grant
   } catch {
     notFound();
   }
 
   const agents = await db.agent.findMany({
-    where: { workspaceId: workspace.id, status: "active" },
+    where: { workspaceId: ctx.workspace.id, status: "active" },
     select: { id: true, name: true, color: true, kind: true },
     orderBy: { createdAt: "asc" },
   });
@@ -66,7 +68,7 @@ export default async function BoardPage({
         <BoardViewClient
           board={board}
           agents={agents}
-          currentUser={user ? { id: user.id, name: user.name } : null}
+          currentUser={{ id: ctx.user.id, name: ctx.user.name }}
           initialTicketId={initialTicketId}
         />
       </div>

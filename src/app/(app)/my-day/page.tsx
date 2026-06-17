@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { CalendarClock, NotebookPen, Sparkles, ArrowUpRight } from "lucide-react";
 import { db } from "@/lib/db";
-import { getCurrentContext } from "@/lib/auth";
+import { getContext } from "@/lib/auth";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
 import { dueMeta, priorityMeta } from "@/lib/display";
 import { Badge, tone } from "@/components/ui/badge";
@@ -19,20 +19,24 @@ type Row = ReturnType<typeof serializeTicket> & {
 };
 
 export default async function MyDayPage() {
-  const { workspace, user } = await getCurrentContext();
+  const ctx = await getContext();
 
-  const members = await db.workspaceMember.findMany({ where: { workspaceId: workspace.id }, include: { user: true } });
+  const members = await db.workspaceMember.findMany({ where: { workspaceId: ctx.workspace.id }, include: { user: true } });
   const usersById = new Map<string, UserLite>(
     members.map((m) => [m.user.id, { id: m.user.id, name: m.user.name, avatarUrl: m.user.avatarUrl }]),
   );
 
+  const boardScope = ctx.isManager
+    ? { workspaceId: ctx.workspace.id, archived: false }
+    : { workspaceId: ctx.workspace.id, archived: false, access: { some: { userId: ctx.user.id } } };
+
   const [tickets, inboxCount] = await Promise.all([
     db.ticket.findMany({
-      where: { board: { workspaceId: workspace.id, archived: false }, column: { isDone: false } },
+      where: { board: boardScope, column: { isDone: false } },
       include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true } } },
       orderBy: [{ dueDate: "asc" }, { priority: "desc" }],
     }),
-    db.note.count({ where: { userId: user!.id, status: "inbox" } }),
+    db.note.count({ where: { userId: ctx.user.id, status: "inbox" } }),
   ]);
 
   const rows: Row[] = tickets.map((t) => ({
@@ -53,7 +57,7 @@ export default async function MyDayPage() {
   const week = rows.filter((r) => due(r) !== null && (due(r) as number) > endToday && (due(r) as number) <= endWeek);
   const datedIds = new Set([...overdue, ...today, ...week].map((r) => r.id));
   const mine = rows.filter(
-    (r) => !datedIds.has(r.id) && r.assignee?.type === "user" && r.assignee.id === user!.id,
+    (r) => !datedIds.has(r.id) && r.assignee?.type === "user" && r.assignee.id === ctx.user.id,
   );
 
   const total = overdue.length + today.length + week.length + mine.length;

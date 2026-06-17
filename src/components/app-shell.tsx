@@ -6,8 +6,7 @@ import { usePathname } from "next/navigation";
 import { NotebookPen, Columns3, Bot, Plus, Search, CalendarDays } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { CommandPalette } from "@/components/command-palette";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { Avatar } from "@/components/ui/avatar";
+import { UserMenu, type WorkspaceOption } from "@/components/user-menu";
 import { tone } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -23,16 +22,23 @@ const NAV = [
 export function AppShell({
   children,
   boards,
-  workspaceName,
   userName,
+  userEmail,
+  isManager,
+  isSystemAdmin,
+  workspaces,
   inboxCount,
 }: {
   children: React.ReactNode;
   boards: NavBoard[];
-  workspaceName: string;
   userName: string;
+  userEmail: string;
+  isManager: boolean;
+  isSystemAdmin: boolean;
+  workspaces: WorkspaceOption[];
   inboxCount: number;
 }) {
+  const userMenuProps = { userName, userEmail, isManager, isSystemAdmin, workspaces };
   const pathname = usePathname();
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
   const [paletteOpen, setPaletteOpen] = React.useState(false);
@@ -136,13 +142,8 @@ export function AppShell({
           </div>
         </div>
 
-        <div className="mt-auto border-t border-border p-3 flex items-center gap-2">
-          <Avatar name={userName} size={28} />
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium truncate">{userName}</div>
-            <div className="text-xs text-fg-subtle truncate">{workspaceName}</div>
-          </div>
-          <ThemeToggle />
+        <div className="mt-auto border-t border-border p-2.5">
+          <UserMenu placement="up" {...userMenuProps} />
         </div>
       </aside>
 
@@ -151,7 +152,7 @@ export function AppShell({
         {/* Mobile top bar */}
         <header className="md:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface/80 backdrop-blur-md px-4">
           <Logo markClassName="h-7 w-7" />
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => setPaletteOpen(true)}
               aria-label="Search"
@@ -159,7 +160,7 @@ export function AppShell({
             >
               <Search className="h-4.5 w-4.5" />
             </button>
-            <ThemeToggle />
+            <UserMenu compact placement="down" {...userMenuProps} />
           </div>
         </header>
 

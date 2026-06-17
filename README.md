@@ -111,6 +111,28 @@ docker run -d -p 3000:3000 \
 [`prisma/schema.prisma`](prisma/schema.prisma), point `DATABASE_URL` at your
 Postgres service, add it to `docker-compose.yml`, and re-run migrations.
 
+## Accounts, roles & access
+
+Kanbai has real authentication (DB-backed sessions, scrypt-hashed passwords — no
+external auth service).
+
+- **First run is open:** the very first account created at `/signup` becomes the
+  **instance (system) admin** and owns a global control panel at **`/admin`**
+  (every workspace, user, board). After that, **sign-up is invite-only**.
+- **Accounts = workspaces.** Within one: **owner → admin → member**.
+- **Invites** (Members → Invite) come in two kinds: *join this workspace* (as a
+  member or admin) or *create their own account* (a separate workspace they own).
+  Invite links work for 14 days and can be revoked.
+- **Per-board access:** members only see the boards you grant them (view or edit);
+  owners/admins see all boards in their workspace. Agent management is owner/admin
+  only.
+- **System admin** can disable users, grant/revoke instance admin, and delete
+  workspaces from `/admin`.
+
+The seed creates a demo system admin — **`you@kanbai.app` / `kanbai1234`** (printed
+when you run `npm run db:seed`). For a fresh production deploy, skip the seed and
+just open the app; you'll be sent to `/signup` to create your admin account.
+
 ## Connecting an agent
 
 1. Go to **Agents → Add agent** (Hermes is the recommended primary).

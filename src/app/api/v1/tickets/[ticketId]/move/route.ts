@@ -1,6 +1,6 @@
 import { handler, ok } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertTicketAccess } from "@/lib/access";
+import { assertTicketInWorkspace } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { moveTicketSchema } from "@/lib/validation";
 import { moveTicket } from "@/lib/services/tickets";
@@ -12,7 +12,7 @@ export const POST = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "tickets:write");
     const { ticketId } = await params;
-    await assertTicketAccess(ticketId, agent.workspaceId);
+    await assertTicketInWorkspace(ticketId, agent.workspaceId);
     const { columnId, position } = parse(moveTicketSchema, await readJson(req));
     const ticket = await moveTicket(ticketId, columnId, position, {
       type: "agent",

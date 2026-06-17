@@ -1,6 +1,7 @@
+import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { getCurrentContext } from "@/lib/auth";
+import { getContext } from "@/lib/auth";
 import { AgentsView } from "@/components/agents/agents-view";
 import type { AgentFull } from "@/lib/types";
 
@@ -8,10 +9,11 @@ export const metadata: Metadata = { title: "Agents" };
 export const dynamic = "force-dynamic";
 
 export default async function AgentsPage() {
-  const { workspace } = await getCurrentContext();
+  const ctx = await getContext();
+  if (!ctx.isManager) redirect("/my-day"); // agent management is owner/admin-only
 
   const agents = await db.agent.findMany({
-    where: { workspaceId: workspace.id },
+    where: { workspaceId: ctx.workspace.id },
     orderBy: { createdAt: "asc" },
     include: { deliveries: { orderBy: { createdAt: "desc" }, take: 6 } },
   });
