@@ -49,3 +49,6 @@ next-env.d.ts
 
 # local Claude settings (keep launch.json shared)
 .claude/settings.local.json
+
+# stray scaffold subdir occasionally resurrected by iCloud sync
+/kanbai/

@@ -45,6 +45,18 @@ export const createCommentSchema = z.object({
 export const updateColumnSchema = z.object({
   name: z.string().trim().min(1).max(40).optional(),
   wipLimit: z.number().int().min(1).max(99).nullable().optional(),
+  isDone: z.boolean().optional(),
+});
+
+export const createColumnSchema = z.object({
+  boardId: z.string().min(1),
+  name: z.string().trim().min(1).max(40),
+  isDone: z.boolean().optional(),
+});
+
+export const reorderColumnsSchema = z.object({
+  boardId: z.string().min(1),
+  orderedIds: z.array(z.string()).min(1),
 });
 
 export const createNoteSchema = z.object({

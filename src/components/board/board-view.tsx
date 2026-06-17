@@ -24,7 +24,21 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Search, SlidersHorizontal, X, Check, MoreHorizontal, Flag, Tag, User } from "lucide-react";
+import {
+  Plus,
+  Search,
+  SlidersHorizontal,
+  X,
+  Check,
+  MoreHorizontal,
+  Flag,
+  Tag,
+  User,
+  ArrowLeft,
+  ArrowRight,
+  CircleCheck,
+  Trash2,
+} from "lucide-react";
 import { TicketCard } from "./ticket-card";
 import { TicketModal } from "./ticket-modal";
 import { Menu, MenuItem } from "@/components/ui/menu";
@@ -48,7 +62,7 @@ type Filters = {
 
 export function BoardView({
   board,
-  agents,
+  agents: agentsProp,
   currentUser,
   initialTicketId,
 }: {
@@ -59,6 +73,35 @@ export function BoardView({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+
+  // Keep the assignable-agents list fresh: refetch on mount and when the tab
+  // regains focus, so an agent added on the Agents page is immediately assignable.
+  const [agents, setAgents] = React.useState<AgentLite[]>(agentsProp);
+  React.useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const { agents: all } = await api<{
+          agents: { id: string; name: string; color: string; kind: string; status: string }[];
+        }>("/api/agents");
+        if (!cancelled) {
+          setAgents(
+            all
+              .filter((a) => a.status === "active")
+              .map((a) => ({ id: a.id, name: a.name, color: a.color, kind: a.kind })),
+          );
+        }
+      } catch {
+        /* keep SSR list */
+      }
+    }
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", load);
+    };
+  }, []);
 
   const [cols, setCols] = React.useState<ColumnMeta[]>(() =>
     board.columns.map((c) => ({ id: c.id, name: c.name, isDone: c.isDone, wipLimit: c.wipLimit })),
@@ -219,6 +262,55 @@ export function BoardView({
     }
   }
 
+  async function toggleDone(columnId: string, isDone: boolean) {
+    setCols((cs) => cs.map((c) => (c.id === columnId ? { ...c, isDone } : c)));
+    try {
+      await api(`/api/columns/${columnId}`, { method: "PATCH", body: { isDone } });
+    } catch {
+      router.refresh();
+    }
+  }
+
+  async function addColumn(name: string) {
+    try {
+      const { column } = await api<{ column: ColumnMeta }>("/api/columns", {
+        body: { boardId: board.id, name },
+      });
+      setCols((cs) => [...cs, column]);
+      setCont({ ...containersRef.current, [column.id]: [] });
+    } catch {
+      toast({ title: "Couldn't add column", variant: "error" });
+      router.refresh();
+    }
+  }
+
+  async function moveColumn(columnId: string, dir: "left" | "right") {
+    const idx = cols.findIndex((c) => c.id === columnId);
+    const swap = dir === "left" ? idx - 1 : idx + 1;
+    if (idx < 0 || swap < 0 || swap >= cols.length) return;
+    const next = [...cols];
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    setCols(next);
+    try {
+      await api("/api/columns/reorder", { body: { boardId: board.id, orderedIds: next.map((c) => c.id) } });
+    } catch {
+      router.refresh();
+    }
+  }
+
+  async function deleteColumn(columnId: string) {
+    try {
+      await api(`/api/columns/${columnId}`, { method: "DELETE" });
+      setCols((cs) => cs.filter((c) => c.id !== columnId));
+      const next = { ...containersRef.current };
+      delete next[columnId];
+      setCont(next);
+      toast({ title: "Column deleted", variant: "default" });
+    } catch (e) {
+      toast({ title: "Couldn't delete column", description: e instanceof Error ? e.message : undefined, variant: "error" });
+    }
+  }
+
   function handleTicketUpdated(t: SerializedTicket) {
     setTicketsById((m) => ({ ...m, [t.id]: t }));
     const cur = keyOf(containersRef.current, t.id);
@@ -259,13 +351,15 @@ export function BoardView({
         onDragEnd={onDragEnd}
       >
         <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto px-4 pb-4 md:px-6 lg:px-8">
-          {cols.map((col) => {
+          {cols.map((col, i) => {
             const ids = containers[col.id] ?? [];
             const visibleIds = activeFilterCount ? ids.filter((id) => ticketsById[id] && matches(ticketsById[id])) : ids;
             return (
               <Column
                 key={col.id}
                 col={col}
+                index={i}
+                total={cols.length}
                 totalCount={ids.length}
                 visibleIds={visibleIds}
                 allIds={ids}
@@ -275,9 +369,14 @@ export function BoardView({
                 onCreate={(title) => handleCreate(col.id, title)}
                 onRename={(name) => renameColumn(col.id, name)}
                 onSetWip={(n) => setWip(col.id, n)}
+                onToggleDone={(d) => toggleDone(col.id, d)}
+                onMove={(dir) => moveColumn(col.id, dir)}
+                onDelete={() => deleteColumn(col.id)}
               />
             );
           })}
+
+          <AddColumn onCreate={addColumn} />
         </div>
 
         <DragOverlay dropAnimation={null}>
@@ -439,6 +538,8 @@ function CheckRow({
 
 function Column({
   col,
+  index,
+  total,
   totalCount,
   visibleIds,
   allIds,
@@ -448,8 +549,13 @@ function Column({
   onCreate,
   onRename,
   onSetWip,
+  onToggleDone,
+  onMove,
+  onDelete,
 }: {
   col: ColumnMeta;
+  index: number;
+  total: number;
   totalCount: number;
   visibleIds: string[];
   allIds: string[];
@@ -459,6 +565,9 @@ function Column({
   onCreate: (title: string) => void;
   onRename: (name: string) => void;
   onSetWip: (n: number | null) => void;
+  onToggleDone: (isDone: boolean) => void;
+  onMove: (dir: "left" | "right") => void;
+  onDelete: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id });
   const dot = col.isDone ? tone("emerald").dot : tone("slate").dot;
@@ -550,6 +659,27 @@ function Column({
                   </button>
                 ))}
               </div>
+              <div className="my-1 h-px bg-border" />
+              <MenuItem onClick={() => { close(); onToggleDone(!col.isDone); }}>
+                <CircleCheck className={cn("h-4 w-4", col.isDone && "text-success")} />
+                {col.isDone ? "Unmark done column" : "Mark as done column"}
+              </MenuItem>
+              <MenuItem
+                onClick={() => index > 0 && (close(), onMove("left"))}
+                className={index === 0 ? "pointer-events-none opacity-40" : ""}
+              >
+                <ArrowLeft className="h-4 w-4" /> Move left
+              </MenuItem>
+              <MenuItem
+                onClick={() => index < total - 1 && (close(), onMove("right"))}
+                className={index === total - 1 ? "pointer-events-none opacity-40" : ""}
+              >
+                <ArrowRight className="h-4 w-4" /> Move right
+              </MenuItem>
+              <div className="my-1 h-px bg-border" />
+              <MenuItem className="text-danger hover:bg-danger-soft" onClick={() => { close(); onDelete(); }}>
+                <Trash2 className="h-4 w-4" /> Delete column
+              </MenuItem>
             </>
           )}
         </Menu>
@@ -666,6 +796,57 @@ function AddCard({ onCreate }: { onCreate: (title: string) => void }) {
         rows={2}
         placeholder="What needs doing?  (Enter to add another)"
         className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-fg-subtle"
+      />
+    </div>
+  );
+}
+
+function AddColumn({ onCreate }: { onCreate: (name: string) => void }) {
+  const [adding, setAdding] = React.useState(false);
+  const [value, setValue] = React.useState("");
+  const ref = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (adding) ref.current?.focus();
+  }, [adding]);
+
+  function submit() {
+    const v = value.trim();
+    if (v) onCreate(v);
+    setValue("");
+    setAdding(false);
+  }
+
+  if (!adding) {
+    return (
+      <button
+        onClick={() => setAdding(true)}
+        className="flex h-11 w-[15rem] shrink-0 items-center gap-1.5 rounded-2xl border border-dashed border-border px-3 text-sm text-fg-subtle transition-colors hover:border-border-strong hover:text-fg cursor-pointer"
+      >
+        <Plus className="h-4 w-4" /> Add column
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-[15rem] shrink-0">
+      <input
+        ref={ref}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submit();
+          }
+          if (e.key === "Escape") {
+            setValue("");
+            setAdding(false);
+          }
+        }}
+        onBlur={submit}
+        placeholder="Column name"
+        className="w-full rounded-xl border border-primary bg-surface px-3 py-2.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/20"
       />
     </div>
   );
