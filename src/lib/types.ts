@@ -11,6 +11,15 @@ export type AttachmentT = {
 
 export type AgentLite = { id: string; name: string; color: string; kind: string };
 
+export type BoardLite = {
+  id: string;
+  name: string;
+  slug: string;
+  color: string;
+  columns: { id: string; name: string; isDone: boolean }[];
+  labels: { id: string; name: string; color: string }[];
+};
+
 export type DeliveryT = {
   id: string;
   event: string;

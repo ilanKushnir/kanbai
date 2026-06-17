@@ -93,6 +93,17 @@ export const fulfillNoteSchema = z.object({
   labelIds: z.array(z.string()).optional(),
 });
 
+/** User files a note into a ticket themselves (no agent), with label names resolved/created. */
+export const promoteNoteSchema = z.object({
+  boardId: z.string().min(1),
+  columnId: z.string().optional(),
+  title: z.string().trim().min(1).max(200),
+  description: z.string().max(20_000).optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  dueDate: z.iso.datetime().nullable().optional(),
+  labelNames: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
+});
+
 export const createAgentSchema = z.object({
   name: z.string().trim().min(1).max(60),
   kind: z.enum(AGENT_KINDS),

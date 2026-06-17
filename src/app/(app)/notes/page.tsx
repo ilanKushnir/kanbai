@@ -11,18 +11,30 @@ export const dynamic = "force-dynamic";
 export default async function NotesPage() {
   const { workspace, user } = await getCurrentContext();
 
-  const [notes, agents] = await Promise.all([
+  const [notes, agents, boards] = await Promise.all([
     listNotesForUser(user!.id),
     db.agent.findMany({
       where: { workspaceId: workspace.id, status: "active" },
       select: { id: true, name: true, color: true, kind: true },
       orderBy: { createdAt: "asc" },
     }),
+    db.board.findMany({
+      where: { workspaceId: workspace.id, archived: false },
+      orderBy: { position: "asc" },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        color: true,
+        columns: { orderBy: { position: "asc" }, select: { id: true, name: true, isDone: true } },
+        labels: { select: { id: true, name: true, color: true } },
+      },
+    }),
   ]);
 
   return (
     <Suspense fallback={null}>
-      <NotesView notes={notes} agents={agents} />
+      <NotesView notes={notes} agents={agents} boards={boards} />
     </Suspense>
   );
 }

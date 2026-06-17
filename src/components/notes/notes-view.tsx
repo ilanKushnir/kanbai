@@ -21,10 +21,11 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown, toggleTask } from "@/components/ui/markdown";
 import { useToast } from "@/components/ui/toast";
-import { SortSheet } from "./sort-sheet";
+import { ProcessSheet } from "./process-sheet";
+import { useDictation } from "./use-dictation";
 import { api } from "@/lib/client-api";
 import { timeAgo, cn } from "@/lib/utils";
-import type { NoteT, AgentLite } from "@/lib/types";
+import type { NoteT, AgentLite, BoardLite } from "@/lib/types";
 
 function AutoGrow({
   value,
@@ -106,12 +107,24 @@ function groupByDate(notes: NoteT[]) {
   return groups.filter((g) => g.notes.length);
 }
 
-export function NotesView({ notes: initial, agents }: { notes: NoteT[]; agents: AgentLite[] }) {
+export function NotesView({
+  notes: initial,
+  agents,
+  boards,
+}: {
+  notes: NoteT[];
+  agents: AgentLite[];
+  boards: BoardLite[];
+}) {
   const router = useRouter();
   const params = useSearchParams();
   const { toast } = useToast();
   const [notes, setNotes] = React.useState<NoteT[]>(initial);
   const [draft, setDraft] = React.useState("");
+  const dictateBase = React.useRef("");
+  const dictation = useDictation((text) => {
+    setDraft((dictateBase.current ? dictateBase.current + " " : "") + text);
+  });
   const [query, setQuery] = React.useState("");
   const [sortNote, setSortNote] = React.useState<NoteT | null>(null);
   const [showArchived, setShowArchived] = React.useState(false);
@@ -237,17 +250,41 @@ export function NotesView({ notes: initial, agents }: { notes: NoteT[]; agents: 
           placeholder="Jot something down…  Try - [ ] a checklist"
           className="px-1 text-[0.95rem] leading-relaxed min-h-6"
         />
-        {draft.trim() && (
-          <div className="mt-2 flex items-center justify-between">
-            <span className="hidden items-center gap-1 text-[0.6875rem] text-fg-subtle sm:flex">
-              <ListChecks className="h-3.5 w-3.5" /> Markdown &amp; checklists supported
-            </span>
-            <button
-              onClick={addNote}
-              className="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg hover:bg-primary-hover cursor-pointer"
-            >
-              Save note
-            </button>
+        {(dictation.supported || draft.trim()) && (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              {dictation.supported && (
+                <button
+                  onClick={() => {
+                    if (!dictation.listening) dictateBase.current = draft.trim();
+                    dictation.toggle();
+                  }}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                    dictation.listening
+                      ? "bg-danger text-white animate-pulse-soft"
+                      : "bg-surface-2 text-fg-muted hover:text-fg",
+                  )}
+                >
+                  <Mic className="h-3.5 w-3.5" />
+                  {dictation.listening ? "Listening… tap to stop" : "Dictate"}
+                </button>
+              )}
+              <span className="hidden items-center gap-1 truncate text-[0.6875rem] text-fg-subtle sm:flex">
+                <ListChecks className="h-3.5 w-3.5" /> Markdown, checklists &amp; @due !priority #labels
+              </span>
+            </div>
+            {draft.trim() && (
+              <button
+                onClick={() => {
+                  dictation.stop();
+                  addNote();
+                }}
+                className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg hover:bg-primary-hover cursor-pointer"
+              >
+                Save note
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -352,11 +389,12 @@ export function NotesView({ notes: initial, agents }: { notes: NoteT[]; agents: 
       )}
 
       {sortNote && (
-        <SortSheet
+        <ProcessSheet
           note={sortNote}
+          boards={boards}
           agents={agents}
           onClose={() => setSortNote(null)}
-          onQueued={(updated) => {
+          onDone={(updated) => {
             upsert(updated);
             setSortNote(null);
             router.refresh();
@@ -479,7 +517,7 @@ function NoteCard({
               className="ml-1 inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-fg hover:bg-primary-hover transition-colors cursor-pointer"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              Sort
+              File
             </button>
           </div>
         )}
