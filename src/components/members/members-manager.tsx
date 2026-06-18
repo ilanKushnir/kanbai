@@ -122,10 +122,19 @@ function InviteItem({ invite }: { invite: InviteRow }) {
   const { toast } = useToast();
   const [copied, setCopied] = React.useState(false);
 
-  function copy() {
-    navigator.clipboard?.writeText(inviteUrl(invite.token));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1400);
+  async function copy() {
+    const link = inviteUrl(invite.token);
+    if (!navigator.clipboard) {
+      toast({ title: "Copy this link manually", description: link, variant: "info" });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      toast({ title: "Couldn't copy — select the link to copy it", variant: "error" });
+    }
   }
   async function revoke() {
     await api(`/api/invites/${invite.id}`, { method: "DELETE" }).catch(() => {});
@@ -242,11 +251,20 @@ function InviteModal({ boards, onClose }: { boards: BoardLite[]; onClose: () => 
     }
   }
 
-  function copy() {
+  async function copy() {
     if (!createdToken) return;
-    navigator.clipboard?.writeText(inviteUrl(createdToken));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1400);
+    const link = inviteUrl(createdToken);
+    if (!navigator.clipboard) {
+      toast({ title: "Copy this link manually", description: link, variant: "info" });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      toast({ title: "Couldn't copy — select the link to copy it", variant: "error" });
+    }
   }
 
   return (

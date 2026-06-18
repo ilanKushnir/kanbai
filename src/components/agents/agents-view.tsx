@@ -33,10 +33,15 @@ import type { AgentFull } from "@/lib/types";
 
 function useCopy() {
   const [copied, setCopied] = React.useState(false);
-  const copy = React.useCallback((text: string) => {
-    navigator.clipboard?.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1400);
+  const copy = React.useCallback(async (text: string) => {
+    if (!text || !navigator.clipboard) return; // no clipboard (insecure context) — leave it selectable
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* user can select & copy manually */
+    }
   }, []);
   return { copied, copy };
 }

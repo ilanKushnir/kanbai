@@ -73,7 +73,10 @@ export function CommandPalette({
     const t = setTimeout(async () => {
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-        if (res.ok) setResults(await res.json());
+        if (res.ok) {
+          setResults(await res.json());
+          setActive(0); // realign highlight with the freshly-loaded result order
+        }
       } catch {
         /* ignore */
       }

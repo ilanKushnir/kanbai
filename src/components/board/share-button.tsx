@@ -46,10 +46,18 @@ export function ShareButton({
     }
   }
 
-  function copy() {
-    navigator.clipboard?.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1400);
+  async function copy() {
+    if (!url || !navigator.clipboard) {
+      toast({ title: "Copy this link manually", description: url || undefined, variant: "info" });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      toast({ title: "Couldn't copy — select the link to copy it", variant: "error" });
+    }
   }
 
   return (
