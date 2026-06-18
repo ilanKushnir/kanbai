@@ -29,6 +29,7 @@ export function serializeTicket(t: TicketWithRelations, usersById?: Map<string, 
 
   return {
     id: t.id,
+    number: t.number,
     boardId: t.boardId,
     columnId: t.columnId,
     column: t.column?.name,

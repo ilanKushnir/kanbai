@@ -21,6 +21,11 @@ export function randomToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
+/** A short alphanumeric id (for readable public links). */
+export function shortId(len = 6): string {
+  return randomBytes(16).toString("base64url").replace(/[-_]/g, "").slice(0, len).toLowerCase();
+}
+
 /** SHA-256 hex — we store only the hash of session/invite tokens. */
 export function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");

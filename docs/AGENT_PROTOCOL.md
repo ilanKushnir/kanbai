@@ -27,7 +27,7 @@ Authorization: Bearer kbai_live_xxxxxxxxxxxxxxxxxxxxxxxx
 - Keys are scoped. A call missing the required scope returns `403`.
 
 **Scopes:** `boards:read`, `boards:write`, `tickets:read`, `tickets:write`,
-`inbox:read`, `inbox:write`, `comments:write`.
+`inbox:read`, `inbox:write`, `comments:write`, `members:read`, `members:write`.
 
 ### Quick check
 
@@ -48,6 +48,21 @@ Base URL: `https://your-kanbai.app/api/v1`. All bodies are JSON.
 ```
 GET  /boards                  # list boards (+ columns, labels)   scope: boards:read
 GET  /boards/{boardId}        # board with all columns & tickets   scope: boards:read
+POST /boards                  # create a board w/ columns+labels    scope: boards:write
+```
+
+**Create a board** (migration-friendly — define columns & labels up front):
+
+```bash
+curl -X POST https://your-kanbai.app/api/v1/boards \
+  -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -d '{
+    "name": "Roadmap",
+    "columns": [{"name":"Backlog"},{"name":"Doing"},{"name":"Done","isDone":true}],
+    "labels": [{"name":"bug","color":"rose"},{"name":"feature","color":"iris"}],
+    "createdAt": "2024-01-02T00:00:00.000Z"
+  }'
+# → { board: { id, slug, columns:[{id,name,isDone}], labels:[{id,name,color}] } }
 ```
 
 ### Tickets
@@ -115,6 +130,24 @@ curl -X POST https://your-kanbai.app/api/v1/inbox/note_123/sort \
 ```
 
 This creates the ticket, links it to the note, and marks the note **sorted**.
+
+### Members (for migration)
+
+```
+GET  /members                 # list workspace members (map assignees)   scope: members:read
+POST /members                 # create/add a user to this workspace      scope: members:write
+```
+
+`POST /members` creates the user if their email is new (returns a one-time
+`tempPassword` so you can onboard them) and adds them to the workspace:
+
+```bash
+curl -X POST https://your-kanbai.app/api/v1/members \
+  -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -d '{ "email":"jo@example.com", "name":"Jo", "role":"member",
+        "boardAccess":[{"boardId":"brd_123","level":"edit"}] }'
+# → { userId, email, created: true, tempPassword: "…" }
+```
 
 ---
 
@@ -226,3 +259,51 @@ on webhook "note.queued":            # or poll GET /api/v1/inbox
 
 All resources are scoped to the agent's workspace; cross-workspace access returns
 `404` rather than leaking existence.
+
+---
+
+## 6. Migrating from Kanboard
+
+An agent can move a whole [Kanboard](https://github.com/kanboard/kanboard)
+instance into one Kanbai workspace. Read from Kanboard's JSON-RPC API
+(`/jsonrpc.php`, Application/admin token), then write with the endpoints above.
+
+### Recommended flow
+
+1. **Users** → for each Kanboard user (`getAllUsers` / `getProjectUsers`), call
+   `POST /api/v1/members` with their `email`, `name`, and `role`
+   (`app-manager` → `admin`, else `member`). Keep a map `email → userId`.
+2. **Project → Board** → for each project (`getAllProjects` + `getColumns`), call
+   `POST /api/v1/boards` with the columns (mark the last/closed column
+   `isDone: true`) and the project's categories+tags as `labels`.
+3. **Tasks → Tickets** → `getAllTasks` (call with `status_id` **1 and 0** to get
+   open + closed), then `POST /api/v1/tickets` per task, mapping:
+
+| Kanboard | Kanbai field |
+| --- | --- |
+| `title`, `description` (Markdown) | `title`, `description` |
+| `column` name | `columnName` (resolved on the board) |
+| `category` name + `tags` | `labelNames` (auto-created) |
+| `color` | add as a `labelNames` entry, or fold into description |
+| `priority` | `priority` (`none/low/medium/high/urgent`) |
+| `date_due` (epoch) | `dueDate` (ISO 8601) |
+| `owner` email | `assigneeEmail` |
+| `id` (per project) | `number` (preserves the task reference) |
+| `date_creation` (epoch) | `createdAt` (ISO 8601) |
+| `position` | order — create tasks in `position` order |
+
+4. **Comments** → `getAllComments(task_id)` → `POST /api/v1/tickets/{id}/comments`.
+
+### Mapping the concepts Kanbai models differently (lossless folds)
+
+- **Subtasks** → append a Markdown checklist to the ticket description
+  (`- [x] done item`). Per-subtask assignee/time, if used, go inline in the line.
+- **Swimlanes** → add the swimlane name as a `labelNames` entry (e.g. `lane:backend`).
+- **Categories** (one per task) → a label; **tags** (many) → labels too.
+- **Task links / relations** (blocks, relates) → a line in the description referencing
+  the other ticket number (e.g. `Blocks #42`).
+- **Time tracking** (estimated/spent) → a description line (e.g. `⏱ est 5h / spent 2h`).
+
+This keeps every field — nothing is dropped, even where Kanbai has no native
+column for it. Kanbai's per-board `#number` and done-column flag have **no
+Kanboard equivalent**, so you gain referenceable IDs for free.

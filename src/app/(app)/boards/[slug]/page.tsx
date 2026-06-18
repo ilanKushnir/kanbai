@@ -5,6 +5,7 @@ import { getContext } from "@/lib/auth";
 import { assertBoardAccess } from "@/lib/authz";
 import { getBoardWithData } from "@/lib/services/boards";
 import { BoardViewClient } from "@/components/board/board-view-client";
+import { ShareButton } from "@/components/board/share-button";
 import { tone } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +61,16 @@ export default async function BoardPage({
           <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-fg-subtle">
             {total}
           </span>
+          {board.isPublic && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-[0.6875rem] font-medium text-success">
+              public
+            </span>
+          )}
+          {ctx.isManager && (
+            <div className="ml-auto">
+              <ShareButton boardId={board.id} isPublic={board.isPublic} publicId={board.publicId} />
+            </div>
+          )}
         </div>
         {board.description && <p className="mt-1 text-sm text-fg-muted">{board.description}</p>}
       </header>

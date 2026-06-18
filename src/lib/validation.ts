@@ -33,6 +33,46 @@ export const createBoardSchema = z.object({
   color: z.enum(BOARD_COLORS).optional(),
 });
 
+export const updateBoardSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  description: z.string().trim().max(500).nullable().optional(),
+  color: z.enum(BOARD_COLORS).optional(),
+  isPublic: z.boolean().optional(),
+});
+
+// ── Migration (agent API) ──
+export const createBoardV1Schema = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(2000).optional(),
+  color: z.enum(BOARD_COLORS).optional(),
+  columns: z.array(z.object({ name: z.string().trim().min(1).max(40), isDone: z.boolean().optional() })).max(20).optional(),
+  labels: z.array(z.object({ name: z.string().trim().min(1).max(40), color: z.string().optional() })).max(40).optional(),
+  createdAt: z.iso.datetime().optional(),
+});
+
+export const createTicketV1Schema = z.object({
+  boardId: z.string().min(1),
+  columnId: z.string().optional(),
+  columnName: z.string().max(40).optional(),
+  title: z.string().trim().min(1).max(200),
+  description: z.string().max(20_000).optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  dueDate: z.iso.datetime().nullable().optional(),
+  assigneeAgentId: z.string().optional(),
+  assigneeEmail: z.email().optional(),
+  labelIds: z.array(z.string()).optional(),
+  labelNames: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  number: z.number().int().min(0).optional(),
+  createdAt: z.iso.datetime().optional(),
+});
+
+export const createMemberV1Schema = z.object({
+  email: z.email().max(200),
+  name: z.string().trim().min(1).max(60).optional(),
+  role: z.enum(["admin", "member"]).optional(),
+  boardAccess: z.array(z.object({ boardId: z.string(), level: z.enum(["view", "edit"]) })).optional(),
+});
+
 export const createTicketSchema = z.object({
   boardId: z.string().min(1),
   columnId: z.string().min(1).optional(),

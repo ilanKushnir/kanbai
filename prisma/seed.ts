@@ -1,6 +1,7 @@
 import { PrismaClient } from "../src/generated/prisma";
 import { generateApiKey, generateWebhookSecret } from "../src/lib/crypto";
 import { hashPassword } from "../src/lib/password";
+import { ALL_SCOPES } from "../src/lib/constants";
 
 const db = new PrismaClient();
 const DEMO_EMAIL = "you@kanbai.app";
@@ -8,6 +9,7 @@ const DEMO_PASSWORD = "kanbai1234";
 
 async function main() {
   console.log("🌱 Seeding Kanbai…");
+  const ticketCounters: Record<string, number> = {};
 
   // Clean slate (dev only)
   await db.webhookDelivery.deleteMany();
@@ -60,6 +62,7 @@ async function main() {
       apiKeyLast4: hermesKey.last4,
       webhookUrl: "https://hermes.example.com/kanbai/webhook",
       webhookSecret: generateWebhookSecret(),
+      scopes: ALL_SCOPES.join(","),
       lastSeenAt: new Date(),
     },
   });
@@ -274,10 +277,12 @@ async function main() {
       position: number;
     },
   ) {
+    ticketCounters[boardId] = (ticketCounters[boardId] ?? 0) + 1;
     const ticket = await db.ticket.create({
       data: {
         boardId,
         columnId,
+        number: ticketCounters[boardId],
         title: t.title,
         description: t.description ?? "",
         priority: t.priority ?? "medium",

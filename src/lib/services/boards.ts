@@ -1,8 +1,18 @@
 import { db } from "@/lib/db";
 import { HttpError } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
+import { shortId } from "@/lib/password";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
 import type { Actor } from "./tickets";
+
+async function uniqueBoardSlug(workspaceId: string, name: string) {
+  const base = slugify(name);
+  const existing = await db.board.findMany({
+    where: { workspaceId, slug: { startsWith: base } },
+    select: { slug: true },
+  });
+  return existing.some((b) => b.slug === base) ? `${base}-${existing.length + 1}` : base;
+}
 
 export function slugify(name: string) {
   return (
@@ -85,6 +95,8 @@ export async function getBoardWithData(
     slug: board.slug,
     description: board.description,
     color: board.color,
+    isPublic: board.isPublic,
+    publicId: board.publicId,
     labels: board.labels.map((l) => ({ id: l.id, name: l.name, color: l.color })),
     columns: board.columns.map((c) => ({
       id: c.id,
@@ -97,3 +109,95 @@ export async function getBoardWithData(
 }
 
 export type BoardData = Awaited<ReturnType<typeof getBoardWithData>>;
+
+/** Create a board with custom columns + labels (used by the migration agent API). */
+export async function createBoardWithStructure(
+  workspaceId: string,
+  input: {
+    name: string;
+    description?: string;
+    color?: string;
+    columns?: { name: string; isDone?: boolean }[];
+    labels?: { name: string; color?: string }[];
+    createdAt?: string | null;
+  },
+  actor: Actor,
+) {
+  const slug = await uniqueBoardSlug(workspaceId, input.name);
+  const count = await db.board.count({ where: { workspaceId } });
+  const cols = input.columns?.length ? input.columns : DEFAULT_COLUMNS;
+  const board = await db.board.create({
+    data: {
+      workspaceId,
+      name: input.name,
+      slug,
+      description: input.description,
+      color: input.color ?? "iris",
+      position: count,
+      ...(input.createdAt ? { createdAt: new Date(input.createdAt) } : {}),
+      columns: { create: cols.map((c, i) => ({ name: c.name, isDone: c.isDone ?? false, position: i })) },
+      labels: input.labels?.length
+        ? { create: input.labels.map((l) => ({ name: l.name, color: l.color ?? "slate" })) }
+        : undefined,
+    },
+    include: {
+      columns: { orderBy: { position: "asc" }, select: { id: true, name: true, isDone: true } },
+      labels: { select: { id: true, name: true, color: true } },
+    },
+  });
+  await logActivity({ actor, action: "board.created", boardId: board.id, meta: { name: board.name } });
+  return board;
+}
+
+/** Toggle a board's public visibility; mints a stable publicId the first time. */
+export async function setBoardPublic(boardId: string, isPublic: boolean) {
+  const board = await db.board.findUnique({ where: { id: boardId }, select: { slug: true, publicId: true } });
+  if (!board) throw new HttpError(404, "Board not found");
+  const data: { isPublic: boolean; publicId?: string } = { isPublic };
+  if (isPublic && !board.publicId) data.publicId = `${board.slug}-${shortId(6)}`;
+  const updated = await db.board.update({
+    where: { id: boardId },
+    data,
+    select: { id: true, isPublic: true, publicId: true },
+  });
+  return updated;
+}
+
+/** Read-only board payload for the public (no-auth) page. Returns null if not public. */
+export async function getPublicBoard(publicId: string) {
+  const board = await db.board.findUnique({
+    where: { publicId },
+    include: {
+      labels: true,
+      workspace: { select: { name: true } },
+      columns: {
+        orderBy: { position: "asc" },
+        include: { tickets: { orderBy: { position: "asc" }, include: ticketInclude } },
+      },
+    },
+  });
+  if (!board || !board.isPublic) return null;
+
+  const members = await db.workspaceMember.findMany({
+    where: { workspaceId: board.workspaceId },
+    include: { user: true },
+  });
+  const usersById = new Map<string, UserLite>(
+    members.map((m) => [m.user.id, { id: m.user.id, name: m.user.name, avatarUrl: m.user.avatarUrl }]),
+  );
+
+  return {
+    name: board.name,
+    description: board.description,
+    color: board.color,
+    workspaceName: board.workspace.name,
+    columns: board.columns.map((c) => ({
+      id: c.id,
+      name: c.name,
+      isDone: c.isDone,
+      tickets: c.tickets.map((t) => serializeTicket(t, usersById)),
+    })),
+  };
+}
+
+export type PublicBoardData = NonNullable<Awaited<ReturnType<typeof getPublicBoard>>>;

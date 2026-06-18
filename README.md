@@ -37,6 +37,10 @@ tool. Kanbai is both, joined by agents. The agent does the tedious part —
 - **HMAC-SHA256 signed webhooks** with timestamp replay protection + delivery log
 - Human-or-agent assignees, labels, priorities, due dates, comments, activity log
 - Polished, minimalist UI with light/dark themes and a responsive shell
+- **Public, read-only board links** to share progress without a login
+- Per-board ticket **#numbers**, WIP limits, custom columns
+- **Migrate from Kanboard** via the agent API (boards, columns, labels, tasks,
+  members) — see [docs/AGENT_PROTOCOL.md](./docs/AGENT_PROTOCOL.md#6-migrating-from-kanboard)
 - SQLite for zero-config local dev; swap to Postgres for production
 
 ## Tech stack

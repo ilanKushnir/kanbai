@@ -33,6 +33,8 @@ export async function createTicket(
     assigneeUserId?: string | null;
     assigneeAgentId?: string | null;
     labelIds?: string[];
+    number?: number; // explicit number (migration); otherwise auto-assigned
+    createdAt?: string | null; // preserve original creation time on migration
   },
   actor: Actor,
 ) {
@@ -54,15 +56,24 @@ export async function createTicket(
     select: { position: true },
   });
 
+  // Per-board sequential reference number (#12).
+  let number = input.number;
+  if (number == null) {
+    const max = await db.ticket.aggregate({ where: { boardId: board.id }, _max: { number: true } });
+    number = (max._max.number ?? 0) + 1;
+  }
+
   const ticket = await db.ticket.create({
     include: ticketInclude,
     data: {
       boardId: board.id,
       columnId,
+      number,
       title: input.title,
       description: input.description ?? "",
       priority: input.priority ?? "medium",
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
+      ...(input.createdAt ? { createdAt: new Date(input.createdAt) } : {}),
       position: (last?.position ?? -1) + 1,
       assigneeType: input.assigneeType ?? null,
       assigneeUserId: input.assigneeType === "user" ? input.assigneeUserId ?? null : null,

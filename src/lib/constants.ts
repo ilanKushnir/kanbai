@@ -23,6 +23,8 @@ export const ALL_SCOPES = [
   "inbox:read",
   "inbox:write",
   "comments:write",
+  "members:read",
+  "members:write",
 ] as const;
 export type Scope = (typeof ALL_SCOPES)[number];
 

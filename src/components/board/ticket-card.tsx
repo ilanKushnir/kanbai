@@ -50,6 +50,9 @@ export function TicketCard({
       )}
 
       <div className="mt-2.5 flex items-center gap-2">
+        {ticket.number != null && (
+          <span className="text-[0.625rem] font-medium text-fg-subtle">#{ticket.number}</span>
+        )}
         {ticket.priority !== "none" && (
           <span className="inline-flex items-center gap-1 text-[0.6875rem] font-medium" style={{ color: pr.color }}>
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pr.color }} />

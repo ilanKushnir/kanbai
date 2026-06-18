@@ -120,6 +120,7 @@ export function TicketModal({
   return (
     <Modal open onClose={onClose} size="lg" hideClose>
       <div className="-mt-1 flex items-center justify-between gap-2 pb-3">
+        <div className="flex items-center gap-2">
         <Menu
           trigger={
             <button className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-medium text-fg-muted hover:bg-surface-3 cursor-pointer">
@@ -143,6 +144,10 @@ export function TicketModal({
             ))
           }
         </Menu>
+          {t.number != null && (
+            <span className="text-xs font-medium text-fg-subtle">#{t.number}</span>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           {saving && <span className="text-[0.6875rem] text-fg-subtle">Saving…</span>}
           <button
