@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { boardWhereForContext } from "@/lib/authz";
 import { listNotesForUser } from "@/lib/services/notes";
-import { NotesView } from "@/components/notes/notes-view";
+import { NotesViewClient } from "@/components/notes/notes-view-client";
 
 export const metadata: Metadata = { title: "Notes" };
 export const dynamic = "force-dynamic";
@@ -35,7 +35,7 @@ export default async function NotesPage() {
 
   return (
     <Suspense fallback={null}>
-      <NotesView notes={notes} agents={agents} boards={boards} />
+      <NotesViewClient notes={notes} agents={agents} boards={boards} />
     </Suspense>
   );
 }

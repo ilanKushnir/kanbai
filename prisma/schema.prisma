@@ -211,6 +211,9 @@ model Note {
   body      String
   status    String   @default("inbox") // inbox | queued | sorting | sorted | archived
   pinned    Boolean  @default(false)
+  bucket    String   @default("today") // today | tomorrow | next_week | next_month | general
+  position  Int      @default(0)
+  priority  String   @default("none") // none | low | medium | high | urgent
 
   // Context the user attaches when sending to an agent to sort
   sortContext     String? // free-text instruction

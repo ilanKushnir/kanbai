@@ -106,7 +106,8 @@ curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/move \
 
 ### Inbox (the "sort" queue)
 
-When a human sends a captured note to an agent, it lands in that agent's inbox.
+When a human marks a captured note for ingestion (or sends it explicitly), it
+lands in that agent's inbox.
 
 ```
 GET  /inbox                   # notes queued to this agent          scope: inbox:read
@@ -114,8 +115,19 @@ POST /inbox/{noteId}/sort     # turn a note into a ticket           scope: inbox
 ```
 
 A queued note includes the raw text, optional free-text `sortContext` from the
-user, and any `attachments` (e.g. a voice memo as a base64 data URL). The agent
-decides the board, column, priority, labels, and due date, then files it:
+user, and any `attachments` (e.g. a voice memo as a base64 data URL). Notes are
+captured into one of five **when-buckets** — the agent gets these as filing
+hints so it can pick the right board/column and a sensible due date:
+
+| Field | Meaning |
+| --- | --- |
+| `bucket` | `today` · `tomorrow` · `next_week` · `next_month` · `general` |
+| `priority` | user-set line priority: `none/low/medium/high/urgent` |
+| `suggestedDueDate` | ISO 8601 due date derived from the bucket (noon local), or `null` for `general` — apply it as-is or override |
+
+The agent decides the board, column, priority, labels, and due date, then files
+it (a good default: carry `priority` through and use `suggestedDueDate` as the
+`dueDate` unless the note text implies otherwise):
 
 ```bash
 curl -X POST https://your-kanbai.app/api/v1/inbox/note_123/sort \

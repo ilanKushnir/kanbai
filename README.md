@@ -15,8 +15,12 @@ on the go; an **AI agent** turns them into well-formed tickets on the right boar
 
 Three surfaces, one brain:
 
-- **📝 Notes (mobile-first)** — Apple-Notes-fast capture. Swipe a scrap →
-  *Send to an agent to sort*, optionally with a typed instruction or a **voice memo**.
+- **📝 Notes (mobile-first)** — Apple-Notes-fast capture, organised as one
+  running note split into **when-buckets** (Today · Tomorrow · Next week · Next
+  month · General). Drag a line to when it matters, set a priority, then **mark
+  it for an agent** — it stays in place while the agent files it as a ticket
+  (right board, due date, priority), optionally with a typed instruction or a
+  **voice memo**.
 - **📋 Boards (desktop-serious)** — real Kanban: drag-and-drop columns, priorities,
   labels, due dates, assignees (human *or* agent), comments, activity.
 - **🤖 Agents (the connective tissue)** — Hermes, Open Claw, Claude Code, Codex,
@@ -31,7 +35,8 @@ tool. Kanbai is both, joined by agents. The agent does the tedious part —
 ## Features
 
 - Drag-and-drop Kanban with optimistic updates (dnd-kit), keyboard & touch support
-- Fast notes capture with pin / archive / inline edit and a one-tap **Sort** flow
+- Fast notes capture in draggable **when-buckets** with per-line priority, pin /
+  archive / inline edit, and a one-tap **mark-for-ingestion** that an agent picks up
 - Voice-memo recording attached to the sort request
 - Secure agent API (`/api/v1`) with scoped, hashed **Bearer keys**
 - **HMAC-SHA256 signed webhooks** with timestamp replay protection + delivery log
@@ -151,8 +156,9 @@ Full spec, endpoints, and copy-paste verification code (Node & Python):
 The core loop:
 
 ```
-human captures a note → "Sort" → agent receives note.queued (signed)
-   → agent reads /api/v1/inbox → POST /api/v1/inbox/{id}/sort
+human captures a note → marks it for ingestion → agent receives note.queued (signed)
+   → agent reads /api/v1/inbox (with bucket, priority & suggested due date)
+   → POST /api/v1/inbox/{id}/sort
    → a real ticket appears on the right board, the note is marked sorted
 ```
 

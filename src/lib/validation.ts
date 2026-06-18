@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS } from "./constants";
+import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS, NOTE_BUCKETS } from "./constants";
 
 export const signupSchema = z.object({
   email: z.email().max(200),
@@ -127,12 +127,26 @@ export const reorderColumnsSchema = z.object({
 
 export const createNoteSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
+  bucket: z.enum(NOTE_BUCKETS).optional(),
+  priority: z.enum(PRIORITIES).optional(),
 });
 
 export const updateNoteSchema = z.object({
   body: z.string().trim().min(1).max(10_000).optional(),
   pinned: z.boolean().optional(),
   status: z.enum(["inbox", "archived"]).optional(),
+  bucket: z.enum(NOTE_BUCKETS).optional(),
+  priority: z.enum(PRIORITIES).optional(),
+});
+
+export const moveNoteSchema = z.object({
+  bucket: z.enum(NOTE_BUCKETS),
+  position: z.number().int().min(0),
+});
+
+export const ingestNoteSchema = z.object({
+  ingest: z.boolean(),
+  agentId: z.string().min(1).nullable().optional(),
 });
 
 export const attachmentSchema = z.object({

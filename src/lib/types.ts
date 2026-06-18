@@ -54,6 +54,10 @@ export type NoteT = {
   body: string;
   status: string; // inbox | queued | sorted | archived
   pinned: boolean;
+  bucket: string; // today | tomorrow | next_week | next_month | general
+  position: number;
+  priority: string; // none | low | medium | high | urgent
+  suggestedDueDate: string | null;
   sortContext: string | null;
   assignedAgent: AgentLite | null;
   attachments: AttachmentT[];

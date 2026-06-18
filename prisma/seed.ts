@@ -205,24 +205,45 @@ async function main() {
   });
 
   // ── Notes (mobile fast-capture) ───────────────────────────────────────────────
-  const noteData: { body: string; status?: string; pinned?: boolean; agentId?: string; sortContext?: string }[] = [
-    { body: "Idea: let agents propose due dates based on the note text", pinned: true },
-    { body: "Bug — dragging a card to an empty column sometimes snaps back" },
-    { body: "Call the bank about the new card before Thursday" },
-    { body: "Blog post: how we sign webhooks so agents can trust Kanbai" },
+  // One running note split into when-buckets; some lines marked for an agent.
+  const noteData: {
+    body: string;
+    bucket?: string;
+    priority?: string;
+    status?: string;
+    pinned?: boolean;
+    agentId?: string;
+    sortContext?: string;
+  }[] = [
+    { body: "Call the bank about the new card", bucket: "today", priority: "high" },
+    { body: "Reply to Dana's thread about the launch checklist", bucket: "today", priority: "medium" },
     {
       body: "Follow up with the design contractor about the icon set",
+      bucket: "today",
+      priority: "medium",
       status: "queued",
       agentId: hermes.id,
       sortContext: "Put this on the Product board, it's a design task, medium priority.",
     },
-    { body: "Grocery: oat milk, coffee, eggs" },
+    { body: "Bug — dragging a card to an empty column sometimes snaps back", bucket: "tomorrow", priority: "high" },
+    { body: "Prep the standup notes", bucket: "tomorrow" },
+    { body: "Blog post: how we sign webhooks so agents can trust Kanbai", bucket: "next_week", priority: "low" },
+    { body: "Book the offsite venue", bucket: "next_month", priority: "medium" },
+    { body: "Idea: let agents propose due dates based on the note text", bucket: "general", pinned: true },
+    { body: "Grocery: oat milk, coffee, eggs", bucket: "general" },
   ];
+  const posByBucket: Record<string, number> = {};
   for (const n of noteData) {
+    const bucket = n.bucket ?? "today";
+    const position = posByBucket[bucket] ?? 0;
+    posByBucket[bucket] = position + 1;
     await db.note.create({
       data: {
         userId: user.id,
         body: n.body,
+        bucket,
+        position,
+        priority: n.priority ?? "none",
         status: n.status ?? "inbox",
         pinned: n.pinned ?? false,
         assignedAgentId: n.agentId ?? null,

@@ -19,12 +19,37 @@ async function loadNote(id: string) {
   return n;
 }
 
+/** A due-date hint derived from the bucket (noon, local) the agent can apply. */
+export function bucketDueDate(bucket: string): string | null {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  switch (bucket) {
+    case "today":
+      return d.toISOString();
+    case "tomorrow":
+      d.setDate(d.getDate() + 1);
+      return d.toISOString();
+    case "next_week":
+      d.setDate(d.getDate() + 7);
+      return d.toISOString();
+    case "next_month":
+      d.setMonth(d.getMonth() + 1);
+      return d.toISOString();
+    default:
+      return null;
+  }
+}
+
 export function serializeNote(n: NoteWithRelations) {
   return {
     id: n.id,
     body: n.body,
     status: n.status,
     pinned: n.pinned,
+    bucket: n.bucket,
+    position: n.position,
+    priority: n.priority,
+    suggestedDueDate: bucketDueDate(n.bucket),
     sortContext: n.sortContext,
     assignedAgent: n.assignedAgent
       ? { id: n.assignedAgent.id, name: n.assignedAgent.name, color: n.assignedAgent.color, kind: n.assignedAgent.kind }
@@ -44,17 +69,16 @@ export function serializeNote(n: NoteWithRelations) {
   };
 }
 
-/** All of a user's notes for the Notes surface. */
 export async function listNotesForUser(userId: string) {
   const notes = await db.note.findMany({
     where: { userId },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     include: noteInclude,
   });
   return notes.map(serializeNote);
 }
 
-/** Notes a given agent has been asked to sort. */
+/** Notes queued to this agent (with bucket/priority/suggestedDueDate to file faithfully). */
 export async function listInboxForAgent(agentId: string) {
   const notes = await db.note.findMany({
     where: { assignedAgentId: agentId, status: "queued" },
@@ -72,9 +96,19 @@ export async function getNoteForAgent(noteId: string, agentId: string) {
   return note;
 }
 
-export async function createNote(userId: string, body: string) {
+export async function createNote(
+  userId: string,
+  body: string,
+  opts?: { bucket?: string; priority?: string },
+) {
+  const bucket = opts?.bucket ?? "today";
+  const last = await db.note.findFirst({
+    where: { userId, bucket },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
   const note = await db.note.create({
-    data: { userId, body },
+    data: { userId, body, bucket, priority: opts?.priority ?? "none", position: (last?.position ?? -1) + 1 },
     include: noteInclude,
   });
   return serializeNote(note);
@@ -82,14 +116,29 @@ export async function createNote(userId: string, body: string) {
 
 export async function updateNote(
   noteId: string,
-  input: Partial<{ body: string; pinned: boolean; status: string }>,
+  input: Partial<{ body: string; pinned: boolean; status: string; bucket: string; priority: string }>,
 ) {
-  const note = await db.note.update({
-    where: { id: noteId },
-    data: input,
-    include: noteInclude,
-  });
+  const note = await db.note.update({ where: { id: noteId }, data: input, include: noteInclude });
   return serializeNote(note);
+}
+
+/** Move a note to a bucket at a position, reindexing the target bucket. */
+export async function moveNote(noteId: string, userId: string, bucket: string, position: number) {
+  const targetIds = (
+    await db.note.findMany({
+      where: { userId, bucket },
+      orderBy: { position: "asc" },
+      select: { id: true },
+    })
+  )
+    .map((n) => n.id)
+    .filter((id) => id !== noteId);
+  const clamped = Math.max(0, Math.min(position, targetIds.length));
+  targetIds.splice(clamped, 0, noteId);
+  await db.$transaction(
+    targetIds.map((id, i) => db.note.update({ where: { id }, data: { bucket, position: i } })),
+  );
+  return serializeNote(await loadNote(noteId));
 }
 
 export async function deleteNote(noteId: string) {
@@ -113,7 +162,38 @@ export async function addAttachment(
   return serializeNote(await loadNote(noteId));
 }
 
-/** Send a captured note to an agent to sort into a real ticket. */
+/** Mark / unmark a note for agent ingestion. */
+export async function ingestNote(
+  noteId: string,
+  ingest: boolean,
+  agentId: string | null,
+  actor: Actor,
+) {
+  if (!ingest) {
+    const note = await db.note.update({
+      where: { id: noteId },
+      data: { status: "inbox", assignedAgentId: null, queuedAt: null },
+      include: noteInclude,
+    });
+    return serializeNote(note);
+  }
+
+  if (agentId) {
+    const agent = await db.agent.findUnique({ where: { id: agentId } });
+    if (!agent || agent.status !== "active") agentId = null;
+  }
+  const note = await db.note.update({
+    where: { id: noteId },
+    data: { status: "queued", assignedAgentId: agentId, queuedAt: new Date() },
+    include: noteInclude,
+  });
+  const serialized = serializeNote(note);
+  await logActivity({ actor, action: "note.queued", meta: { noteId } });
+  if (agentId) await dispatchWebhook(agentId, "note.queued", { note: serialized });
+  return serialized;
+}
+
+/** Send a captured note to a specific agent with optional context (rich flow). */
 export async function queueNoteToAgent(
   noteId: string,
   agentId: string,
@@ -126,29 +206,16 @@ export async function queueNoteToAgent(
 
   const note = await db.note.update({
     where: { id: noteId },
-    data: {
-      status: "queued",
-      assignedAgentId: agentId,
-      sortContext: sortContext ?? null,
-      queuedAt: new Date(),
-    },
+    data: { status: "queued", assignedAgentId: agentId, sortContext: sortContext ?? null, queuedAt: new Date() },
     include: noteInclude,
   });
   const serialized = serializeNote(note);
-
-  await logActivity({
-    actor,
-    action: "note.queued",
-    meta: { noteId, agent: agent.name },
-  });
+  await logActivity({ actor, action: "note.queued", meta: { noteId, agent: agent.name } });
   await dispatchWebhook(agentId, "note.queued", { note: serialized });
   return serialized;
 }
 
-/**
- * An agent turns a queued note into a real ticket and marks the note sorted.
- * Returns the created ticket.
- */
+/** An agent turns a queued note into a real ticket and marks the note sorted. */
 export async function fulfillNote(
   noteId: string,
   input: {
@@ -180,13 +247,7 @@ export async function fulfillNote(
 
   await db.ticket.update({ where: { id: ticket.id }, data: { sourceNoteId: noteId } });
   await db.note.update({ where: { id: noteId }, data: { status: "sorted" } });
-  await logActivity({
-    actor,
-    action: "note.sorted",
-    boardId: input.boardId,
-    ticketId: ticket.id,
-    meta: { noteId },
-  });
+  await logActivity({ actor, action: "note.sorted", boardId: input.boardId, ticketId: ticket.id, meta: { noteId } });
 
   const linked = await db.ticket.findUnique({ where: { id: ticket.id }, include: ticketInclude });
   return linked ? serializeTicket(linked) : ticket;

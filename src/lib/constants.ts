@@ -1,6 +1,16 @@
 export const PRIORITIES = ["none", "low", "medium", "high", "urgent"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
+export const NOTE_BUCKETS = ["today", "tomorrow", "next_week", "next_month", "general"] as const;
+export type NoteBucket = (typeof NOTE_BUCKETS)[number];
+export const BUCKET_LABEL: Record<NoteBucket, string> = {
+  today: "Today",
+  tomorrow: "Tomorrow",
+  next_week: "Next week",
+  next_month: "Next month",
+  general: "General",
+};
+
 export const AGENT_KINDS = ["hermes", "openclaw", "claudecode", "codex", "custom"] as const;
 export type AgentKind = (typeof AGENT_KINDS)[number];
 
