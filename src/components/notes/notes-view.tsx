@@ -862,12 +862,12 @@ function NoteRow({
     >
       <div ref={rowRef} className="absolute -top-px left-0 h-0 w-0" />
 
-      {/* drag handle */}
+      {/* drag handle — visible on touch, hover-revealed on desktop */}
       <button
         {...attributes}
         {...listeners}
         aria-label="Drag to reorder"
-        className="mt-0.5 hidden shrink-0 cursor-grab touch-none text-fg-subtle hover:text-fg-muted active:cursor-grabbing group-hover:block"
+        className="mt-0.5 shrink-0 cursor-grab touch-none text-fg-subtle opacity-40 transition-opacity hover:text-fg-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100"
       >
         <GripVertical className="h-4 w-4" />
       </button>
@@ -953,7 +953,7 @@ function NoteRow({
             <button
               onClick={() => onIngest(true)}
               title="Mark for an agent to file"
-              className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle opacity-0 transition-opacity hover:bg-surface-2 hover:text-primary cursor-pointer group-hover:opacity-100"
+              className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle opacity-100 transition-opacity hover:bg-surface-2 hover:text-primary cursor-pointer md:opacity-0 md:group-hover:opacity-100"
             >
               <Sparkles className="h-4 w-4" />
             </button>
@@ -966,7 +966,7 @@ function NoteRow({
             trigger={
               <button
                 title="More"
-                className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle opacity-0 transition-opacity hover:bg-surface-2 hover:text-fg cursor-pointer group-hover:opacity-100"
+                className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle opacity-100 transition-opacity hover:bg-surface-2 hover:text-fg cursor-pointer md:opacity-0 md:group-hover:opacity-100"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
