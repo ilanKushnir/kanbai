@@ -146,7 +146,7 @@ export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; a
       )}
 
       {revealKey && (
-        <KeyRevealModal title={`API key for ${revealKey.name}`} value={revealKey.key} onClose={() => setRevealKey(null)} />
+        <KeyRevealModal name={revealKey.name} value={revealKey.key} onClose={() => setRevealKey(null)} />
       )}
     </div>
   );
@@ -563,28 +563,100 @@ function CreateAgentModal({
   );
 }
 
-function KeyRevealModal({ title, value, onClose }: { title: string; value: string; onClose: () => void }) {
-  const { copied, copy } = useCopy();
+/** A copy-paste integration brief: API key + base URL + how to drive Kanbai with full control. */
+function buildAgentBrief(name: string, key: string, origin: string) {
+  const base = `${origin || "https://your-kanbai.app"}/api/v1`;
+  return `# Kanbai integration — ${name}
+
+You are connected to Kanbai (a Kanban board system) as the agent "${name}".
+This key grants FULL control of this workspace: boards, tickets, the capture
+inbox, comments, and members. Authenticate every request with the key below.
+
+## Credentials (store securely — the key is shown only once)
+Base URL:   ${base}
+Auth:       Authorization: Bearer ${key}
+API key:    ${key}
+
+## Verify the connection
+curl ${base}/me -H "Authorization: Bearer ${key}"
+
+## What you can do
+- Boards:   GET ${base}/boards  ·  GET ${base}/boards/{id}  ·  POST ${base}/boards
+- Tickets:  POST ${base}/tickets  ·  PATCH ${base}/tickets/{id}  ·  POST ${base}/tickets/{id}/move
+- Comment:  POST ${base}/tickets/{id}/comments
+- Inbox:    GET ${base}/inbox  →  POST ${base}/inbox/{noteId}/sort   (turn captured notes into tickets)
+- Members:  GET ${base}/members  ·  POST ${base}/members
+
+## Create a ticket
+curl -X POST ${base}/tickets \\
+  -H "Authorization: Bearer ${key}" -H "content-type: application/json" \\
+  -d '{"boardId":"<id>","title":"Investigate flaky retries","columnName":"To Do","priority":"high","labelNames":["bug"]}'
+
+## Process the capture inbox
+Inbox notes carry the user's text plus hints: bucket (today/tomorrow/next_week/next_month/general),
+priority, and suggestedDueDate. When filing a note into a ticket:
+- Set the ticket's priority to the note's "priority".
+- Set dueDate from any date the NOTE TEXT mentions (e.g. "by Thursday", "before the 5th"); if it
+  mentions none, fall back to "suggestedDueDate" (it reflects the chosen bucket; it is null for General,
+  so leave the ticket with no due date then).
+  POST ${base}/inbox/{noteId}/sort {"boardId":"<id>","title":"...","priority":"...","dueDate":"<ISO or null>"}
+
+## Webhooks (recommended)
+Kanbai POSTs signed events to your webhook URL. Verify the signature header
+  X-Kanbai-Signature: sha256=<hex HMAC of "{timestamp}.{rawBody}" with your signing secret>
+and reject timestamps older than 5 minutes.
+
+Priorities: none | low | medium | high | urgent.
+Full protocol: docs/AGENT_PROTOCOL.md.`;
+}
+
+function KeyRevealModal({ name, value, onClose }: { name: string; value: string; onClose: () => void }) {
+  const keyCopy = useCopy();
+  const briefCopy = useCopy();
+  const [origin, setOrigin] = React.useState("");
+  React.useEffect(() => {
+    if (typeof window !== "undefined") setOrigin(window.location.origin);
+  }, []);
+  const brief = buildAgentBrief(name, value, origin);
+
   return (
-    <Modal open onClose={onClose} title={title} size="sm">
+    <Modal open onClose={onClose} title={`Connect ${name}`} size="lg">
       <div className="space-y-3">
         <div className="flex items-start gap-2 rounded-xl bg-warning-soft px-3 py-2 text-sm text-fg">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-          <span>Copy this now — it’s shown only once and can’t be retrieved later.</span>
+          <span>Copy this now — the key is shown only once and can’t be retrieved later.</span>
         </div>
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 p-2">
-          <code className="flex-1 break-all font-mono text-sm">{value}</code>
+
+        <div>
+          <div className="mb-1.5 text-xs font-medium text-fg-muted">API key</div>
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 p-2">
+            <code className="flex-1 break-all font-mono text-sm">{value}</code>
+            <Button variant="secondary" size="sm" onClick={() => keyCopy.copy(value)}>
+              {keyCopy.copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
-        <Button variant="primary" className="w-full" onClick={() => copy(value)}>
-          {copied ? (
-            <>
-              <Check className="h-4 w-4" /> Copied
-            </>
-          ) : (
-            <>
-              <Copy className="h-4 w-4" /> Copy key
-            </>
-          )}
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-xs font-medium text-fg-muted">
+              Agent brief — paste this to the agent to integrate (full control)
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => briefCopy.copy(brief)}>
+              {briefCopy.copied ? (
+                <><Check className="h-4 w-4" /> Copied</>
+              ) : (
+                <><Copy className="h-4 w-4" /> Copy brief</>
+              )}
+            </Button>
+          </div>
+          <pre className="max-h-72 overflow-auto rounded-xl border border-border bg-surface-2 p-3 text-xs leading-relaxed whitespace-pre-wrap break-words">
+{brief}
+          </pre>
+        </div>
+
+        <Button variant="primary" className="w-full" onClick={() => briefCopy.copy(brief)}>
+          <Copy className="h-4 w-4" /> Copy agent brief
         </Button>
       </div>
     </Modal>

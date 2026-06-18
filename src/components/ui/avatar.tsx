@@ -7,12 +7,15 @@ export function Avatar({
   color,
   isAgent = false,
   size = 24,
+  src,
   className,
 }: {
   name: string;
   color?: string;
   isAgent?: boolean;
   size?: number;
+  /** Optional image URL (e.g. a user's avatarUrl); falls back to initials if absent. */
+  src?: string | null;
   className?: string;
 }) {
   const bg = color ?? "#6d5dfb";
@@ -32,7 +35,14 @@ export function Avatar({
         fontSize: size * 0.42,
       }}
     >
-      {isAgent ? <Bot style={{ width: size * 0.58, height: size * 0.58 }} /> : initials(name)}
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={name} width={size} height={size} className="h-full w-full object-cover" />
+      ) : isAgent ? (
+        <Bot style={{ width: size * 0.58, height: size * 0.58 }} />
+      ) : (
+        initials(name)
+      )}
     </span>
   );
 }

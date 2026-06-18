@@ -188,8 +188,12 @@ function TicketTab({
     );
   }
 
-  const due = dueMeta(parsed.dueDate ?? null);
-  const pr = parsed.priority ? priorityMeta(parsed.priority) : null;
+  // Effective values: an inline @token wins, else fall back to the note's own
+  // priority dot and its bucket-derived due date (so "High" / "Tomorrow" carry through).
+  const effPriority = parsed.priority ?? (note.priority && note.priority !== "none" ? note.priority : undefined);
+  const effDue = parsed.dueDate ?? note.suggestedDueDate ?? null;
+  const due = dueMeta(effDue);
+  const pr = effPriority ? priorityMeta(effPriority) : null;
   const hasSmart = !!(pr || due || parsed.labels.length);
 
   async function create() {
@@ -202,8 +206,8 @@ function TicketTab({
           columnId,
           title: title.trim(),
           description: parsed.description || undefined,
-          priority: parsed.priority,
-          dueDate: parsed.dueDate ?? null,
+          priority: effPriority,
+          dueDate: effDue,
           labelNames: parsed.labels.length ? parsed.labels : undefined,
         },
       });

@@ -3,6 +3,7 @@ import { getCurrentContext } from "@/lib/auth";
 import { assertColumnAccess } from "@/lib/authz";
 import { parse, readJson } from "@/lib/parse";
 import { updateColumnSchema } from "@/lib/validation";
+import { markManualAction } from "@/lib/snapshots";
 import { db } from "@/lib/db";
 
 export const PATCH = handler(
@@ -10,6 +11,7 @@ export const PATCH = handler(
     const ctx = await getCurrentContext();
     const { columnId } = await params;
     await assertColumnAccess(ctx, columnId, true);
+    await markManualAction(ctx.workspace.id);
     const input = parse(updateColumnSchema, await readJson(req));
     const data: Record<string, unknown> = {};
     if (input.name !== undefined) data.name = input.name;
@@ -25,6 +27,7 @@ export const DELETE = handler(
     const ctx = await getCurrentContext();
     const { columnId } = await params;
     await assertColumnAccess(ctx, columnId, true);
+    await markManualAction(ctx.workspace.id);
 
     const count = await db.ticket.count({ where: { columnId } });
     if (count > 0) throw new HttpError(422, "Move or delete this column's cards first.", "column_not_empty");

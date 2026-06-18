@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
 import { HttpError } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
-import { shortId } from "@/lib/password";
-import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
+import { shortToken } from "@/lib/password";
+import { ticketInclude, serializeTicket, serializePublicTicket, type UserLite } from "@/lib/serialize";
+import { onMutation } from "@/lib/snapshots";
 import type { Actor } from "./tickets";
 
 async function uniqueBoardSlug(workspaceId: string, name: string) {
@@ -37,6 +38,7 @@ export async function createBoard(
   input: { name: string; description?: string; color?: string },
   actor: Actor,
 ) {
+  await onMutation(actor, workspaceId);
   let slug = slugify(input.name);
   // ensure unique within workspace
   const existing = await db.board.findMany({
@@ -95,6 +97,8 @@ export async function getBoardWithData(
     slug: board.slug,
     description: board.description,
     color: board.color,
+    icon: board.icon,
+    archived: board.archived,
     isPublic: board.isPublic,
     publicId: board.publicId,
     labels: board.labels.map((l) => ({ id: l.id, name: l.name, color: l.color })),
@@ -123,6 +127,7 @@ export async function createBoardWithStructure(
   },
   actor: Actor,
 ) {
+  await onMutation(actor, workspaceId);
   const slug = await uniqueBoardSlug(workspaceId, input.name);
   const count = await db.board.count({ where: { workspaceId } });
   const cols = input.columns?.length ? input.columns : DEFAULT_COLUMNS;
@@ -154,7 +159,8 @@ export async function setBoardPublic(boardId: string, isPublic: boolean) {
   const board = await db.board.findUnique({ where: { id: boardId }, select: { slug: true, publicId: true } });
   if (!board) throw new HttpError(404, "Board not found");
   const data: { isPublic: boolean; publicId?: string } = { isPublic };
-  if (isPublic && !board.publicId) data.publicId = `${board.slug}-${shortId(6)}`;
+  // Readable slug prefix + a high-entropy, mixed-case suffix so the URL can't be guessed.
+  if (isPublic && !board.publicId) data.publicId = `${board.slug}-${shortToken(16)}`;
   const updated = await db.board.update({
     where: { id: boardId },
     data,
@@ -196,7 +202,7 @@ export async function getPublicBoard(publicId: string) {
       id: c.id,
       name: c.name,
       isDone: c.isDone,
-      tickets: c.tickets.map((t) => serializeTicket(t, usersById)),
+      tickets: c.tickets.map((t) => serializePublicTicket(t, usersById)),
     })),
   };
 }

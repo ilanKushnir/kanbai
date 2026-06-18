@@ -2,8 +2,20 @@ import { MessageSquare, CalendarClock, NotebookPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { priorityMeta, dueMeta } from "@/lib/display";
-import type { SerializedTicket } from "@/lib/serialize";
 import { cn } from "@/lib/utils";
+
+/** The subset of ticket fields a card renders — satisfied by both the full and public serializers. */
+export type TicketCardData = {
+  number: number | null;
+  title: string;
+  description?: string;
+  priority: string;
+  dueDate: string | null;
+  labels: { id: string; name: string; color: string }[];
+  commentCount: number;
+  assignee: { type: "user" | "agent"; name: string; color?: string } | null;
+  sourceNoteId?: string | null;
+};
 
 export function TicketCard({
   ticket,
@@ -11,7 +23,7 @@ export function TicketCard({
   dragging,
   className,
 }: {
-  ticket: SerializedTicket;
+  ticket: TicketCardData;
   onClick?: () => void;
   dragging?: boolean;
   className?: string;

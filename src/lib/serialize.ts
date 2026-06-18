@@ -57,6 +57,34 @@ export function serializeTicket(t: TicketWithRelations, usersById?: Map<string, 
 
 export type SerializedTicket = ReturnType<typeof serializeTicket>;
 
+/**
+ * Minimal, safe ticket DTO for the PUBLIC (unauthenticated) board page. Strips
+ * everything an anonymous visitor shouldn't see — comment threads & author names,
+ * createdBy, and raw user/agent ids — keeping only what the read-only UI renders.
+ */
+export function serializePublicTicket(t: TicketWithRelations, usersById?: Map<string, UserLite>) {
+  let assignee: null | { type: "user" | "agent"; name: string; color?: string } = null;
+  if (t.assigneeType === "agent" && t.agent) {
+    assignee = { type: "agent", name: t.agent.name, color: t.agent.color };
+  } else if (t.assigneeType === "user" && t.assigneeUserId) {
+    assignee = { type: "user", name: usersById?.get(t.assigneeUserId)?.name ?? "Someone" };
+  }
+  return {
+    id: t.id,
+    number: t.number,
+    title: t.title,
+    description: t.description,
+    column: t.column?.name,
+    priority: t.priority,
+    dueDate: t.dueDate?.toISOString() ?? null,
+    assignee,
+    labels: t.labels.map((tl) => ({ id: tl.label.id, name: tl.label.name, color: tl.label.color })),
+    commentCount: t.comments.length,
+  };
+}
+
+export type SerializedPublicTicket = ReturnType<typeof serializePublicTicket>;
+
 export function serializeAgentPublic(a: {
   id: string;
   name: string;

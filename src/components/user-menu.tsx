@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, LogOut, Users, ShieldCheck, ChevronsUpDown, Building2 } from "lucide-react";
+import { Check, LogOut, Settings, CircleUser, ShieldCheck, ChevronsUpDown, Building2 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { api } from "@/lib/client-api";
@@ -14,7 +14,6 @@ export type WorkspaceOption = { id: string; name: string; role: string; active: 
 export function UserMenu({
   userName,
   userEmail,
-  isManager,
   isSystemAdmin,
   workspaces,
   placement = "up",
@@ -22,7 +21,7 @@ export function UserMenu({
 }: {
   userName: string;
   userEmail: string;
-  isManager: boolean;
+  isManager?: boolean; // accepted for compatibility (settings gating is server-side)
   isSystemAdmin: boolean;
   workspaces: WorkspaceOption[];
   placement?: "up" | "down";
@@ -128,15 +127,20 @@ export function UserMenu({
           )}
 
           <div className="my-1 h-px bg-border" />
-          {isManager && (
-            <Link
-              href="/settings/members"
-              onClick={() => setOpen(false)}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-surface-2"
-            >
-              <Users className="h-4 w-4 text-fg-subtle" /> Members &amp; invites
-            </Link>
-          )}
+          <Link
+            href="/settings/account"
+            onClick={() => setOpen(false)}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-surface-2"
+          >
+            <CircleUser className="h-4 w-4 text-fg-subtle" /> Account
+          </Link>
+          <Link
+            href="/settings"
+            onClick={() => setOpen(false)}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-surface-2"
+          >
+            <Settings className="h-4 w-4 text-fg-subtle" /> Settings
+          </Link>
           {isSystemAdmin && (
             <Link
               href="/admin"

@@ -58,7 +58,10 @@ export function CommandPalette({
       setQuery("");
       setResults(null);
       setActive(0);
-      setTimeout(() => inputRef.current?.focus(), 30);
+      // Auto-focus only on desktop — on mobile it pops the keyboard and the focus
+      // ring can spill past the viewport. Touch users tap the field when ready.
+      const isDesktop = typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+      if (isDesktop) setTimeout(() => inputRef.current?.focus(), 30);
     }
   }, [open]);
 
@@ -292,7 +295,7 @@ export function CommandPalette({
             <CornerDownLeft className="h-3 w-3" /> open
           </span>
           <span>↑↓ navigate</span>
-          <span className="ml-auto inline-flex items-center gap-1">
+          <span className="ml-auto hidden items-center gap-1 sm:inline-flex">
             <kbd className="rounded border border-border bg-surface-2 px-1 py-0.5">⌘K</kbd> anywhere
           </span>
         </div>

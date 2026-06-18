@@ -38,6 +38,7 @@ export const updateBoardSchema = z.object({
   description: z.string().trim().max(500).nullable().optional(),
   color: z.enum(BOARD_COLORS).optional(),
   isPublic: z.boolean().optional(),
+  archived: z.boolean().optional(),
 });
 
 // ── Migration (agent API) ──
@@ -197,6 +198,26 @@ export const updateAgentSchema = z.object({
   webhookActive: z.boolean().optional(),
   status: z.enum(["active", "disabled"]).optional(),
   scopes: z.array(z.enum(ALL_SCOPES)).optional(),
+});
+
+export const LANDING_PAGES = ["my-day", "notes", "boards"] as const;
+
+export const updateAccountSchema = z.object({
+  name: z.string().trim().min(1).max(60).optional(),
+  email: z.email().max(200).optional(),
+  avatarUrl: z.url().max(2000).nullable().optional().or(z.literal("")),
+  defaultLanding: z.enum(LANDING_PAGES).optional(),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: z.string().min(8).max(200),
+});
+
+export const updateWorkspaceSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  defaultAgentId: z.string().max(60).nullable().optional().or(z.literal("")),
+  snapshotLimit: z.number().int().min(1).max(200).optional(),
 });
 
 export function formatZodError(err: z.ZodError) {

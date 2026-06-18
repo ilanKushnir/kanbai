@@ -43,6 +43,8 @@ import {
   X,
   CalendarClock,
   CornerDownLeft,
+  AlignLeft,
+  AlignRight,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -119,6 +121,7 @@ function AutoGrow({
   placeholder,
   className,
   autoFocus,
+  dir,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -127,6 +130,7 @@ function AutoGrow({
   placeholder?: string;
   className?: string;
   autoFocus?: boolean;
+  dir?: "ltr" | "rtl" | "auto";
 }) {
   const ref = React.useRef<HTMLTextAreaElement>(null);
   const resize = React.useCallback(() => {
@@ -168,6 +172,7 @@ function AutoGrow({
         }
       }}
       rows={1}
+      dir={dir}
       placeholder={placeholder}
       className={cn("w-full resize-none bg-transparent outline-none placeholder:text-fg-subtle", className)}
     />
@@ -204,6 +209,22 @@ export function NotesView({
 
   const [draft, setDraft] = React.useState("");
   const [draftBucket, setDraftBucket] = React.useState<NoteBucket>("today");
+  const [composerDir, setComposerDir] = React.useState<"ltr" | "rtl">("ltr");
+  React.useEffect(() => {
+    const saved = typeof localStorage !== "undefined" ? localStorage.getItem("kanbai-compose-dir") : null;
+    if (saved === "rtl" || saved === "ltr") setComposerDir(saved);
+  }, []);
+  function toggleDir() {
+    setComposerDir((d) => {
+      const next = d === "ltr" ? "rtl" : "ltr";
+      try {
+        localStorage.setItem("kanbai-compose-dir", next);
+      } catch {
+        /* noop */
+      }
+      return next;
+    });
+  }
   const dictateBase = React.useRef("");
   const dictation = useDictation((text) => {
     setDraft((dictateBase.current ? dictateBase.current + " " : "") + text);
@@ -518,6 +539,7 @@ export function NotesView({
           onChange={setDraft}
           onSubmit={submitDraft}
           autoFocus={composeFocus}
+          dir={composerDir}
           placeholder="Jot something down…  Try - [ ] a checklist"
           className="px-1 text-[0.95rem] leading-relaxed min-h-6"
         />
@@ -538,6 +560,14 @@ export function NotesView({
                 {dictation.listening ? "Listening… tap to stop" : "Dictate"}
               </button>
             )}
+            <button
+              onClick={toggleDir}
+              title={composerDir === "rtl" ? "Right-to-left — tap for LTR" : "Left-to-right — tap for RTL"}
+              aria-label="Toggle text direction"
+              className="inline-flex shrink-0 items-center justify-center rounded-lg bg-surface-2 p-1.5 text-fg-muted transition-colors hover:text-fg cursor-pointer"
+            >
+              {composerDir === "rtl" ? <AlignRight className="h-3.5 w-3.5" /> : <AlignLeft className="h-3.5 w-3.5" />}
+            </button>
             <BucketChip value={draftBucket} onChange={setDraftBucket} />
           </div>
           {draft.trim() && (
@@ -901,8 +931,8 @@ function NoteRow({
         className={cn("mt-[0.45rem]", "group-hover:opacity-100", note.priority === "none" && "opacity-60")}
       />
 
-      {/* body */}
-      <div className="min-w-0 flex-1">
+      {/* body — dir="auto" so RTL (e.g. Hebrew/Arabic) lines display right-aligned */}
+      <div className="min-w-0 flex-1" dir="auto">
         {locked ? (
           <Markdown content={note.body} />
         ) : editing ? (
@@ -910,6 +940,7 @@ function NoteRow({
             value={body}
             onChange={setBody}
             autoFocus
+            dir="auto"
             onBlur={() => {
               setEditing(false);
               onSaveBody(body);

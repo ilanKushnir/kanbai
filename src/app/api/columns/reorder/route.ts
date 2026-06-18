@@ -3,12 +3,14 @@ import { getCurrentContext } from "@/lib/auth";
 import { assertBoardAccess } from "@/lib/authz";
 import { parse, readJson } from "@/lib/parse";
 import { reorderColumnsSchema } from "@/lib/validation";
+import { markManualAction } from "@/lib/snapshots";
 import { db } from "@/lib/db";
 
 export const POST = handler(async (req: Request) => {
   const ctx = await getCurrentContext();
   const { boardId, orderedIds } = parse(reorderColumnsSchema, await readJson(req));
   await assertBoardAccess(ctx, boardId, true);
+  await markManualAction(ctx.workspace.id);
 
   const cols = await db.column.findMany({ where: { boardId }, select: { id: true } });
   const valid = new Set(cols.map((c) => c.id));

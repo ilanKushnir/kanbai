@@ -488,7 +488,7 @@ function Toolbar({
           value={filters.q}
           onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
           placeholder="Filter cards…"
-          className="h-9 w-44 rounded-lg border border-border bg-surface pl-8 pr-3 text-sm outline-none transition-all focus:w-60 focus:border-primary focus:ring-2 focus:ring-primary/20"
+          className="h-9 w-36 rounded-lg border border-border bg-surface pl-8 pr-3 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 sm:w-44 sm:focus:w-60"
         />
       </div>
 

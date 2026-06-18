@@ -79,7 +79,7 @@ export function Modal({
             )}
           </div>
         )}
-        <div className="overflow-y-auto px-5 pb-5 grow">{children}</div>
+        <div className={cn("overflow-y-auto px-5 pb-5 grow", !(title || !hideClose) && "pt-5")}>{children}</div>
       </div>
     </div>,
     document.body,

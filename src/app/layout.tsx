@@ -12,7 +12,13 @@ export const metadata: Metadata = {
     "The bridge between fast human capture and serious agentic execution. Notes on the go, Kanban when it counts, AI agents that sort the rest.",
   applicationName: "Kanbai",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/favicon.svg", apple: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Kanbai" },
 };
 

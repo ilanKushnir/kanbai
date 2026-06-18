@@ -4,6 +4,7 @@ import { assertBoardInWorkspace } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { createTicketV1Schema } from "@/lib/validation";
 import { createTicket } from "@/lib/services/tickets";
+import { guardAgentSnapshot } from "@/lib/snapshots";
 import { LABEL_COLORS } from "@/lib/constants";
 import { db } from "@/lib/db";
 
@@ -18,6 +19,9 @@ export const POST = handler(async (req: Request) => {
   requireScope(agent, "tickets:write");
   const input = parse(createTicketV1Schema, await readJson(req));
   await assertBoardInWorkspace(input.boardId, agent.workspaceId);
+  // Snapshot before ANY write this session — including the label find-or-create
+  // below — so a restore can fully undo agent-created labels too.
+  await guardAgentSnapshot(agent.workspaceId, { id: agent.id, name: agent.name });
 
   // Resolve a column by name (migration) if no id given.
   let columnId = input.columnId;

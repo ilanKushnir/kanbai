@@ -9,10 +9,10 @@ import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { priorityMeta, dueMeta } from "@/lib/display";
 import type { PublicBoardData } from "@/lib/services/boards";
-import type { SerializedTicket } from "@/lib/serialize";
+import type { SerializedPublicTicket } from "@/lib/serialize";
 
 export function PublicBoardView({ board }: { board: PublicBoardData }) {
-  const [selected, setSelected] = React.useState<SerializedTicket | null>(null);
+  const [selected, setSelected] = React.useState<SerializedPublicTicket | null>(null);
 
   return (
     <>
@@ -46,12 +46,12 @@ export function PublicBoardView({ board }: { board: PublicBoardData }) {
   );
 }
 
-function ReadOnlyTicket({ ticket, onClose }: { ticket: SerializedTicket; onClose: () => void }) {
+function ReadOnlyTicket({ ticket, onClose }: { ticket: SerializedPublicTicket; onClose: () => void }) {
   const pr = priorityMeta(ticket.priority);
   const due = dueMeta(ticket.dueDate);
   return (
     <Modal open onClose={onClose} size="lg">
-      <div className="-mt-1 flex items-center gap-2 pb-2 text-xs text-fg-subtle">
+      <div className="flex items-center gap-2 pb-2 text-xs text-fg-subtle">
         {ticket.number != null && <span className="font-medium">#{ticket.number}</span>}
         <span>·</span>
         <span>{ticket.column}</span>

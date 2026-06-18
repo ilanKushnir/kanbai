@@ -26,6 +26,11 @@ export function shortId(len = 6): string {
   return randomBytes(16).toString("base64url").replace(/[-_]/g, "").slice(0, len).toLowerCase();
 }
 
+/** A high-entropy, mixed-case URL-safe token (for unguessable public-share suffixes). */
+export function shortToken(len = 16): string {
+  return randomBytes(24).toString("base64url").replace(/[-_]/g, "").slice(0, len);
+}
+
 /** SHA-256 hex — we store only the hash of session/invite tokens. */
 export function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");

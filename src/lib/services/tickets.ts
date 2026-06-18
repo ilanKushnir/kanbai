@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/activity";
 import { broadcast, dispatchWebhook } from "@/lib/webhooks";
 import { ticketInclude, serializeTicket } from "@/lib/serialize";
 import { HttpError } from "@/lib/api";
+import { onMutation } from "@/lib/snapshots";
 
 export type Actor = { type: "user" | "agent" | "system"; id?: string | null; name: string };
 
@@ -96,6 +97,7 @@ export async function createTicket(
   actor: Actor,
 ) {
   const board = await boardCtx(input.boardId);
+  await onMutation(actor, board.workspaceId);
 
   let columnId = input.columnId;
   if (columnId) {
@@ -194,6 +196,7 @@ export async function updateTicket(
 ) {
   const existing = await loadTicket(ticketId);
   const board = await boardCtx(existing.boardId);
+  await onMutation(actor, board.workspaceId);
 
   const assigneeChanged =
     input.assigneeType !== undefined &&
@@ -244,6 +247,7 @@ export async function moveTicket(
 ) {
   const ticket = await loadTicket(ticketId);
   const board = await boardCtx(ticket.boardId);
+  await onMutation(actor, board.workspaceId);
   const fromColumnId = ticket.columnId;
 
   const targetColumn = await db.column.findUnique({ where: { id: toColumnId } });
@@ -303,6 +307,7 @@ export async function moveTicket(
 export async function addComment(ticketId: string, body: string, actor: Actor) {
   const ticket = await loadTicket(ticketId);
   const board = await boardCtx(ticket.boardId);
+  await onMutation(actor, board.workspaceId);
 
   const comment = await db.comment.create({
     data: {
@@ -331,6 +336,7 @@ export async function addComment(ticketId: string, body: string, actor: Actor) {
 export async function deleteTicket(ticketId: string, actor: Actor) {
   const ticket = await loadTicket(ticketId);
   const board = await boardCtx(ticket.boardId);
+  await onMutation(actor, board.workspaceId);
   await db.ticket.delete({ where: { id: ticketId } });
   await logActivity({
     actor,

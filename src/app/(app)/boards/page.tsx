@@ -7,6 +7,7 @@ import { boardWhereForContext } from "@/lib/authz";
 import { tone } from "@/components/ui/badge";
 import { KanbaiMark } from "@/components/brand/Logo";
 import { NewBoardButton } from "@/components/board/new-board-modal";
+import { ArchivedBoards } from "@/components/board/archived-boards";
 
 export const metadata: Metadata = { title: "Boards" };
 export const dynamic = "force-dynamic";
@@ -26,6 +27,15 @@ export default async function BoardsPage({
       columns: { select: { isDone: true, _count: { select: { tickets: true } } } },
     },
   });
+
+  // Managers can see + restore archived boards.
+  const archivedBoards = ctx.isManager
+    ? await db.board.findMany({
+        where: { workspaceId: ctx.workspace.id, archived: true },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, name: true, slug: true, color: true },
+      })
+    : [];
 
   return (
     <div className="px-4 py-6 md:px-8 md:py-8 max-w-6xl mx-auto w-full">
@@ -76,7 +86,7 @@ export default async function BoardsPage({
               <p className="mt-1 text-xs text-fg-muted">Hermes &amp; friends, with signed webhooks.</p>
             </Link>
           </div>
-          <p className="border-t border-border px-6 py-3 text-center text-xs text-fg-subtle">
+          <p className="hidden border-t border-border px-6 py-3 text-center text-xs text-fg-subtle md:block">
             Tip: press <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">⌘K</kbd> anywhere to search or jump.
           </p>
         </div>
@@ -126,6 +136,8 @@ export default async function BoardsPage({
           })}
         </div>
       )}
+
+      {ctx.isManager && <ArchivedBoards boards={archivedBoards} />}
     </div>
   );
 }

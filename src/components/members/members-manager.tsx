@@ -9,6 +9,7 @@ import { Input, Label } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, tone } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
+import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { api } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +47,9 @@ export function MembersManager({
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6 md:py-8">
+      <h1 className="mb-1 text-2xl font-bold tracking-tight">Settings</h1>
+      <p className="mb-5 text-sm text-fg-muted">Manage who can access this workspace.</p>
+      <SettingsTabs isManager={true} />
       <header className="mb-5 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Members</h1>

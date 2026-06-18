@@ -26,12 +26,26 @@ export const POST = handler(
         if (!a || a.workspaceId !== workspace.id) throw new HttpError(404, "Agent not found");
         if (a.status === "active") agentId = requested;
       } else {
-        const fallback = await db.agent.findFirst({
-          where: { workspaceId: workspace.id, status: "active" },
-          orderBy: { createdAt: "asc" },
-          select: { id: true },
+        // Prefer the workspace's configured default agent, else the oldest active one.
+        const ws = await db.workspace.findUnique({
+          where: { id: workspace.id },
+          select: { defaultAgentId: true },
         });
-        agentId = fallback?.id ?? null;
+        if (ws?.defaultAgentId) {
+          const pref = await db.agent.findUnique({
+            where: { id: ws.defaultAgentId },
+            select: { id: true, status: true, workspaceId: true },
+          });
+          if (pref && pref.workspaceId === workspace.id && pref.status === "active") agentId = pref.id;
+        }
+        if (!agentId) {
+          const fallback = await db.agent.findFirst({
+            where: { workspaceId: workspace.id, status: "active" },
+            orderBy: { createdAt: "asc" },
+            select: { id: true },
+          });
+          agentId = fallback?.id ?? null;
+        }
       }
     }
 

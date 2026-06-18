@@ -6,6 +6,7 @@ import { assertBoardAccess } from "@/lib/authz";
 import { getBoardWithData } from "@/lib/services/boards";
 import { BoardViewClient } from "@/components/board/board-view-client";
 import { ShareButton } from "@/components/board/share-button";
+import { BoardSettings } from "@/components/board/board-settings";
 import { tone } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -67,8 +68,14 @@ export default async function BoardPage({
             </span>
           )}
           {ctx.isManager && (
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
               <ShareButton boardId={board.id} isPublic={board.isPublic} publicId={board.publicId} />
+              <BoardSettings
+                boardId={board.id}
+                name={board.name}
+                description={board.description}
+                color={board.color}
+              />
             </div>
           )}
         </div>

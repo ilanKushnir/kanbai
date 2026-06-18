@@ -20,6 +20,7 @@ model User {
   passwordHash String?
   systemRole   String   @default("user") // "user" | "admin" (instance-wide super admin)
   status       String   @default("active") // "active" | "disabled"
+  settings     String?  // JSON blob of personal preferences (defaultLanding, etc.)
   createdAt    DateTime @default(now())
 
   workspaces     WorkspaceMember[]
@@ -49,11 +50,39 @@ model Workspace {
   ownerId   String?
   createdAt DateTime @default(now())
 
+  // Settings
+  defaultAgentId String? // preferred agent for note ingestion
+  snapshotLimit  Int     @default(20) // how many board snapshots to retain
+
+  // Snapshot session state: true once a pre-agent snapshot has been taken for the
+  // current run of agentic changes; reset to false by the next manual user action.
+  agentSessionActive Boolean @default(false)
+
   owner   User? @relation("WorkspaceOwner", fields: [ownerId], references: [id])
   members WorkspaceMember[]
   boards  Board[]
   agents  Agent[]
   invites Invite[]
+  snapshots Snapshot[]
+}
+
+/// A point-in-time capture of all board state in a workspace, used to undo
+/// agentic changes. Captured lazily before the first action of an agent run.
+model Snapshot {
+  id          String   @id @default(cuid())
+  workspaceId String
+  kind        String   @default("auto") // "auto" (pre-agent) | "manual" | "pre_restore"
+  reason      String   @default("") // human label, e.g. "Before Hermes session"
+  agentId     String?
+  agentName   String?
+  payload     String   // JSON board-state capture (boards → columns/tickets/labels/comments)
+  boardCount  Int      @default(0)
+  ticketCount Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
 }
 
 /// Per-board access grant for a workspace member (owners/admins implicitly access all).
