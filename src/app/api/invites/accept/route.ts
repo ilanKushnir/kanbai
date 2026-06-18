@@ -14,6 +14,11 @@ export const POST = handler(async (req: Request) => {
   const invite = await findValidInvite(token);
   if (!invite) throw new HttpError(400, "This invite is invalid or has expired.", "bad_invite");
   if (invite.kind !== "workspace") throw new HttpError(400, "That invite can't be accepted from here.");
+  // An email-targeted invite may only be redeemed by that email (a forwarded
+  // link shouldn't let anyone else join the workspace).
+  if (invite.email && invite.email.toLowerCase() !== user.email.toLowerCase()) {
+    throw new HttpError(403, "This invite was issued for a different email address.", "invite_email_mismatch");
+  }
 
   const workspaceId = await applyWorkspaceInvite(invite, user.id);
   await setActiveWorkspace(workspaceId);

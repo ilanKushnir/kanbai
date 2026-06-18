@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
 import { dueMeta, priorityMeta } from "@/lib/display";
+import { PRIORITY_META, type Priority } from "@/lib/constants";
 import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -34,17 +35,26 @@ export default async function MyDayPage() {
     db.ticket.findMany({
       where: { board: boardScope, column: { isDone: false } },
       include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true } } },
-      orderBy: [{ dueDate: "asc" }, { priority: "desc" }],
+      orderBy: { dueDate: "asc" },
     }),
     db.note.count({ where: { userId: ctx.user.id, status: "inbox" } }),
   ]);
 
-  const rows: Row[] = tickets.map((t) => ({
-    ...serializeTicket(t, usersById),
-    boardSlug: t.board.slug,
-    boardName: t.board.name,
-    boardColor: t.board.color,
-  }));
+  // `priority` is a string column, so a DB sort orders it lexicographically
+  // (urgent > none > medium…). Rank it properly in JS as a tiebreak after due date.
+  const rank = (p: string) => PRIORITY_META[(p as Priority)]?.rank ?? 0;
+  const rows: Row[] = tickets
+    .map((t) => ({
+      ...serializeTicket(t, usersById),
+      boardSlug: t.board.slug,
+      boardName: t.board.name,
+      boardColor: t.board.color,
+    }))
+    .sort((a, b) => {
+      const da = a.dueDate ? +new Date(a.dueDate) : Infinity;
+      const dbb = b.dueDate ? +new Date(b.dueDate) : Infinity;
+      return da - dbb || rank(b.priority) - rank(a.priority);
+    });
 
   const now = new Date();
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();

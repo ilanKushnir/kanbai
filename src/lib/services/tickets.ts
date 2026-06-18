@@ -6,6 +6,16 @@ import { HttpError } from "@/lib/api";
 
 export type Actor = { type: "user" | "agent" | "system"; id?: string | null; name: string };
 
+/** True for a Prisma unique-constraint violation on the (boardId, number) index. */
+function isUniqueNumberError(e: unknown): boolean {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    (e as { code?: string }).code === "P2002" &&
+    JSON.stringify((e as { meta?: unknown }).meta ?? "").includes("number")
+  );
+}
+
 async function loadTicket(id: string) {
   const t = await db.ticket.findUnique({ include: ticketInclude, where: { id } });
   if (!t) throw new HttpError(404, "Ticket not found");
@@ -19,6 +29,53 @@ async function boardCtx(boardId: string) {
   });
   if (!board) throw new HttpError(404, "Board not found");
   return board;
+}
+
+type BoardCtx = { id: string; workspaceId: string };
+
+/** A column referenced on a ticket must live on the same board. */
+async function assertColumnOnBoard(columnId: string, board: BoardCtx) {
+  const col = await db.column.findUnique({ where: { id: columnId }, select: { boardId: true } });
+  if (!col || col.boardId !== board.id) throw new HttpError(422, "Column is not on this board");
+}
+
+/** Drop any label ids that don't belong to this board (prevents cross-board/tenant labels). */
+async function boardLabelIds(labelIds: string[], board: BoardCtx): Promise<string[]> {
+  if (!labelIds.length) return [];
+  const rows = await db.label.findMany({
+    where: { id: { in: labelIds }, boardId: board.id },
+    select: { id: true },
+  });
+  return rows.map((l) => l.id);
+}
+
+/**
+ * Validate an assignee against the board's workspace and return the normalized
+ * (type, userId, agentId) triple. Throws if the referenced user/agent is foreign.
+ */
+async function resolveAssignee(
+  board: BoardCtx,
+  type: "user" | "agent" | null | undefined,
+  userId: string | null | undefined,
+  agentId: string | null | undefined,
+): Promise<{ assigneeType: "user" | "agent" | null; assigneeUserId: string | null; assigneeAgentId: string | null }> {
+  if (type === "user" && userId) {
+    const member = await db.workspaceMember.findFirst({
+      where: { workspaceId: board.workspaceId, userId },
+      select: { id: true },
+    });
+    if (!member) throw new HttpError(422, "Assignee is not a member of this workspace");
+    return { assigneeType: "user", assigneeUserId: userId, assigneeAgentId: null };
+  }
+  if (type === "agent" && agentId) {
+    const agent = await db.agent.findUnique({ where: { id: agentId }, select: { workspaceId: true } });
+    if (!agent || agent.workspaceId !== board.workspaceId) {
+      throw new HttpError(422, "Assignee agent is not in this workspace");
+    }
+    return { assigneeType: "agent", assigneeUserId: null, assigneeAgentId: agentId };
+  }
+  // null / unassigned (or a type with no id)
+  return { assigneeType: type ?? null, assigneeUserId: null, assigneeAgentId: null };
 }
 
 export async function createTicket(
@@ -41,7 +98,9 @@ export async function createTicket(
   const board = await boardCtx(input.boardId);
 
   let columnId = input.columnId;
-  if (!columnId) {
+  if (columnId) {
+    await assertColumnOnBoard(columnId, board);
+  } else {
     const first = await db.column.findFirst({
       where: { boardId: board.id },
       orderBy: { position: "asc" },
@@ -50,42 +109,57 @@ export async function createTicket(
     columnId = first.id;
   }
 
+  const labelIds = await boardLabelIds(input.labelIds ?? [], board);
+  const assignee = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId);
+
   const last = await db.ticket.findFirst({
     where: { columnId },
     orderBy: { position: "desc" },
     select: { position: true },
   });
 
-  // Per-board sequential reference number (#12).
-  let number = input.number;
-  if (number == null) {
-    const max = await db.ticket.aggregate({ where: { boardId: board.id }, _max: { number: true } });
-    number = (max._max.number ?? 0) + 1;
-  }
+  const baseData = {
+    boardId: board.id,
+    columnId,
+    title: input.title,
+    description: input.description ?? "",
+    priority: input.priority ?? "medium",
+    dueDate: input.dueDate ? new Date(input.dueDate) : null,
+    ...(input.createdAt ? { createdAt: new Date(input.createdAt) } : {}),
+    position: (last?.position ?? -1) + 1,
+    assigneeType: assignee.assigneeType,
+    assigneeUserId: assignee.assigneeUserId,
+    assigneeAgentId: assignee.assigneeAgentId,
+    createdByType: actor.type === "agent" ? "agent" : "user",
+    // createdById has a FK to User, so only set it for human actors.
+    createdById: actor.type === "user" ? actor.id ?? null : null,
+    labels: labelIds.length ? { create: labelIds.map((labelId) => ({ labelId })) } : undefined,
+  };
 
-  const ticket = await db.ticket.create({
-    include: ticketInclude,
-    data: {
-      boardId: board.id,
-      columnId,
-      number,
-      title: input.title,
-      description: input.description ?? "",
-      priority: input.priority ?? "medium",
-      dueDate: input.dueDate ? new Date(input.dueDate) : null,
-      ...(input.createdAt ? { createdAt: new Date(input.createdAt) } : {}),
-      position: (last?.position ?? -1) + 1,
-      assigneeType: input.assigneeType ?? null,
-      assigneeUserId: input.assigneeType === "user" ? input.assigneeUserId ?? null : null,
-      assigneeAgentId: input.assigneeType === "agent" ? input.assigneeAgentId ?? null : null,
-      createdByType: actor.type === "agent" ? "agent" : "user",
-      // createdById has a FK to User, so only set it for human actors.
-      createdById: actor.type === "user" ? actor.id ?? null : null,
-      labels: input.labelIds?.length
-        ? { create: input.labelIds.map((labelId) => ({ labelId })) }
-        : undefined,
-    },
-  });
+  // Per-board sequential reference number (#12). The (boardId, number) unique
+  // index guards against duplicates; retry the auto path on a race. An explicit
+  // number (migration) that collides surfaces as a clear 409.
+  const ticket = await (async () => {
+    if (input.number != null) {
+      try {
+        return await db.ticket.create({ include: ticketInclude, data: { ...baseData, number: input.number } });
+      } catch (e) {
+        if (isUniqueNumberError(e)) throw new HttpError(409, `Ticket #${input.number} already exists on this board`);
+        throw e;
+      }
+    }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const max = await db.ticket.aggregate({ where: { boardId: board.id }, _max: { number: true } });
+      const number = (max._max.number ?? 0) + 1;
+      try {
+        return await db.ticket.create({ include: ticketInclude, data: { ...baseData, number } });
+      } catch (e) {
+        if (isUniqueNumberError(e)) continue; // raced another create; recompute
+        throw e;
+      }
+    }
+    throw new HttpError(409, "Could not allocate a ticket number; please retry");
+  })();
 
   const serialized = serializeTicket(ticket);
   await logActivity({
@@ -131,20 +205,23 @@ export async function updateTicket(
   if (input.description !== undefined) data.description = input.description;
   if (input.priority !== undefined) data.priority = input.priority;
   if (input.dueDate !== undefined) data.dueDate = input.dueDate ? new Date(input.dueDate) : null;
-  if (input.columnId !== undefined) data.columnId = input.columnId;
+  if (input.columnId !== undefined) {
+    await assertColumnOnBoard(input.columnId, board); // can't move to a foreign board's column
+    data.columnId = input.columnId;
+  }
   if (input.position !== undefined) data.position = input.position;
   if (input.assigneeType !== undefined) {
-    data.assigneeType = input.assigneeType;
-    data.assigneeUserId = input.assigneeType === "user" ? input.assigneeUserId ?? null : null;
-    data.assigneeAgentId = input.assigneeType === "agent" ? input.assigneeAgentId ?? null : null;
+    const a = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId);
+    data.assigneeType = a.assigneeType;
+    data.assigneeUserId = a.assigneeUserId;
+    data.assigneeAgentId = a.assigneeAgentId;
   }
 
   if (input.labelIds) {
+    const labelIds = await boardLabelIds(input.labelIds, board); // only this board's labels
     await db.ticketLabel.deleteMany({ where: { ticketId } });
-    if (input.labelIds.length) {
-      await db.ticketLabel.createMany({
-        data: input.labelIds.map((labelId) => ({ ticketId, labelId })),
-      });
+    if (labelIds.length) {
+      await db.ticketLabel.createMany({ data: labelIds.map((labelId) => ({ ticketId, labelId })) });
     }
   }
 

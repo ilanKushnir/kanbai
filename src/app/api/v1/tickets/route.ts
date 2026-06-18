@@ -1,4 +1,4 @@
-import { handler, created } from "@/lib/api";
+import { handler, created, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
 import { assertBoardInWorkspace } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
@@ -24,6 +24,9 @@ export const POST = handler(async (req: Request) => {
   if (!columnId && input.columnName) {
     const cols = await db.column.findMany({ where: { boardId: input.boardId } });
     columnId = cols.find((c) => c.name.toLowerCase() === input.columnName!.toLowerCase())?.id;
+    if (!columnId) {
+      throw new HttpError(422, `No column named "${input.columnName}" on this board`);
+    }
   }
 
   // Labels: explicit ids + find-or-create by name.

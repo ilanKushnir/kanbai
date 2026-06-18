@@ -40,6 +40,7 @@ export function Menu({
       <div onClick={() => setOpen((o) => !o)}>{trigger}</div>
       {open && (
         <div
+          role="menu"
           className={cn(
             "absolute z-40 mt-1.5 min-w-[11rem] rounded-xl border border-border bg-surface p-1 shadow-lg animate-slide-down-fade",
             align === "end" ? "right-0" : "left-0",

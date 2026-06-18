@@ -176,7 +176,8 @@ export async function getPublicBoard(publicId: string) {
       },
     },
   });
-  if (!board || !board.isPublic) return null;
+  // Archiving a board retires it everywhere — including its public URL.
+  if (!board || !board.isPublic || board.archived) return null;
 
   const members = await db.workspaceMember.findMany({
     where: { workspaceId: board.workspaceId },

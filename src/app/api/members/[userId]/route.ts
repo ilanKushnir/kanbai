@@ -32,11 +32,14 @@ export const PATCH = handler(
     if (input.boardAccess) {
       const boards = await db.board.findMany({ where: { workspaceId: ctx.workspace.id }, select: { id: true } });
       const valid = new Set(boards.map((b) => b.id));
-      await db.boardAccess.deleteMany({ where: { userId, board: { workspaceId: ctx.workspace.id } } });
-      for (const a of input.boardAccess) {
-        if (!valid.has(a.boardId)) continue;
-        await db.boardAccess.create({ data: { userId, boardId: a.boardId, level: a.level } });
-      }
+      const grants = input.boardAccess.filter((a) => valid.has(a.boardId));
+      // Reset atomically so a mid-way failure can't strip the member's access.
+      await db.$transaction([
+        db.boardAccess.deleteMany({ where: { userId, board: { workspaceId: ctx.workspace.id } } }),
+        ...grants.map((a) =>
+          db.boardAccess.create({ data: { userId, boardId: a.boardId, level: a.level } }),
+        ),
+      ]);
     }
     return ok({ ok: true });
   },

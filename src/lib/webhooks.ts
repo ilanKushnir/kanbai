@@ -15,7 +15,22 @@ export async function dispatchWebhook(agentId: string, event: WebhookEvent, data
   const agent = await db.agent.findUnique({ where: { id: agentId } });
   if (!agent || !agent.webhookUrl || !agent.webhookActive || agent.status !== "active") return;
 
+  // Never sign with an empty key — an HMAC keyed with "" authenticates nothing
+  // and would be trivially forgeable. Refuse to deliver until a secret is set.
   const secret = agent.webhookSecret ?? "";
+  if (!secret) {
+    await db.webhookDelivery.create({
+      data: {
+        agentId: agent.id,
+        event,
+        payload: "",
+        signature: "",
+        status: "failed",
+        error: "No signing secret set — refusing to send an unsigned webhook. Set a signing secret in Agents.",
+      },
+    });
+    return;
+  }
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const body = JSON.stringify({
     id: randomId("evt"),

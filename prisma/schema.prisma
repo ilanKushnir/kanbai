@@ -170,6 +170,7 @@ model Ticket {
   comments Comment[]
   sourceNote Note?      @relation("NoteToTicket", fields: [sourceNoteId], references: [id])
 
+  @@unique([boardId, number])
   @@index([boardId])
   @@index([columnId])
 }

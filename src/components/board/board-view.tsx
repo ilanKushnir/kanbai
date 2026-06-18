@@ -340,7 +340,7 @@ export function BoardView({
       if (selectedId) return;
       const ae = document.activeElement as HTMLElement | null;
       if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) return;
-      if (document.querySelector("[role=dialog]")) return;
+      if (document.querySelector("[role=dialog], [role=menu]")) return;
       if (!["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Enter"].includes(e.key)) return;
       const all = gridRef.current;
       if (!all.some((c) => c.ids.length)) return;

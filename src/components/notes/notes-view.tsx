@@ -72,7 +72,7 @@ function buildContainers(notes: NoteT[]): Record<NoteBucket, string[]> {
 }
 
 const QUEUE_KEY = "kanbai-note-queue";
-type QueueItem = { tempId: string; body: string; bucket: NoteBucket };
+type QueueItem = { tempId: string; body: string; bucket: NoteBucket; priority?: string };
 function readQueue(): QueueItem[] {
   try {
     return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
@@ -244,7 +244,7 @@ export function NotesView({
       replaceTemp(optimistic.id, note);
       router.refresh();
     } catch {
-      writeQueue([...readQueue(), { tempId: optimistic.id, body: text, bucket }]);
+      writeQueue([...readQueue(), { tempId: optimistic.id, body: text, bucket, priority }]);
       toast({ title: "Saved offline", description: "It'll sync when you're back online.", variant: "info" });
     }
   }
@@ -256,11 +256,13 @@ export function NotesView({
       next[note.id] = note;
       return next;
     });
-    const b = bucketOf(note);
-    setCont({
-      ...containersRef.current,
-      [b]: containersRef.current[b].map((id) => (id === tempId ? note.id : id)),
-    });
+    // Swap the temp id in whichever bucket currently holds it — the user may
+    // have dragged the pending note to a different bucket than it was created in.
+    const next = { ...containersRef.current };
+    for (const b of NOTE_BUCKETS) {
+      if (next[b].includes(tempId)) next[b] = next[b].map((id) => (id === tempId ? note.id : id));
+    }
+    setCont(next);
   }
 
   function submitDraft() {
@@ -271,20 +273,26 @@ export function NotesView({
   }
 
   // ── offline replay ───────────────────────────────────────────────────────────
+  const flushingRef = React.useRef(false);
   const flush = React.useCallback(() => {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-    if (readQueue().length === 0) return;
+    if (flushingRef.current || readQueue().length === 0) return; // single-flight: no concurrent replays
+    flushingRef.current = true;
     (async () => {
-      for (const item of readQueue()) {
-        try {
-          const { note } = await api<{ note: NoteT }>("/api/notes", {
-            body: { body: item.body, bucket: item.bucket },
-          });
-          replaceTemp(item.tempId, note);
-          writeQueue(readQueue().filter((x) => x.tempId !== item.tempId));
-        } catch {
-          break;
+      try {
+        for (const item of readQueue()) {
+          try {
+            const { note } = await api<{ note: NoteT }>("/api/notes", {
+              body: { body: item.body, bucket: item.bucket, priority: item.priority },
+            });
+            replaceTemp(item.tempId, note);
+            writeQueue(readQueue().filter((x) => x.tempId !== item.tempId));
+          } catch {
+            break; // stay queued; retry next reconnect
+          }
         }
+      } finally {
+        flushingRef.current = false;
       }
       router.refresh();
     })();
@@ -578,6 +586,7 @@ export function NotesView({
                 ids={ids}
                 notesById={notesById}
                 focusId={focusId}
+                dragDisabled={!!q}
                 onToggle={() => toggleBucket(b)}
                 onAdd={(text) => addNote(text, b)}
                 onSaveBody={saveBody}
@@ -700,6 +709,7 @@ function BucketSection({
   ids,
   notesById,
   focusId,
+  dragDisabled,
   onToggle,
   onAdd,
   onSaveBody,
@@ -717,6 +727,7 @@ function BucketSection({
   ids: string[];
   notesById: Record<string, NoteT>;
   focusId: string | null;
+  dragDisabled?: boolean;
   onToggle: () => void;
   onAdd: (text: string) => void;
   onSaveBody: (id: string, body: string) => void;
@@ -763,6 +774,7 @@ function BucketSection({
                     key={id}
                     note={n}
                     highlight={focusId === id}
+                    dragDisabled={dragDisabled}
                     onSaveBody={(body) => onSaveBody(id, body)}
                     onToggleCheckbox={(i) => onToggleCheckbox(n, i)}
                     onSetPriority={(p) => onSetPriority(id, p)}
@@ -814,6 +826,7 @@ function BucketSection({
 function NoteRow({
   note,
   highlight,
+  dragDisabled,
   onSaveBody,
   onToggleCheckbox,
   onSetPriority,
@@ -825,6 +838,7 @@ function NoteRow({
 }: {
   note: NoteT;
   highlight?: boolean;
+  dragDisabled?: boolean;
   onSaveBody: (body: string) => void;
   onToggleCheckbox: (index: number) => void;
   onSetPriority: (p: string) => void;
@@ -834,7 +848,10 @@ function NoteRow({
   onIngest: (ingest: boolean) => void;
   onFile: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: note.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: note.id,
+    disabled: dragDisabled,
+  });
   const style = { transform: CSS.Translate.toString(transform), transition };
   const queued = note.status === "queued";
   const locked = queued || !!note.pending;
@@ -862,12 +879,16 @@ function NoteRow({
     >
       <div ref={rowRef} className="absolute -top-px left-0 h-0 w-0" />
 
-      {/* drag handle — visible on touch, hover-revealed on desktop */}
+      {/* drag handle — visible on touch, hover-revealed on desktop; hidden while searching */}
       <button
         {...attributes}
         {...listeners}
         aria-label="Drag to reorder"
-        className="mt-0.5 shrink-0 cursor-grab touch-none text-fg-subtle opacity-40 transition-opacity hover:text-fg-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100"
+        disabled={dragDisabled}
+        className={cn(
+          "mt-0.5 shrink-0 cursor-grab touch-none text-fg-subtle opacity-40 transition-opacity hover:text-fg-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100",
+          dragDisabled && "pointer-events-none !opacity-0",
+        )}
       >
         <GripVertical className="h-4 w-4" />
       </button>
