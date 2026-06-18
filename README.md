@@ -214,3 +214,7 @@ board updates (SSE) · object storage for attachments · Postgres deploy guide.
 ## License
 
 MIT — see [LICENSE](./LICENSE).
+
+---
+
+<div align="center"><sub>powered by KWS</sub></div>

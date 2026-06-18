@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/toast";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SettingsTabs } from "./settings-tabs";
 import { api } from "@/lib/client-api";
+import { APP_VERSION, POWERED_BY } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 const LANDING_OPTIONS = [
@@ -90,6 +91,10 @@ export function SettingsView({ isManager, isOwner, defaultLanding, workspaceId, 
           agents={agents}
         />
       )}
+
+      <footer className="mt-8 border-t border-border pt-4 text-center text-xs text-fg-subtle">
+        Kanbai v{APP_VERSION} · powered by {POWERED_BY}
+      </footer>
     </div>
   );
 }

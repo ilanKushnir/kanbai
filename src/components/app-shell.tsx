@@ -8,6 +8,7 @@ import { Logo } from "@/components/brand/Logo";
 import { CommandPalette } from "@/components/command-palette";
 import { UserMenu, type WorkspaceOption } from "@/components/user-menu";
 import { tone } from "@/components/ui/badge";
+import { POWERED_BY } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 export type NavBoard = { id: string; name: string; slug: string; color: string };
@@ -144,6 +145,7 @@ export function AppShell({
 
         <div className="mt-auto border-t border-border p-2.5">
           <UserMenu placement="up" {...userMenuProps} />
+          <div className="mt-1.5 text-center text-[0.625rem] text-fg-subtle">powered by {POWERED_BY}</div>
         </div>
       </aside>
 

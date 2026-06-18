@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Logo } from "@/components/brand/Logo";
+import { POWERED_BY } from "@/lib/version";
 
 export function AuthShell({
   title,
@@ -29,6 +30,7 @@ export function AuthShell({
           <div className="mt-5">{children}</div>
         </div>
         {footer && <div className="mt-4 text-center text-sm text-fg-muted">{footer}</div>}
+        <div className="mt-6 text-center text-xs text-fg-subtle">powered by {POWERED_BY}</div>
       </div>
     </div>
   );

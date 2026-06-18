@@ -5,6 +5,7 @@ import { getPublicBoard } from "@/lib/services/boards";
 import { Logo } from "@/components/brand/Logo";
 import { PublicBoardView } from "@/components/board/public-board-view";
 import { tone } from "@/components/ui/badge";
+import { POWERED_BY } from "@/lib/version";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function PublicBoardPage({ params }: { params: Promise<{ pu
         <Link href="/" className="font-medium text-fg-muted hover:text-fg">
           Kanbai
         </Link>{" "}
-        · {board.workspaceName}
+        · {board.workspaceName} · powered by {POWERED_BY}
       </footer>
     </div>
   );
