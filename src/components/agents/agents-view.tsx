@@ -612,6 +612,8 @@ API key:    ${key}
 
 ## Verify the connection
 curl ${base}/me -H "Authorization: Bearer ${key}"
+(returns your scopes + a "conventions" block describing the description format, allowed
+HTML tags, priorities, and note buckets — read it so you file tickets correctly.)
 
 ## What you can do
 - Boards:   GET ${base}/boards  ·  GET ${base}/boards/{id}  ·  POST ${base}/boards
@@ -623,7 +625,7 @@ curl ${base}/me -H "Authorization: Bearer ${key}"
 ## Create a ticket
 curl -X POST ${base}/tickets \\
   -H "Authorization: Bearer ${key}" -H "content-type: application/json" \\
-  -d '{"boardId":"<id>","title":"Investigate flaky retries","columnName":"To Do","priority":"high","labelNames":["bug"]}'
+  -d '{"boardId":"<id>","title":"Investigate flaky retries","columnName":"To Do","priority":"high","labelNames":["bug"],"description":"<p>Intermittent 500s on retry.</p><ul><li>Check backoff</li><li>Add a test</li></ul>"}'
 
 ## Process the capture inbox
 Inbox notes carry the user's text plus hints: bucket (today/tomorrow/next_week/next_month/general),
@@ -639,6 +641,8 @@ Kanbai POSTs signed events to your webhook URL. Verify the signature header
   X-Kanbai-Signature: sha256=<hex HMAC of "{timestamp}.{rawBody}" with your signing secret>
 and reject timestamps older than 5 minutes.
 
+Ticket descriptions are SIMPLE HTML — use <p> <b> <i> <u> <h3> <ul>/<ol>/<li> <blockquote> <a>.
+It is sanitized server-side (anything else is stripped); plain text is fine too. Not Markdown.
 Priorities: none | low | medium | high | urgent.
 Full protocol: docs/AGENT_PROTOCOL.md.`;
 }

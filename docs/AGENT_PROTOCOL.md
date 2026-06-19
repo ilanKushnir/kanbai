@@ -34,8 +34,20 @@ Authorization: Bearer kbai_live_xxxxxxxxxxxxxxxxxxxxxxxx
 ```bash
 curl https://your-kanbai.app/api/v1/me \
   -H "Authorization: Bearer $KANBAI_KEY"
-# → { "agent": {...}, "workspaceId": "...", "scopes": [...] }
+# → {
+#   "agent": {...}, "workspaceId": "...", "scopes": [...],
+#   "conventions": {
+#     "descriptionFormat": "html",
+#     "descriptionAllowedTags": ["p","b","i","u","h3","ul","ol","li","blockquote","a", ...],
+#     "priorities": ["none","low","medium","high","urgent"],
+#     "noteBuckets": ["today","tomorrow","next_week","next_month","general"]
+#   }
+# }
 ```
+
+`conventions` is self-describing: read it on connect so you format ticket
+descriptions (simple **HTML**, sanitized server-side) and set priorities correctly
+without hardcoding.
 
 ---
 

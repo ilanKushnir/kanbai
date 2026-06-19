@@ -1,8 +1,13 @@
 import sanitizeHtml from "sanitize-html";
 
+/** The HTML tags allowed in ticket descriptions (also advertised to agents via /api/v1/me). */
+export const RICH_TEXT_TAGS = [
+  "p", "br", "b", "strong", "i", "em", "u", "s", "ul", "ol", "li", "h3", "h4", "blockquote", "a", "span", "div",
+] as const;
+
 // Allowlist for ticket descriptions: just the formatting the editor can produce.
 const OPTS: sanitizeHtml.IOptions = {
-  allowedTags: ["p", "br", "b", "strong", "i", "em", "u", "s", "ul", "ol", "li", "h3", "h4", "blockquote", "a", "span", "div"],
+  allowedTags: [...RICH_TEXT_TAGS],
   allowedAttributes: { a: ["href", "target", "rel"], "*": ["style"] },
   // style is permitted but filtered down to text-align only — no urls/expressions.
   allowedStyles: { "*": { "text-align": [/^(left|right|center|justify)$/] } },
