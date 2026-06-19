@@ -51,7 +51,10 @@ import type { BoardData } from "@/lib/services/boards";
 import type { SerializedTicket } from "@/lib/serialize";
 
 type AgentLite = { id: string; name: string; color: string; kind: string };
-type ColumnMeta = { id: string; name: string; isDone: boolean; wipLimit: number | null };
+type ColumnMeta = { id: string; name: string; isDone: boolean; wipLimit: number | null; subStates: string[] };
+
+/** Collapse a column's older cards behind a "show older" toggle past this count. */
+const COLUMN_VISIBLE_LIMIT = 12;
 
 type Filters = {
   q: string;
@@ -104,8 +107,10 @@ export function BoardView({
   }, []);
 
   const [cols, setCols] = React.useState<ColumnMeta[]>(() =>
-    board.columns.map((c) => ({ id: c.id, name: c.name, isDone: c.isDone, wipLimit: c.wipLimit })),
+    board.columns.map((c) => ({ id: c.id, name: c.name, isDone: c.isDone, wipLimit: c.wipLimit, subStates: c.subStates ?? [] })),
   );
+  // The card whose sub-state chooser is open (set on drop into a sub-stated column).
+  const [chooserId, setChooserId] = React.useState<string | null>(null);
   const [ticketsById, setTicketsById] = React.useState<Record<string, SerializedTicket>>(() => {
     const m: Record<string, SerializedTicket> = {};
     board.columns.forEach((c) => c.tickets.forEach((t) => (m[t.id] = t)));
@@ -220,17 +225,55 @@ export function BoardView({
       setCelebrateId(activeId);
       setTimeout(() => setCelebrateId((id) => (id === activeId ? null : id)), 1100);
     }
-    void persistMove(activeId, finalContainer, finalIndex);
+
+    // Resolve the sub-state for the destination column (Jira-like): keep a valid
+    // choice, else default to the first; surface the chooser so it can be changed.
+    let subState: string | null | undefined;
+    if (col?.subStates.length) {
+      const cur = ticketsById[activeId]?.subState;
+      subState = cur && col.subStates.includes(cur) ? cur : col.subStates[0];
+      setTicketsById((m) => ({ ...m, [activeId]: { ...m[activeId], subState: subState! } }));
+      setChooserId(activeId);
+    } else if (ticketsById[activeId]?.subState) {
+      subState = null; // moved to a column without sub-states → clear it
+      setTicketsById((m) => ({ ...m, [activeId]: { ...m[activeId], subState: null } }));
+    }
+
+    void persistMove(activeId, finalContainer, finalIndex, subState);
   }
 
-  async function persistMove(ticketId: string, columnId: string, position: number) {
+  async function persistMove(ticketId: string, columnId: string, position: number, subState?: string | null) {
     try {
       const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}/move`, {
-        body: { columnId, position },
+        body: { columnId, position, ...(subState !== undefined ? { subState } : {}) },
       });
       setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
     } catch {
       toast({ title: "Couldn't move card", variant: "error" });
+      router.refresh();
+    }
+  }
+
+  async function setSubState(ticketId: string, sub: string) {
+    setTicketsById((m) => ({ ...m, [ticketId]: { ...m[ticketId], subState: sub } }));
+    setChooserId((c) => (c === ticketId ? null : c));
+    try {
+      const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}`, {
+        method: "PATCH",
+        body: { subState: sub },
+      });
+      setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
+    } catch {
+      toast({ title: "Couldn't set state", variant: "error" });
+      router.refresh();
+    }
+  }
+
+  async function setColumnSubStates(columnId: string, subStates: string[]) {
+    setCols((cs) => cs.map((c) => (c.id === columnId ? { ...c, subStates } : c)));
+    try {
+      await api(`/api/columns/${columnId}`, { method: "PATCH", body: { subStates } });
+    } catch {
       router.refresh();
     }
   }
@@ -419,11 +462,15 @@ export function BoardView({
               ticketsById={ticketsById}
               celebrateId={celebrateId}
               focusedId={focusedId}
+              chooserId={chooserId}
               onCardClick={(id) => setSelectedId(id)}
               onCreate={(title) => handleCreate(col.id, title)}
               onRename={(name) => renameColumn(col.id, name)}
               onSetWip={(n) => setWip(col.id, n)}
               onToggleDone={(d) => toggleDone(col.id, d)}
+              onSetSubStates={(s) => setColumnSubStates(col.id, s)}
+              onSetCardSubState={setSubState}
+              onToggleChooser={(id) => setChooserId((c) => (c === id ? null : id))}
               onMove={(dir) => moveColumn(col.id, dir)}
               onDelete={() => deleteColumn(col.id)}
             />
@@ -599,11 +646,15 @@ function Column({
   ticketsById,
   celebrateId,
   focusedId,
+  chooserId,
   onCardClick,
   onCreate,
   onRename,
   onSetWip,
   onToggleDone,
+  onSetSubStates,
+  onSetCardSubState,
+  onToggleChooser,
   onMove,
   onDelete,
 }: {
@@ -616,11 +667,15 @@ function Column({
   ticketsById: Record<string, SerializedTicket>;
   celebrateId: string | null;
   focusedId: string | null;
+  chooserId: string | null;
   onCardClick: (id: string) => void;
   onCreate: (title: string) => void;
   onRename: (name: string) => void;
   onSetWip: (n: number | null) => void;
   onToggleDone: (isDone: boolean) => void;
+  onSetSubStates: (subStates: string[]) => void;
+  onSetCardSubState: (ticketId: string, sub: string) => void;
+  onToggleChooser: (ticketId: string) => void;
   onMove: (dir: "left" | "right") => void;
   onDelete: () => void;
 }) {
@@ -630,6 +685,10 @@ function Column({
   const atLimit = col.wipLimit != null && totalCount === col.wipLimit;
   const [renaming, setRenaming] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState(col.name);
+  const [showAll, setShowAll] = React.useState(false);
+
+  const shownIds = showAll ? visibleIds : visibleIds.slice(0, COLUMN_VISIBLE_LIMIT);
+  const hiddenCount = visibleIds.length - shownIds.length;
 
   return (
     <div className="group/col flex w-[19rem] shrink-0 flex-col">
@@ -715,6 +774,13 @@ function Column({
                 ))}
               </div>
               <div className="my-1 h-px bg-border" />
+              <div className="px-2.5 pb-1 pt-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">
+                Sub-states
+              </div>
+              <div className="px-2 pb-1.5" onClick={(e) => e.stopPropagation()}>
+                <SubStatesEditor value={col.subStates} onChange={onSetSubStates} />
+              </div>
+              <div className="my-1 h-px bg-border" />
               <MenuItem onClick={() => { close(); onToggleDone(!col.isDone); }}>
                 <CircleCheck className={cn("h-4 w-4", col.isDone && "text-success")} />
                 {col.isDone ? "Unmark done column" : "Mark as done column"}
@@ -749,8 +815,8 @@ function Column({
           overLimit && "ring-1 ring-danger/30",
         )}
       >
-        <SortableContext items={visibleIds} strategy={verticalListSortingStrategy}>
-          {visibleIds.map((id) => {
+        <SortableContext items={shownIds} strategy={verticalListSortingStrategy}>
+          {shownIds.map((id) => {
             const t = ticketsById[id];
             if (!t) return null;
             return (
@@ -759,11 +825,32 @@ function Column({
                 ticket={t}
                 celebrate={celebrateId === id}
                 focused={focusedId === id}
+                subStates={col.subStates}
+                chooserOpen={chooserId === id}
+                onToggleChooser={() => onToggleChooser(id)}
+                onSetSubState={onSetCardSubState}
                 onClick={() => onCardClick(id)}
               />
             );
           })}
         </SortableContext>
+
+        {hiddenCount > 0 && (
+          <button
+            onClick={() => setShowAll(true)}
+            className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
+          >
+            Show {hiddenCount} older
+          </button>
+        )}
+        {showAll && visibleIds.length > COLUMN_VISIBLE_LIMIT && (
+          <button
+            onClick={() => setShowAll(false)}
+            className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
+          >
+            Show fewer
+          </button>
+        )}
 
         {visibleIds.length === 0 && allIds.length > 0 && (
           <p className="px-1 py-2 text-xs text-fg-subtle">No cards match the filter.</p>
@@ -775,15 +862,82 @@ function Column({
   );
 }
 
+function SubStatesEditor({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const [text, setText] = React.useState("");
+  function add() {
+    const name = text.trim().slice(0, 24);
+    if (!name) return;
+    if (value.some((v) => v.toLowerCase() === name.toLowerCase())) {
+      setText("");
+      return;
+    }
+    if (value.length >= 8) return;
+    onChange([...value, name]);
+    setText("");
+  }
+  return (
+    <div>
+      {value.length > 0 && (
+        <div className="mb-1.5 flex flex-wrap gap-1">
+          {value.map((s) => (
+            <span key={s} className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-xs">
+              {s}
+              <button
+                onClick={() => onChange(value.filter((x) => x !== s))}
+                className="text-fg-subtle hover:text-danger cursor-pointer"
+                aria-label={`Remove ${s}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder={value.length ? "Add another…" : "e.g. In progress, Blocked"}
+          maxLength={24}
+          className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 text-xs outline-none focus:border-primary"
+        />
+        <button
+          onClick={add}
+          disabled={!text.trim() || value.length >= 8}
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-border hover:bg-surface-2 cursor-pointer disabled:opacity-40"
+          aria-label="Add sub-state"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <p className="mt-1 text-[0.625rem] text-fg-subtle">Dropping a card here lets you pick one of these.</p>
+    </div>
+  );
+}
+
 function SortableTicket({
   ticket,
   celebrate,
   focused,
+  subStates,
+  chooserOpen,
+  onToggleChooser,
+  onSetSubState,
   onClick,
 }: {
   ticket: SerializedTicket;
   celebrate: boolean;
   focused: boolean;
+  subStates: string[];
+  chooserOpen: boolean;
+  onToggleChooser: () => void;
+  onSetSubState: (ticketId: string, sub: string) => void;
   onClick: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
@@ -802,10 +956,65 @@ function SortableTicket({
         dragging={isDragging}
         className={focused ? "ring-2 ring-primary ring-offset-2 ring-offset-surface-2" : undefined}
       />
+      {subStates.length > 0 && (
+        <SubStateBar
+          subStates={subStates}
+          current={ticket.subState ?? null}
+          open={chooserOpen}
+          onToggle={onToggleChooser}
+          onPick={(s) => onSetSubState(ticket.id, s)}
+        />
+      )}
       {celebrate && (
         <span className="pointer-events-none absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-success text-white shadow-md animate-check-pop">
           <Check className="h-3.5 w-3.5" />
         </span>
+      )}
+    </div>
+  );
+}
+
+/** A compact chip on the card showing its sub-state; tap to pick another. */
+function SubStateBar({
+  subStates,
+  current,
+  open,
+  onToggle,
+  onPick,
+}: {
+  subStates: string[];
+  current: string | null;
+  open: boolean;
+  onToggle: () => void;
+  onPick: (s: string) => void;
+}) {
+  // Stop pointer-down from starting a drag and clicks from opening the card.
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  return (
+    <div className="mt-1 px-0.5" onPointerDown={stop} onClick={stop}>
+      {open ? (
+        <div className="flex flex-wrap gap-1">
+          {subStates.map((s) => (
+            <button
+              key={s}
+              onClick={() => onPick(s)}
+              className={cn(
+                "rounded-md border px-2 py-0.5 text-[0.6875rem] font-medium cursor-pointer",
+                current === s ? "border-primary bg-primary-soft text-primary-soft-fg" : "border-border bg-surface hover:bg-surface-2",
+              )}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <button
+          onClick={onToggle}
+          className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-0.5 text-[0.6875rem] font-medium text-fg-muted hover:bg-surface-2 cursor-pointer"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-fg-subtle" />
+          {current || "Set state"}
+        </button>
       )}
     </div>
   );

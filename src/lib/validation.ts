@@ -97,12 +97,14 @@ export const updateTicketSchema = z.object({
   assigneeAgentId: z.string().nullable().optional(),
   columnId: z.string().optional(),
   position: z.number().optional(),
+  subState: z.string().max(24).nullable().optional(),
   labelIds: z.array(z.string()).optional(),
 });
 
 export const moveTicketSchema = z.object({
   columnId: z.string().min(1),
   position: z.number().int().min(0),
+  subState: z.string().max(24).nullable().optional(),
 });
 
 export const createCommentSchema = z.object({
@@ -113,6 +115,7 @@ export const updateColumnSchema = z.object({
   name: z.string().trim().min(1).max(40).optional(),
   wipLimit: z.number().int().min(1).max(99).nullable().optional(),
   isDone: z.boolean().optional(),
+  subStates: z.array(z.string().trim().min(1).max(24)).max(8).optional(),
 });
 
 export const createColumnSchema = z.object({
@@ -213,11 +216,18 @@ export const updateAccountSchema = z.object({
   avatarUrl: z.url().max(2000).nullable().optional().or(z.literal("")),
   defaultLanding: z.enum(LANDING_PAGES).optional(),
   weekStartsOn: z.number().int().min(0).max(6).optional(),
+  handedness: z.enum(["right", "left"]).optional(),
 });
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(200),
   newPassword: z.string().min(8).max(200),
+});
+
+export const trashActionSchema = z.object({
+  action: z.enum(["restore", "purge"]),
+  type: z.enum(["note", "ticket"]),
+  id: z.string().min(1),
 });
 
 export const updateWorkspaceSchema = z.object({

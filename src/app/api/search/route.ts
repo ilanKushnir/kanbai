@@ -21,7 +21,7 @@ export const GET = handler(async (req: Request) => {
       select: { id: true, name: true, slug: true, color: true },
     }),
     db.ticket.findMany({
-      where: { board: { ...boardScope, archived: false }, title: { contains: q } },
+      where: { board: { ...boardScope, archived: false }, title: { contains: q }, deletedAt: null },
       take: 6,
       orderBy: { updatedAt: "desc" },
       select: {
@@ -33,7 +33,7 @@ export const GET = handler(async (req: Request) => {
       },
     }),
     db.note.findMany({
-      where: { userId: ctx.user.id, body: { contains: q }, status: { not: "archived" } },
+      where: { userId: ctx.user.id, body: { contains: q }, status: { not: "archived" }, deletedAt: null },
       take: 6,
       orderBy: { updatedAt: "desc" },
       select: { id: true, body: true, status: true },

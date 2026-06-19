@@ -11,9 +11,11 @@ type Recognition = {
   lang: string;
   start(): void;
   stop(): void;
+  abort?(): void;
   onresult: ((e: SpeechResultEvent) => void) | null;
   onend: (() => void) | null;
   onerror: (() => void) | null;
+  onstart?: (() => void) | null;
 };
 type SpeechWindow = {
   SpeechRecognition?: new () => Recognition;
@@ -36,9 +38,24 @@ export function useDictation(onText: (text: string) => void) {
     setSupported(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
   }, []);
 
+  // Flip the UI immediately and fully tear down the recognizer so a "stop" tap
+  // always works — some engines don't reliably fire onend after stop().
   const stop = React.useCallback(() => {
+    const rec = recRef.current;
+    recRef.current = null;
+    setListening(false);
+    if (!rec) return;
+    rec.onresult = null;
+    rec.onend = null;
+    rec.onerror = null;
+    rec.onstart = null;
     try {
-      recRef.current?.stop();
+      rec.abort?.();
+    } catch {
+      /* noop */
+    }
+    try {
+      rec.stop();
     } catch {
       /* noop */
     }
@@ -47,7 +64,7 @@ export function useDictation(onText: (text: string) => void) {
   const start = React.useCallback(() => {
     const w = window as unknown as SpeechWindow;
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!Ctor) return;
+    if (!Ctor || recRef.current) return;
     const rec = new Ctor();
     rec.continuous = true;
     rec.interimResults = true;
@@ -62,17 +79,29 @@ export function useDictation(onText: (text: string) => void) {
       }
       onTextRef.current((finalText + interim).replace(/\s+/g, " ").trim());
     };
-    rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
+    rec.onstart = () => setListening(true);
+    rec.onend = () => {
+      recRef.current = null;
+      setListening(false);
+    };
+    rec.onerror = () => {
+      recRef.current = null;
+      setListening(false);
+    };
     recRef.current = rec;
-    rec.start();
-    setListening(true);
+    try {
+      rec.start();
+      setListening(true);
+    } catch {
+      recRef.current = null;
+      setListening(false);
+    }
   }, []);
 
   const toggle = React.useCallback(() => {
-    if (listening) stop();
+    if (recRef.current) stop();
     else start();
-  }, [listening, start, stop]);
+  }, [start, stop]);
 
   React.useEffect(() => () => stop(), [stop]);
 

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function NotesPage() {
   const ctx = await getContext();
-  const { weekStartsOn } = parseUserSettings(ctx.user.settings);
+  const { weekStartsOn, handedness } = parseUserSettings(ctx.user.settings);
 
   const [notes, agents, boards] = await Promise.all([
     listNotesForUser(ctx.user.id),
@@ -37,7 +37,7 @@ export default async function NotesPage() {
 
   return (
     <Suspense fallback={null}>
-      <NotesViewClient notes={notes} agents={agents} boards={boards} weekStartsOn={weekStartsOn} />
+      <NotesViewClient notes={notes} agents={agents} boards={boards} weekStartsOn={weekStartsOn} handedness={handedness} />
     </Suspense>
   );
 }

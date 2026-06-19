@@ -18,6 +18,7 @@ export function NotesViewClient(props: {
   agents: AgentLite[];
   boards: BoardLite[];
   weekStartsOn: number;
+  handedness: "right" | "left";
 }) {
   return <NotesView {...props} />;
 }

@@ -10,12 +10,14 @@ export const POST = handler(
     const ctx = await getCurrentContext();
     const { ticketId } = await params;
     await assertTicketAccess(ctx, ticketId, true);
-    const { columnId, position } = parse(moveTicketSchema, await readJson(req));
-    const ticket = await moveTicket(ticketId, columnId, position, {
-      type: "user",
-      id: ctx.user.id,
-      name: ctx.user.name,
-    });
+    const { columnId, position, subState } = parse(moveTicketSchema, await readJson(req));
+    const ticket = await moveTicket(
+      ticketId,
+      columnId,
+      position,
+      { type: "user", id: ctx.user.id, name: ctx.user.name },
+      subState,
+    );
     return ok({ ticket });
   },
 );

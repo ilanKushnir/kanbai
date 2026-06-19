@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/settings", label: "General" },
   { href: "/settings/account", label: "Account" },
+  { href: "/settings/trash", label: "Recently deleted" },
   { href: "/settings/members", label: "Members", managerOnly: true },
   { href: "/settings/snapshots", label: "Snapshots", managerOnly: true },
 ];

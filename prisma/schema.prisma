@@ -162,6 +162,7 @@ model Column {
   position Int     @default(0)
   wipLimit Int?
   isDone   Boolean @default(false) // tickets here count as completed
+  subStates String? // JSON array of sub-state names, e.g. ["In progress","Blocked"]
 
   board   Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
   tickets Ticket[]
@@ -176,7 +177,9 @@ model Ticket {
   description String   @default("")
   position    Int      @default(0)
   priority    String   @default("medium") // none | low | medium | high | urgent
+  subState    String?  // sub-state within its column (when the column defines sub-states)
   dueDate     DateTime?
+  deletedAt   DateTime? // soft-delete; restorable for 30 days, then purged
 
   // Assignee can be a human user or an AI agent (or unassigned)
   assigneeType String? // "user" | "agent"
@@ -202,6 +205,7 @@ model Ticket {
   @@unique([boardId, number])
   @@index([boardId])
   @@index([columnId])
+  @@index([deletedAt])
 }
 
 model Label {
@@ -244,6 +248,7 @@ model Note {
   bucket    String   @default("today") // coarse, derived cache: today | tomorrow | next_week | next_month | general
   scheduledDay String? // local "YYYY-MM-DD" the note is slated for; null = General/someday
   doneOn       String? // local "YYYY-MM-DD" the note was completed; null = not done
+  deletedAt    DateTime? // soft-delete; restorable for 30 days, then purged
   position  Int      @default(0)
   priority  String   @default("none") // none | low | medium | high | urgent
 
@@ -261,6 +266,7 @@ model Note {
   ticket      Ticket?     @relation("NoteToTicket")
 
   @@index([userId, status])
+  @@index([deletedAt])
 }
 
 model Attachment {

@@ -94,7 +94,7 @@ async function main() {
   const pCols = await createColumns(product.id, [
     { name: "Backlog" },
     { name: "To Do" },
-    { name: "In Progress" },
+    { name: "In Progress", subStates: ["In progress", "Blocked"] },
     { name: "Review" },
     { name: "Done", isDone: true },
   ]);
@@ -276,11 +276,17 @@ async function main() {
   console.log("────────────────────────────────────────────────────────\n");
 
   // helpers ───────────────────────────────────────────────────────────────────
-  async function createColumns(boardId: string, cols: { name: string; isDone?: boolean }[]) {
+  async function createColumns(boardId: string, cols: { name: string; isDone?: boolean; subStates?: string[] }[]) {
     const map: Record<string, string> = {};
     for (let i = 0; i < cols.length; i++) {
       const c = await db.column.create({
-        data: { boardId, name: cols[i].name, position: i, isDone: cols[i].isDone ?? false },
+        data: {
+          boardId,
+          name: cols[i].name,
+          position: i,
+          isDone: cols[i].isDone ?? false,
+          subStates: cols[i].subStates?.length ? JSON.stringify(cols[i].subStates) : null,
+        },
       });
       map[cols[i].name] = c.id;
     }

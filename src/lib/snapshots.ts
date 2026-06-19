@@ -68,6 +68,7 @@ export async function captureWorkspaceBoards(workspaceId: string): Promise<{ boa
       labels: true,
       columns: { orderBy: { position: "asc" } },
       tickets: {
+        where: { deletedAt: null },
         orderBy: { position: "asc" },
         include: { labels: { select: { labelId: true } }, comments: { orderBy: { createdAt: "asc" } } },
       },

@@ -31,6 +31,7 @@ export default async function SettingsPage() {
       isOwner={ctx.role === "owner"}
       defaultLanding={settings.defaultLanding}
       weekStartsOn={settings.weekStartsOn}
+      handedness={settings.handedness}
       workspaceId={ctx.workspace.id}
       workspace={ws ? { name: ws.name, defaultAgentId: ws.defaultAgentId, snapshotLimit: ws.snapshotLimit } : null}
       agents={agents}

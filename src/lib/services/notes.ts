@@ -55,7 +55,7 @@ export function serializeNote(n: NoteWithRelations) {
 
 export async function listNotesForUser(userId: string) {
   const notes = await db.note.findMany({
-    where: { userId },
+    where: { userId, deletedAt: null },
     orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     include: noteInclude,
   });
@@ -65,7 +65,7 @@ export async function listNotesForUser(userId: string) {
 /** Notes queued to this agent (with bucket/priority/suggestedDueDate to file faithfully). */
 export async function listInboxForAgent(agentId: string) {
   const notes = await db.note.findMany({
-    where: { assignedAgentId: agentId, status: "queued" },
+    where: { assignedAgentId: agentId, status: "queued", deletedAt: null },
     orderBy: { queuedAt: "asc" },
     include: noteInclude,
   });
@@ -74,7 +74,7 @@ export async function listInboxForAgent(agentId: string) {
 
 export async function getNoteForAgent(noteId: string, agentId: string) {
   const note = await db.note.findUnique({ where: { id: noteId }, include: noteInclude });
-  if (!note || note.assignedAgentId !== agentId) {
+  if (!note || note.deletedAt || note.assignedAgentId !== agentId) {
     throw new HttpError(404, "Note not found in this agent's inbox");
   }
   return note;
@@ -150,8 +150,9 @@ export async function moveNote(
   return serializeNote(await loadNote(noteId));
 }
 
+/** Soft-delete: move to "Recently deleted" (restorable for 30 days, then purged). */
 export async function deleteNote(noteId: string) {
-  await db.note.delete({ where: { id: noteId } });
+  await db.note.update({ where: { id: noteId }, data: { deletedAt: new Date() } });
 }
 
 export async function addAttachment(

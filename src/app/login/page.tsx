@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getSessionUser } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { AuthForm } from "@/components/auth/auth-form";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   if (await getSessionUser()) redirect("/");
+  // First-run: no accounts yet → send them to create the admin account.
+  if ((await db.user.count()) === 0) redirect("/signup");
   return (
     <AuthShell
       title="Welcome back"

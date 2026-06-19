@@ -4,6 +4,7 @@ import { broadcast, dispatchWebhook } from "@/lib/webhooks";
 import { ticketInclude, serializeTicket } from "@/lib/serialize";
 import { HttpError } from "@/lib/api";
 import { onMutation } from "@/lib/snapshots";
+import { parseSubStates } from "@/lib/substates";
 import { toRichHtml } from "@/lib/sanitize";
 
 export type Actor = { type: "user" | "agent" | "system"; id?: string | null; name: string };
@@ -191,6 +192,7 @@ export async function updateTicket(
     assigneeAgentId: string | null;
     columnId: string;
     position: number;
+    subState: string | null;
     labelIds: string[];
   }>,
   actor: Actor,
@@ -214,6 +216,7 @@ export async function updateTicket(
     data.columnId = input.columnId;
   }
   if (input.position !== undefined) data.position = input.position;
+  if (input.subState !== undefined) data.subState = input.subState;
   if (input.assigneeType !== undefined) {
     const a = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId);
     data.assigneeType = a.assigneeType;
@@ -245,6 +248,7 @@ export async function moveTicket(
   toColumnId: string,
   position: number,
   actor: Actor,
+  subState?: string | null,
 ) {
   const ticket = await loadTicket(ticketId);
   const board = await boardCtx(ticket.boardId);
@@ -256,10 +260,19 @@ export async function moveTicket(
     throw new HttpError(422, "Target column not on this board");
   }
 
+  // Resolve the sub-state for the destination column: keep a valid choice,
+  // default to the first sub-state, or clear it if the column defines none.
+  const subStates = parseSubStates(targetColumn.subStates);
+  const resolvedSubState = subStates.length
+    ? subState && subStates.includes(subState)
+      ? subState
+      : subStates[0]
+    : null;
+
   // Rebuild ordering of the target column with the ticket inserted at `position`.
   const targetIds = (
     await db.ticket.findMany({
-      where: { columnId: toColumnId },
+      where: { columnId: toColumnId, deletedAt: null },
       orderBy: { position: "asc" },
       select: { id: true },
     })
@@ -271,14 +284,17 @@ export async function moveTicket(
 
   await db.$transaction([
     ...targetIds.map((id, idx) =>
-      db.ticket.update({ where: { id }, data: { columnId: toColumnId, position: idx } }),
+      db.ticket.update({
+        where: { id },
+        data: { columnId: toColumnId, position: idx, ...(id === ticketId ? { subState: resolvedSubState } : {}) },
+      }),
     ),
   ]);
 
   // Reindex the source column if the ticket actually changed columns.
   if (fromColumnId !== toColumnId) {
     const sourceIds = await db.ticket.findMany({
-      where: { columnId: fromColumnId },
+      where: { columnId: fromColumnId, deletedAt: null },
       orderBy: { position: "asc" },
       select: { id: true },
     });
@@ -334,11 +350,12 @@ export async function addComment(ticketId: string, body: string, actor: Actor) {
   return comment;
 }
 
+/** Soft-delete: move to "Recently deleted" (restorable for 30 days, then purged). */
 export async function deleteTicket(ticketId: string, actor: Actor) {
   const ticket = await loadTicket(ticketId);
   const board = await boardCtx(ticket.boardId);
   await onMutation(actor, board.workspaceId);
-  await db.ticket.delete({ where: { id: ticketId } });
+  await db.ticket.update({ where: { id: ticketId }, data: { deletedAt: new Date() } });
   await logActivity({
     actor,
     action: "ticket.deleted",

@@ -4,6 +4,7 @@ import { assertColumnAccess } from "@/lib/authz";
 import { parse, readJson } from "@/lib/parse";
 import { updateColumnSchema } from "@/lib/validation";
 import { markManualAction } from "@/lib/snapshots";
+import { parseSubStates, stringifySubStates } from "@/lib/substates";
 import { db } from "@/lib/db";
 
 export const PATCH = handler(
@@ -17,8 +18,17 @@ export const PATCH = handler(
     if (input.name !== undefined) data.name = input.name;
     if (input.wipLimit !== undefined) data.wipLimit = input.wipLimit;
     if (input.isDone !== undefined) data.isDone = input.isDone;
+    if (input.subStates !== undefined) data.subStates = stringifySubStates(input.subStates);
     const column = await db.column.update({ where: { id: columnId }, data });
-    return ok({ column: { id: column.id, name: column.name, wipLimit: column.wipLimit, isDone: column.isDone } });
+    return ok({
+      column: {
+        id: column.id,
+        name: column.name,
+        wipLimit: column.wipLimit,
+        isDone: column.isDone,
+        subStates: parseSubStates(column.subStates),
+      },
+    });
   },
 );
 
@@ -29,7 +39,7 @@ export const DELETE = handler(
     await assertColumnAccess(ctx, columnId, true);
     await markManualAction(ctx.workspace.id);
 
-    const count = await db.ticket.count({ where: { columnId } });
+    const count = await db.ticket.count({ where: { columnId, deletedAt: null } });
     if (count > 0) throw new HttpError(422, "Move or delete this column's cards first.", "column_not_empty");
     const col = await db.column.findUnique({ where: { id: columnId }, select: { boardId: true } });
     const total = await db.column.count({ where: { boardId: col!.boardId } });

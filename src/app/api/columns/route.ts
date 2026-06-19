@@ -22,6 +22,6 @@ export const POST = handler(async (req: Request) => {
     },
   });
   return created({
-    column: { id: column.id, name: column.name, wipLimit: column.wipLimit, isDone: column.isDone },
+    column: { id: column.id, name: column.name, wipLimit: column.wipLimit, isDone: column.isDone, subStates: [] },
   });
 });

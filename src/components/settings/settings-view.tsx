@@ -35,17 +35,19 @@ type Props = {
   isOwner: boolean;
   defaultLanding: string;
   weekStartsOn: number;
+  handedness: string;
   workspaceId: string;
   workspace: { name: string; defaultAgentId: string | null; snapshotLimit: number } | null;
   agents: { id: string; name: string }[];
 };
 
-export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn, workspaceId, workspace, agents }: Props) {
+export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn, handedness, workspaceId, workspace, agents }: Props) {
   const router = useRouter();
   const { toast } = useToast();
 
   const [landing, setLanding] = React.useState(defaultLanding);
   const [weekStart, setWeekStart] = React.useState(String(weekStartsOn));
+  const [hand, setHand] = React.useState(handedness);
 
   async function savePref(body: Record<string, unknown>) {
     try {
@@ -65,6 +67,11 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
   function saveWeekStart(value: string) {
     setWeekStart(value);
     void savePref({ weekStartsOn: Number(value) });
+  }
+
+  function saveHand(value: string) {
+    setHand(value);
+    void savePref({ handedness: value });
   }
 
   return (
@@ -111,6 +118,16 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
             </select>
             <p className="mt-1.5 text-xs text-fg-subtle">
               Sets how Notes splits “This week” into days and when next-week tasks roll into Today.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="handedness">Handedness</Label>
+            <select id="handedness" className={selectCls} value={hand} onChange={(e) => saveHand(e.target.value)}>
+              <option value="right">Right-handed</option>
+              <option value="left">Left-handed</option>
+            </select>
+            <p className="mt-1.5 text-xs text-fg-subtle">
+              Puts the mobile drag handles on the hand you hold your phone with.
             </p>
           </div>
         </div>

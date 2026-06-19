@@ -3,6 +3,7 @@ import { HttpError } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
 import { shortToken } from "@/lib/password";
 import { ticketInclude, serializeTicket, serializePublicTicket, type UserLite } from "@/lib/serialize";
+import { parseSubStates } from "@/lib/substates";
 import { onMutation } from "@/lib/snapshots";
 import type { Actor } from "./tickets";
 
@@ -76,7 +77,7 @@ export async function getBoardWithData(
       columns: {
         orderBy: { position: "asc" },
         include: {
-          tickets: { orderBy: { position: "asc" }, include: ticketInclude },
+          tickets: { where: { deletedAt: null }, orderBy: { position: "asc" }, include: ticketInclude },
         },
       },
     },
@@ -107,6 +108,7 @@ export async function getBoardWithData(
       name: c.name,
       isDone: c.isDone,
       wipLimit: c.wipLimit,
+      subStates: parseSubStates(c.subStates),
       tickets: c.tickets.map((t) => serializeTicket(t, usersById)),
     })),
   };
@@ -178,7 +180,7 @@ export async function getPublicBoard(publicId: string) {
       workspace: { select: { name: true } },
       columns: {
         orderBy: { position: "asc" },
-        include: { tickets: { orderBy: { position: "asc" }, include: ticketInclude } },
+        include: { tickets: { where: { deletedAt: null }, orderBy: { position: "asc" }, include: ticketInclude } },
       },
     },
   });

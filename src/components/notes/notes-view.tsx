@@ -47,8 +47,8 @@ import {
   CalendarClock,
   CalendarRange,
   CornerDownLeft,
-  AlignLeft,
-  AlignRight,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -209,11 +209,13 @@ export function NotesView({
   agents,
   boards,
   weekStartsOn,
+  handedness = "right",
 }: {
   notes: NoteT[];
   agents: AgentLite[];
   boards: BoardLite[];
   weekStartsOn: number;
+  handedness?: "right" | "left";
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -273,22 +275,7 @@ export function NotesView({
     if (draftDay !== null && draftDay < schedule.todayYmd) setDraftDay(schedule.todayYmd);
   }, [schedule.todayYmd, draftDay]);
 
-  const [composerDir, setComposerDir] = React.useState<"ltr" | "rtl">("ltr");
-  React.useEffect(() => {
-    const saved = typeof localStorage !== "undefined" ? localStorage.getItem("kanbai-compose-dir") : null;
-    if (saved === "rtl" || saved === "ltr") setComposerDir(saved);
-  }, []);
-  function toggleDir() {
-    setComposerDir((d) => {
-      const next = d === "ltr" ? "rtl" : "ltr";
-      try {
-        localStorage.setItem("kanbai-compose-dir", next);
-      } catch {
-        /* noop */
-      }
-      return next;
-    });
-  }
+  const [expanded, setExpanded] = React.useState(false);
   const dictateBase = React.useRef("");
   const dictation = useDictation((text) => {
     setDraft((dictateBase.current ? dictateBase.current + " " : "") + text);
@@ -357,6 +344,7 @@ export function NotesView({
     dictation.stop();
     addNote(draft, draftDay);
     setDraft("");
+    setExpanded(false);
   }
 
   // ── offline replay ───────────────────────────────────────────────────────────
@@ -419,16 +407,9 @@ export function NotesView({
   }
 
   function toggleDone(note: NoteT) {
-    const done = note.doneOn != null;
-    patchNote(note.id, { doneOn: done ? null : schedule.todayYmd });
-    if (!done) {
-      toast({
-        title: "Marked done",
-        description: "It moves to Done after midnight.",
-        actionLabel: "Undo",
-        onAction: () => patchNote(note.id, { doneOn: null }),
-      });
-    }
+    // No toast — a done note stays struck-through in place until midnight, so the
+    // user can simply click again to undo before it moves to Done.
+    patchNote(note.id, { doneOn: note.doneOn != null ? null : schedule.todayYmd });
   }
 
   function archive(id: string) {
@@ -633,6 +614,7 @@ export function NotesView({
   const rowProps = {
     notesById,
     focusId,
+    handedness,
     dragDisabled: !!q,
     onSaveBody: saveBody,
     onToggleCheckbox: toggleCheckbox,
@@ -683,11 +665,11 @@ export function NotesView({
         <AutoGrow
           value={draft}
           onChange={setDraft}
-          onSubmit={submitDraft}
+          onSubmit={expanded ? undefined : submitDraft}
           autoFocus={composeFocus}
-          dir={composerDir}
-          placeholder="Jot something down…  Try - [ ] a checklist"
-          className="px-1 text-[0.95rem] leading-relaxed min-h-6"
+          dir="auto"
+          placeholder={expanded ? "Write it all out…  (Shift+Enter for a new line)" : "Jot something down…  Try - [ ] a checklist"}
+          className={cn("px-1 text-[0.95rem] leading-relaxed min-h-6", expanded && "min-h-40")}
         />
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -707,12 +689,12 @@ export function NotesView({
               </button>
             )}
             <button
-              onClick={toggleDir}
-              title={composerDir === "rtl" ? "Right-to-left — tap for LTR" : "Left-to-right — tap for RTL"}
-              aria-label="Toggle text direction"
+              onClick={() => setExpanded((e) => !e)}
+              title={expanded ? "Shrink" : "Expand for a longer note"}
+              aria-label={expanded ? "Shrink composer" : "Expand composer"}
               className="inline-flex shrink-0 items-center justify-center rounded-lg bg-surface-2 p-1.5 text-fg-muted transition-colors hover:text-fg cursor-pointer"
             >
-              {composerDir === "rtl" ? <AlignRight className="h-3.5 w-3.5" /> : <AlignLeft className="h-3.5 w-3.5" />}
+              {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </button>
             <DayChip value={draftDay} schedule={schedule} onChange={setDraftDay} />
           </div>
@@ -976,6 +958,7 @@ function DoneSection({
 type RowHandlers = {
   notesById: Record<string, NoteT>;
   focusId: string | null;
+  handedness: "right" | "left";
   dragDisabled?: boolean;
   onSaveBody: (id: string, body: string) => void;
   onToggleCheckbox: (note: NoteT, index: number) => void;
@@ -1002,6 +985,7 @@ function NoteSectionBlock({
   onAdd,
   notesById,
   focusId,
+  handedness,
   dragDisabled,
   onSaveBody,
   onToggleCheckbox,
@@ -1114,6 +1098,7 @@ function NoteSectionBlock({
                     key={id}
                     note={n}
                     highlight={focusId === id}
+                    handedness={handedness}
                     dragDisabled={dragDisabled}
                     onSaveBody={(body) => onSaveBody(id, body)}
                     onToggleCheckbox={(i) => onToggleCheckbox(n, i)}
@@ -1167,6 +1152,7 @@ function NoteSectionBlock({
 function NoteRow({
   note,
   highlight,
+  handedness,
   dragDisabled,
   onSaveBody,
   onToggleCheckbox,
@@ -1180,6 +1166,7 @@ function NoteRow({
 }: {
   note: NoteT;
   highlight?: boolean;
+  handedness: "right" | "left";
   dragDisabled?: boolean;
   onSaveBody: (body: string) => void;
   onToggleCheckbox: (index: number) => void;
@@ -1210,12 +1197,35 @@ function NoteRow({
   const pmeta = PRIORITY_META[(note.priority as keyof typeof PRIORITY_META) ?? "none"] ?? PRIORITY_META.none;
   const hasPriority = note.priority !== "none";
 
+  // Click almost anywhere on the line to toggle done — but not on links, the
+  // in-body task checkboxes, or any control.
+  function onBodyClick(e: React.MouseEvent) {
+    if ((e.target as HTMLElement).closest("a, button, input, label, textarea")) return;
+    onToggleDone();
+  }
+
+  const dragHandle = (
+    <button
+      {...attributes}
+      {...listeners}
+      aria-label="Drag to reorder"
+      disabled={dragDisabled}
+      className={cn(
+        "mt-1.5 shrink-0 cursor-grab touch-none text-fg-subtle opacity-40 transition-opacity hover:text-fg-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100",
+        dragDisabled && "pointer-events-none !opacity-0",
+      )}
+    >
+      <GripVertical className="h-4 w-4" />
+    </button>
+  );
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group relative flex items-start gap-1.5 rounded-lg py-1.5 pl-2.5 pr-1.5 transition-colors",
+        "group relative flex items-start gap-1.5 rounded-lg py-1.5 pr-1.5 transition-colors",
+        handedness === "left" ? "pl-1.5" : "pl-2.5",
         !isDragging && "hover:bg-surface-2/50",
         isDragging && "opacity-40",
         queued && "bg-primary-soft/40",
@@ -1233,19 +1243,8 @@ function NoteRow({
         />
       )}
 
-      {/* drag handle — visible on touch, hover-revealed on desktop; hidden while searching */}
-      <button
-        {...attributes}
-        {...listeners}
-        aria-label="Drag to reorder"
-        disabled={dragDisabled}
-        className={cn(
-          "mt-1.5 shrink-0 cursor-grab touch-none text-fg-subtle opacity-40 transition-opacity hover:text-fg-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100",
-          dragDisabled && "pointer-events-none !opacity-0",
-        )}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
+      {/* left-handed: drag handle leads */}
+      {handedness === "left" && dragHandle}
 
       {/* done checkbox — generous hit area, clearly separated from the text */}
       {!locked && (
@@ -1285,7 +1284,9 @@ function NoteRow({
             className="text-[0.95rem] leading-relaxed"
           />
         ) : (
-          <Markdown content={note.body} onToggleCheckbox={done ? undefined : onToggleCheckbox} />
+          <div className="cursor-pointer" onClick={onBodyClick}>
+            <Markdown content={note.body} onToggleCheckbox={done ? undefined : onToggleCheckbox} />
+          </div>
         )}
 
         {/* status row: queued chip / meta */}
@@ -1329,7 +1330,7 @@ function NoteRow({
           </button>
         )}
 
-        {queued ? (
+        {queued && (
           <button
             onClick={() => onIngest(false)}
             title="Unmark"
@@ -1337,16 +1338,6 @@ function NoteRow({
           >
             <X className="h-4 w-4" />
           </button>
-        ) : (
-          !note.pending && (
-            <button
-              onClick={() => onIngest(true)}
-              title="Mark for an agent to file"
-              className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle opacity-100 transition-opacity hover:bg-surface-2 hover:text-primary cursor-pointer md:opacity-0 md:group-hover:opacity-100"
-            >
-              <Sparkles className="h-4 w-4" />
-            </button>
-          )
         )}
 
         {!locked && (
@@ -1378,6 +1369,14 @@ function NoteRow({
                   }}
                 >
                   <Pencil className="h-4 w-4" /> Edit
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    onIngest(true);
+                    close();
+                  }}
+                >
+                  <Sparkles className="h-4 w-4" /> Send to an agent to file
                 </MenuItem>
                 <MenuItem
                   onClick={() => {
@@ -1448,6 +1447,9 @@ function NoteRow({
           </Menu>
         )}
       </div>
+
+      {/* right-handed: drag handle trails (thumb side on a phone) */}
+      {handedness === "right" && dragHandle}
     </div>
   );
 }

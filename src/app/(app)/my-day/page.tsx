@@ -33,7 +33,7 @@ export default async function MyDayPage() {
 
   const [tickets, inboxCount] = await Promise.all([
     db.ticket.findMany({
-      where: { board: boardScope, column: { isDone: false } },
+      where: { board: boardScope, column: { isDone: false }, deletedAt: null },
       include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true } } },
       orderBy: { dueDate: "asc" },
     }),
