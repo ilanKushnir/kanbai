@@ -28,6 +28,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { api } from "@/lib/client-api";
 import { useToast } from "@/components/ui/toast";
 import { AGENT_KINDS, AGENT_META, ALL_SCOPES } from "@/lib/constants";
+import { agentConnection } from "@/lib/agent-status";
 import { timeAgo, cn } from "@/lib/utils";
 import type { AgentFull } from "@/lib/types";
 
@@ -67,8 +68,36 @@ export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; a
   const [agents, setAgents] = React.useState(initial);
   const [creating, setCreating] = React.useState(false);
   const [revealKey, setRevealKey] = React.useState<{ name: string; key: string } | null>(null);
+  // null until mounted → SSR and first client render agree (no hydration mismatch)
+  const [now, setNow] = React.useState<number | null>(null);
 
   React.useEffect(() => setAgents(initial), [initial]);
+
+  // Keep connection state live: tick the clock and re-poll lastSeenAt periodically.
+  React.useEffect(() => {
+    setNow(Date.now());
+    const tick = setInterval(() => setNow(Date.now()), 30_000);
+    const poll = setInterval(async () => {
+      try {
+        const { agents: fresh } = await api<{ agents: { id: string; status: string; lastSeenAt: string | null }[] }>(
+          "/api/agents",
+        );
+        setAgents((prev) =>
+          prev.map((a) => {
+            const f = fresh.find((x) => x.id === a.id);
+            return f ? { ...a, status: f.status, lastSeenAt: f.lastSeenAt } : a;
+          }),
+        );
+        setNow(Date.now());
+      } catch {
+        /* ignore transient poll errors */
+      }
+    }, 30_000);
+    return () => {
+      clearInterval(tick);
+      clearInterval(poll);
+    };
+  }, []);
 
   function update(a: AgentFull) {
     setAgents((prev) => prev.map((x) => (x.id === a.id ? { ...x, ...a } : x)));
@@ -119,6 +148,7 @@ export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; a
               key={a.id}
               agent={a}
               appUrl={appUrl}
+              now={now}
               onUpdate={update}
               onRevealKey={(key) => setRevealKey({ name: a.name, key })}
               onDeleted={() => setAgents((p) => p.filter((x) => x.id !== a.id))}
@@ -179,12 +209,14 @@ function Step({
 function AgentCard({
   agent,
   appUrl,
+  now,
   onUpdate,
   onRevealKey,
   onDeleted,
 }: {
   agent: AgentFull;
   appUrl: string;
+  now: number | null;
   onUpdate: (a: AgentFull) => void;
   onRevealKey: (key: string) => void;
   onDeleted: () => void;
@@ -265,6 +297,7 @@ function AgentCard({
   }
 
   const disabled = agent.status !== "active";
+  const conn = now == null ? null : agentConnection(agent, now);
 
   return (
     <div className={cn("rounded-2xl border border-border bg-surface p-4 shadow-card", disabled && "opacity-70")}>
@@ -274,8 +307,8 @@ function AgentCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-base font-semibold">{agent.name}</h3>
-            <Badge tone={disabled ? "slate" : "emerald"} dot>
-              {disabled ? "disabled" : "active"}
+            <Badge tone={conn?.tone ?? "slate"} dot>
+              <span suppressHydrationWarning>{conn?.label ?? (disabled ? "Disabled" : "…")}</span>
             </Badge>
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-fg-subtle">
