@@ -29,6 +29,10 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  // Native-like: stop iOS from auto-zooming on input focus (which then makes the
+  // whole standalone app pan-scrollable). Honored in display:standalone home-screen apps.
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
 };
 

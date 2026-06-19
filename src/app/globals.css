@@ -147,7 +147,11 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   scroll-behavior: smooth;
+  /* No horizontal page scroll, and no rubber-band that exposes the global canvas. */
+  overflow-x: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -156,6 +160,10 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior: none;
 }
 
 /* Thin, unobtrusive scrollbars */
