@@ -110,7 +110,7 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
               ))}
             </select>
             <p className="mt-1.5 text-xs text-fg-subtle">
-              Sets how Notes splits “Coming next” into days and when next-week tasks roll into Today.
+              Sets how Notes splits “This week” into days and when next-week tasks roll into Today.
             </p>
           </div>
         </div>

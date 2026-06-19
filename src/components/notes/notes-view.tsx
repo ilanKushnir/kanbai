@@ -41,6 +41,8 @@ import {
   Inbox,
   X,
   Check,
+  Pencil,
+  Plus,
   RotateCcw,
   CalendarClock,
   CalendarRange,
@@ -65,6 +67,7 @@ import {
   dueFromDay,
   dayFromBucket,
   type Schedule,
+  type NoteSection,
 } from "@/lib/notes-schedule";
 import type { NoteT, AgentLite, BoardLite } from "@/lib/types";
 
@@ -248,6 +251,7 @@ export function NotesView({
 
   const schedule = React.useMemo(() => buildSchedule(now, weekStartsOn), [now, weekStartsOn]);
   const daySections = React.useMemo(() => schedule.sections.filter((s) => s.kind === "day"), [schedule]);
+  const sectionByKind = (k: NoteSection["kind"]) => schedule.sections.find((s) => s.kind === k)!;
   const baseContainers = React.useMemo(
     () => groupNotes(Object.values(notesById), schedule),
     [notesById, schedule],
@@ -263,9 +267,9 @@ export function NotesView({
   const containers = dragMap ?? baseContainers;
 
   const [draft, setDraft] = React.useState("");
-  const [draftDay, setDraftDay] = React.useState<string | null>(schedule.todayYmd);
+  // Quick captures land in "Unsorted" by default — decide when later by dragging.
+  const [draftDay, setDraftDay] = React.useState<string | null>(null);
   React.useEffect(() => {
-    // keep the composer target from pointing at a day that's now in the past
     if (draftDay !== null && draftDay < schedule.todayYmd) setDraftDay(schedule.todayYmd);
   }, [schedule.todayYmd, draftDay]);
 
@@ -296,11 +300,11 @@ export function NotesView({
     const s0 = buildSchedule(new Date(), weekStartsOn);
     const cont = groupNotes(initial, s0);
     const init = new Set<string>();
-    for (const key of ["next_week", "next_month", "general"]) if ((cont[key]?.length ?? 0) === 0) init.add(key);
-    const comingCount = s0.sections
+    for (const key of ["next_week", "next_month"]) if ((cont[key]?.length ?? 0) === 0) init.add(key);
+    const weekCount = s0.sections
       .filter((s) => s.kind === "day")
       .reduce((sum, s) => sum + (cont[s.key]?.length ?? 0), 0);
-    if (comingCount === 0) init.add("coming_next");
+    if (weekCount === 0) init.add("this_week");
     return init;
   });
   const [activeId, setActiveId] = React.useState<string | null>(null);
@@ -321,11 +325,11 @@ export function NotesView({
     const optimistic = makeTempNote(text, scheduledDay);
     optimistic.priority = priority;
     upsertNote(optimistic);
+    const key = schedule.classify(scheduledDay);
     setCollapsed((s) => {
       const next = new Set(s);
-      next.delete(schedule.classify(scheduledDay));
-      if (scheduledDay !== null && scheduledDay > schedule.todayYmd && schedule.classify(scheduledDay).startsWith("day:"))
-        next.delete("coming_next");
+      next.delete(key);
+      if (key.startsWith("day:")) next.delete("this_week");
       return next;
     });
     try {
@@ -622,11 +626,11 @@ export function NotesView({
     return (notesById[id]?.body ?? "").toLowerCase().includes(q);
   };
 
-  const comingCount = daySections.reduce((sum, s) => sum + (containers[s.key]?.filter(matchId).length ?? 0), 0);
-  const comingOpen = isOpen("coming_next", comingCount);
+  const weekCount = daySections.reduce((sum, s) => sum + (containers[s.key]?.filter(matchId).length ?? 0), 0);
+  const weekOpen = isOpen("this_week", weekCount);
   const activeNote = activeId ? notesById[activeId] : null;
 
-  const sharedRowProps = {
+  const rowProps = {
     notesById,
     focusId,
     dragDisabled: !!q,
@@ -641,12 +645,36 @@ export function NotesView({
     onFile: (n: NoteT) => setSortNote(n),
   };
 
+  const unsorted = sectionByKind("general");
+  const today = sectionByKind("today");
+  const nextWeek = sectionByKind("next_week");
+  const nextMonth = sectionByKind("next_month");
+
+  function block(section: NoteSection, extra?: { card?: boolean; variant?: "unsorted" | "today" | "plain"; icon?: React.ComponentType<{ className?: string }> }) {
+    const ids = (containers[section.key] ?? []).filter(matchId);
+    return (
+      <NoteSectionBlock
+        section={section}
+        open={isOpen(section.key, ids.length)}
+        count={containers[section.key]?.length ?? 0}
+        ids={ids}
+        dragging={dragging}
+        onToggle={() => toggleSection(section.key)}
+        onAdd={(text) => addNote(text, section.day)}
+        card={extra?.card}
+        variant={extra?.variant}
+        icon={extra?.icon}
+        {...rowProps}
+      />
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-6 md:px-6 md:py-8">
       <header className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Notes</h1>
         <p className="mt-1 text-sm text-fg-muted">
-          One running note, split by when. Drop a line in the right slot, tick it off, or mark it for an agent.
+          Capture fast into Unsorted, then drag each line to the day it matters — or tick it off.
         </p>
       </header>
 
@@ -712,7 +740,6 @@ export function NotesView({
         </div>
       )}
 
-      {/* Sections */}
       <DndContext
         id="kanbai-notes"
         sensors={sensors}
@@ -721,38 +748,27 @@ export function NotesView({
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
       >
-        <div className="mt-5 divide-y divide-border/60 rounded-2xl border border-border bg-surface/40">
-          {/* Today */}
-          {(() => {
-            const s = schedule.sections.find((x) => x.kind === "today")!;
-            const ids = (containers[s.key] ?? []).filter(matchId);
-            return (
-              <NoteSectionBlock
-                section={s}
-                open={isOpen(s.key, ids.length)}
-                count={containers[s.key]?.length ?? 0}
-                ids={ids}
-                onToggle={() => toggleSection(s.key)}
-                onAdd={(text) => addNote(text, s.day)}
-                {...sharedRowProps}
-              />
-            );
-          })()}
+        {/* Unsorted — quick-capture catch-all, styled apart */}
+        <div className="mt-5">{block(unsorted, { card: true, variant: "unsorted", icon: Inbox })}</div>
 
-          {/* Coming next (remaining days of the week, split by day) */}
+        {/* Today — the focus */}
+        <div className="mt-3">{block(today, { card: true, variant: "today" })}</div>
+
+        {/* This week (remaining weekdays) + next week / next month */}
+        <div className="mt-3 divide-y divide-border/60 rounded-2xl border border-border bg-surface/40">
           {daySections.length > 0 && (
-            <div className={cn("px-2 py-1.5 transition-colors")}>
+            <div className="px-2 py-1.5">
               <button
-                onClick={() => toggleSection("coming_next")}
+                onClick={() => toggleSection("this_week")}
                 className="group flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2/60 cursor-pointer"
               >
-                <ChevronDown className={cn("h-4 w-4 text-fg-subtle transition-transform", !comingOpen && "-rotate-90")} />
+                <ChevronDown className={cn("h-4 w-4 text-fg-subtle transition-transform", !weekOpen && "-rotate-90")} />
                 <CalendarRange className="h-3.5 w-3.5 text-fg-subtle" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Coming next</span>
-                {comingCount > 0 && <span className="text-xs font-medium text-fg-subtle">{comingCount}</span>}
+                <span className="text-xs font-semibold uppercase tracking-wider text-fg-muted">This week</span>
+                {weekCount > 0 && <span className="text-xs font-medium text-fg-subtle">{weekCount}</span>}
               </button>
-              {comingOpen && (
-                <div className="mt-1 space-y-1 border-l border-border/60 pl-2">
+              {weekOpen && (
+                <div className="mt-1 space-y-0.5 border-l border-border/60 pl-2">
                   {daySections.map((s) => {
                     const ids = (containers[s.key] ?? []).filter(matchId);
                     return (
@@ -763,9 +779,10 @@ export function NotesView({
                         open
                         count={containers[s.key]?.length ?? 0}
                         ids={ids}
+                        dragging={dragging}
                         onToggle={() => {}}
                         onAdd={(text) => addNote(text, s.day)}
-                        {...sharedRowProps}
+                        {...rowProps}
                       />
                     );
                   })}
@@ -774,24 +791,8 @@ export function NotesView({
             </div>
           )}
 
-          {/* Next week / Next month / General */}
-          {schedule.sections
-            .filter((s) => s.kind === "next_week" || s.kind === "next_month" || s.kind === "general")
-            .map((s) => {
-              const ids = (containers[s.key] ?? []).filter(matchId);
-              return (
-                <NoteSectionBlock
-                  key={s.key}
-                  section={s}
-                  open={isOpen(s.key, ids.length)}
-                  count={containers[s.key]?.length ?? 0}
-                  ids={ids}
-                  onToggle={() => toggleSection(s.key)}
-                  onAdd={(text) => addNote(text, s.day)}
-                  {...sharedRowProps}
-                />
-              );
-            })}
+          {block(nextWeek)}
+          {block(nextMonth)}
         </div>
 
         <DragOverlay dropAnimation={null}>
@@ -807,7 +808,7 @@ export function NotesView({
         <EmptyState
           icon={NotebookPen}
           title="Nothing captured yet"
-          description="Jot a line above — then drag it to when it matters, tick it off, or mark it for an agent."
+          description="Jot a line above — it lands in Unsorted. Then drag it to a day, tick it off, or mark it for an agent."
           className="mt-6"
         />
       )}
@@ -993,6 +994,10 @@ function NoteSectionBlock({
   count,
   ids,
   sub,
+  card,
+  variant = "plain",
+  icon: Icon,
+  dragging,
   onToggle,
   onAdd,
   notesById,
@@ -1008,11 +1013,15 @@ function NoteSectionBlock({
   onIngest,
   onFile,
 }: RowHandlers & {
-  section: { key: string; label: string; sublabel?: string; day: string | null };
+  section: NoteSection;
   open: boolean;
   count: number;
   ids: string[];
   sub?: boolean;
+  card?: boolean;
+  variant?: "unsorted" | "today" | "plain";
+  icon?: React.ComponentType<{ className?: string }>;
+  dragging?: boolean;
   onToggle: () => void;
   onAdd: (text: string) => void;
 }) {
@@ -1023,16 +1032,55 @@ function NoteSectionBlock({
   function commitAdd() {
     if (addText.trim()) onAdd(addText);
     setAddText("");
-    // keep the row open for rapid line-by-line entry
   }
 
+  const empty = ids.length === 0;
+  // Empty day slots stay compact; a drop target only appears while dragging.
+  const showDropZone = sub && empty && (dragging || isOver);
+
+  const outer = card
+    ? cn(
+        "rounded-2xl p-2 transition-colors",
+        variant === "today" && "border border-border bg-surface shadow-card",
+        variant === "unsorted" && "border border-dashed border-border bg-primary-soft/15",
+        variant === "plain" && "border border-border bg-surface/40",
+        isOver && "ring-2 ring-primary/40",
+      )
+    : cn("transition-colors", sub ? "rounded-lg px-1 py-0.5" : "px-2 py-1.5", isOver && "rounded-lg bg-primary-soft/30");
+
+  const addLine = (
+    <AutoGrow
+      value={addText}
+      onChange={setAddText}
+      autoFocus
+      onSubmit={commitAdd}
+      onBlur={() => {
+        commitAdd();
+        setAdding(false);
+      }}
+      placeholder={`Add to ${section.label}…`}
+      className="text-[0.95rem] leading-relaxed"
+    />
+  );
+
   return (
-    <div ref={setNodeRef} className={cn("transition-colors", sub ? "py-0.5" : "px-2 py-1.5", isOver && "rounded-lg bg-primary-soft/30")}>
+    <div ref={setNodeRef} className={outer}>
       {sub ? (
-        <div className="flex items-baseline gap-2 px-1.5 py-1">
+        // compact day header with an inline add affordance
+        <div className="flex items-center gap-2 px-1.5 py-0.5">
           <span className="text-[0.7rem] font-semibold uppercase tracking-wider text-fg-muted">{section.label}</span>
           {section.sublabel && <span className="text-[0.6875rem] text-fg-subtle">{section.sublabel}</span>}
-          {count > 0 && <span className="ml-auto text-[0.6875rem] font-medium text-fg-subtle">{count}</span>}
+          <span className="ml-auto flex items-center gap-1.5">
+            {count > 0 && <span className="text-[0.6875rem] font-medium text-fg-subtle">{count}</span>}
+            <button
+              onClick={() => setAdding(true)}
+              title={`Add to ${section.label}`}
+              aria-label={`Add to ${section.label}`}
+              className="grid h-5 w-5 place-items-center rounded-md text-fg-subtle transition-colors hover:bg-surface-2 hover:text-fg cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </span>
         </div>
       ) : (
         <button
@@ -1040,13 +1088,22 @@ function NoteSectionBlock({
           className="group flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2/60 cursor-pointer"
         >
           <ChevronDown className={cn("h-4 w-4 text-fg-subtle transition-transform", !open && "-rotate-90")} />
-          <span className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{section.label}</span>
+          {Icon && <Icon className="h-3.5 w-3.5 text-fg-subtle" />}
+          <span
+            className={cn(
+              "uppercase tracking-wider",
+              variant === "today" ? "text-[0.8rem] font-bold text-fg" : "text-xs font-semibold text-fg-muted",
+            )}
+          >
+            {section.label}
+          </span>
+          {section.sublabel && <span className="text-[0.6875rem] font-normal normal-case text-fg-subtle">{section.sublabel}</span>}
           {count > 0 && <span className="text-xs font-medium text-fg-subtle">{count}</span>}
         </button>
       )}
 
       {open && (
-        <div className={cn("pb-1", sub ? "pl-1" : "pl-1.5")}>
+        <div className={cn(sub ? "pl-1" : "pb-1 pl-1.5")}>
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>
             <div className="mt-0.5">
               {ids.map((id) => {
@@ -1073,23 +1130,23 @@ function NoteSectionBlock({
             </div>
           </SortableContext>
 
-          {/* inline add line */}
           {adding ? (
             <div className="flex items-start gap-2 rounded-lg px-2 py-1.5">
               <CornerDownLeft className="mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle" />
-              <AutoGrow
-                value={addText}
-                onChange={setAddText}
-                autoFocus
-                onSubmit={commitAdd}
-                onBlur={() => {
-                  commitAdd();
-                  setAdding(false);
-                }}
-                placeholder={`Add to ${section.label}…`}
-                className="text-[0.95rem] leading-relaxed"
-              />
+              {addLine}
             </div>
+          ) : sub ? (
+            // empty day: a dashed drop target that only appears while dragging
+            showDropZone && (
+              <div
+                className={cn(
+                  "mx-1 my-0.5 rounded-md border border-dashed px-2 py-1.5 text-center text-[0.6875rem] transition-colors",
+                  isOver ? "border-primary bg-primary-soft/30 text-primary" : "border-border/60 text-fg-subtle",
+                )}
+              >
+                Drop here
+              </div>
+            )
           ) : (
             <button
               onClick={() => setAdding(true)}
@@ -1151,13 +1208,14 @@ function NoteRow({
   }, [highlight]);
 
   const pmeta = PRIORITY_META[(note.priority as keyof typeof PRIORITY_META) ?? "none"] ?? PRIORITY_META.none;
+  const hasPriority = note.priority !== "none";
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group relative flex items-start gap-1.5 rounded-lg py-1.5 pl-1 pr-1.5 transition-colors",
+        "group relative flex items-start gap-1.5 rounded-lg py-1.5 pl-2.5 pr-1.5 transition-colors",
         !isDragging && "hover:bg-surface-2/50",
         isDragging && "opacity-40",
         queued && "bg-primary-soft/40",
@@ -1166,6 +1224,15 @@ function NoteRow({
     >
       <div ref={rowRef} className="absolute -top-px left-0 h-0 w-0" />
 
+      {/* priority — a minimal colored bar on the left edge (no second circle) */}
+      {hasPriority && (
+        <span
+          aria-hidden
+          className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
+          style={{ backgroundColor: pmeta.color }}
+        />
+      )}
+
       {/* drag handle — visible on touch, hover-revealed on desktop; hidden while searching */}
       <button
         {...attributes}
@@ -1173,42 +1240,36 @@ function NoteRow({
         aria-label="Drag to reorder"
         disabled={dragDisabled}
         className={cn(
-          "mt-1 shrink-0 cursor-grab touch-none text-fg-subtle opacity-40 transition-opacity hover:text-fg-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100",
+          "mt-1.5 shrink-0 cursor-grab touch-none text-fg-subtle opacity-40 transition-opacity hover:text-fg-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100",
           dragDisabled && "pointer-events-none !opacity-0",
         )}
       >
         <GripVertical className="h-4 w-4" />
       </button>
 
-      {/* done checkbox */}
+      {/* done checkbox — generous hit area, clearly separated from the text */}
       {!locked && (
         <button
           onClick={onToggleDone}
           aria-label={done ? "Mark not done" : "Mark done"}
           title={done ? "Mark not done" : "Mark done"}
-          className={cn(
-            "mt-[0.3rem] grid h-[1.05rem] w-[1.05rem] shrink-0 place-items-center rounded-full border transition-colors cursor-pointer",
-            done
-              ? "border-success bg-success text-white"
-              : "border-fg-subtle/60 text-transparent hover:border-success hover:text-success/50",
-          )}
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-surface-2 cursor-pointer"
         >
-          <Check className="h-3 w-3" strokeWidth={3} />
+          <span
+            className={cn(
+              "grid h-[1.15rem] w-[1.15rem] place-items-center rounded-full border-[1.5px] transition-colors",
+              done
+                ? "border-success bg-success text-white"
+                : "border-fg-subtle/60 text-transparent group-hover:border-fg-subtle hover:!border-success hover:text-success/60",
+            )}
+          >
+            <Check className="h-3 w-3" strokeWidth={3} />
+          </span>
         </button>
       )}
 
-      {/* priority dot / bullet */}
-      {!done && (
-        <PriorityDot
-          priority={note.priority}
-          color={pmeta.color}
-          onSelect={onSetPriority}
-          className={cn("mt-[0.45rem]", "group-hover:opacity-100", note.priority === "none" && "opacity-60")}
-        />
-      )}
-
       {/* body — dir="auto" so RTL (e.g. Hebrew/Arabic) lines display right-aligned */}
-      <div className={cn("min-w-0 flex-1", done && "text-fg-muted line-through decoration-fg-subtle/50")} dir="auto">
+      <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-muted line-through decoration-fg-subtle/50")} dir="auto">
         {locked ? (
           <Markdown content={note.body} />
         ) : editing ? (
@@ -1224,50 +1285,50 @@ function NoteRow({
             className="text-[0.95rem] leading-relaxed"
           />
         ) : (
-          <div
-            className="cursor-text"
-            onClick={(e) => {
-              if ((e.target as HTMLElement).closest("a, input, button")) return;
-              setEditing(true);
-            }}
-          >
-            <Markdown content={note.body} onToggleCheckbox={done ? undefined : onToggleCheckbox} />
-          </div>
+          <Markdown content={note.body} onToggleCheckbox={done ? undefined : onToggleCheckbox} />
         )}
 
         {/* status row: queued chip / meta */}
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          {queued ? (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-surface/70 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              {note.assignedAgent ? `${note.assignedAgent.name} is filing this…` : "Waiting for an agent…"}
-            </span>
-          ) : note.suggestedDueDate && !done ? (
-            <span className="inline-flex items-center gap-1 text-[0.6875rem] text-fg-subtle">
-              <CalendarClock className="h-3 w-3" />
-              due {new Date(note.suggestedDueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-            </span>
-          ) : null}
-          {note.pinned && (
-            <span className="inline-flex items-center gap-1 text-[0.6875rem] text-primary">
-              <Pin className="h-3 w-3 fill-current" /> pinned
-            </span>
-          )}
-          {note.attachments.some((a) => a.kind === "audio") && (
-            <Badge tone="aqua">
-              <Mic className="h-3 w-3" /> memo
-            </Badge>
-          )}
-          {note.pending && (
-            <span suppressHydrationWarning className="inline-flex items-center gap-1 text-[0.6875rem] text-primary">
-              <Loader2 className="h-3 w-3 animate-spin" /> Saving…
-            </span>
-          )}
-        </div>
+        {(queued || note.pinned || note.attachments.some((a) => a.kind === "audio") || note.pending) && (
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            {queued && (
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-surface/70 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {note.assignedAgent ? `${note.assignedAgent.name} is filing this…` : "Waiting for an agent…"}
+              </span>
+            )}
+            {note.pinned && (
+              <span className="inline-flex items-center gap-1 text-[0.6875rem] text-primary">
+                <Pin className="h-3 w-3 fill-current" /> pinned
+              </span>
+            )}
+            {note.attachments.some((a) => a.kind === "audio") && (
+              <Badge tone="aqua">
+                <Mic className="h-3 w-3" /> memo
+              </Badge>
+            )}
+            {note.pending && (
+              <span suppressHydrationWarning className="inline-flex items-center gap-1 text-[0.6875rem] text-primary">
+                <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* trailing controls */}
       <div className="flex shrink-0 items-center gap-0.5">
+        {!locked && !editing && (
+          <button
+            onClick={() => setEditing(true)}
+            title="Edit"
+            aria-label="Edit note"
+            className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle opacity-100 transition-opacity hover:bg-surface-2 hover:text-fg cursor-pointer md:opacity-0 md:group-hover:opacity-100"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
+
         {queued ? (
           <button
             onClick={() => onIngest(false)}
@@ -1309,6 +1370,14 @@ function NoteRow({
                   }}
                 >
                   <Check className="h-4 w-4" /> {done ? "Mark not done" : "Mark done"}
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setEditing(true);
+                    close();
+                  }}
+                >
+                  <Pencil className="h-4 w-4" /> Edit
                 </MenuItem>
                 <MenuItem
                   onClick={() => {
@@ -1385,61 +1454,6 @@ function NoteRow({
 
 // ── small pieces ──────────────────────────────────────────────────────────────
 
-function PriorityDot({
-  priority,
-  color,
-  onSelect,
-  className,
-}: {
-  priority: string;
-  color: string;
-  onSelect: (p: string) => void;
-  className?: string;
-}) {
-  return (
-    <Menu
-      className={cn("shrink-0", className)}
-      trigger={
-        <button
-          title={`Priority: ${PRIORITY_META[(priority as keyof typeof PRIORITY_META) ?? "none"]?.label ?? "None"}`}
-          className="grid h-4 w-4 place-items-center cursor-pointer"
-        >
-          {priority === "none" ? (
-            <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-fg-subtle" />
-          ) : (
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-          )}
-        </button>
-      }
-    >
-      {(close) => (
-        <div className="min-w-[9rem]">
-          {PRIORITIES.map((p) => {
-            const m = PRIORITY_META[p];
-            return (
-              <MenuItem
-                key={p}
-                active={priority === p}
-                onClick={() => {
-                  onSelect(p);
-                  close();
-                }}
-              >
-                {p === "none" ? (
-                  <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-fg-subtle" />
-                ) : (
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: m.color }} />
-                )}
-                {m.label}
-              </MenuItem>
-            );
-          })}
-        </div>
-      )}
-    </Menu>
-  );
-}
-
 function DayChip({
   value,
   schedule,
@@ -1449,7 +1463,8 @@ function DayChip({
   schedule: Schedule;
   onChange: (day: string | null) => void;
 }) {
-  const current = schedule.sections.find((s) => s.day === value) ?? schedule.sections.find((s) => s.kind === "general")!;
+  const current =
+    schedule.sections.find((s) => s.day === value) ?? schedule.sections.find((s) => s.kind === "general")!;
   return (
     <Menu
       trigger={

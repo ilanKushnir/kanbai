@@ -1,8 +1,33 @@
 "use client";
 
 import * as React from "react";
-import { Bold, Italic, Underline, Heading, List, ListOrdered, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import {
+  Bold,
+  Italic,
+  Underline,
+  Heading,
+  List,
+  ListOrdered,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Link2,
+  Unlink,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Normalize a user-typed URL to a safe, schemed absolute URL. */
+function normalizeUrl(raw: string): string | null {
+  const url = raw.trim();
+  if (!url) return null;
+  if (/^(https?:|mailto:)/i.test(url)) return url;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(url)) return `mailto:${url}`;
+  return `https://${url.replace(/^\/+/, "")}`;
+}
 
 type Tool = { icon: React.ComponentType<{ className?: string }>; cmd: string; arg?: string; label: string };
 
@@ -57,6 +82,22 @@ export function RichEditor({
     ref.current?.focus();
   }
 
+  function addLink() {
+    const sel = window.getSelection();
+    const selected = sel ? sel.toString() : "";
+    const url = normalizeUrl(window.prompt("Link URL", "https://") || "");
+    if (!url) {
+      ref.current?.focus();
+      return;
+    }
+    if (selected) {
+      document.execCommand("createLink", false, url);
+    } else {
+      document.execCommand("insertHTML", false, `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`);
+    }
+    ref.current?.focus();
+  }
+
   function isEmpty(el: HTMLDivElement) {
     return el.textContent?.trim() === "" && !el.querySelector("img, hr");
   }
@@ -79,6 +120,27 @@ export function RichEditor({
             </button>
           </React.Fragment>
         ))}
+        <span className="mx-0.5 h-5 w-px bg-border" />
+        <button
+          type="button"
+          title="Add link"
+          aria-label="Add link"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={addLink}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg cursor-pointer"
+        >
+          <Link2 className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          title="Remove link"
+          aria-label="Remove link"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => exec("unlink")}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg cursor-pointer"
+        >
+          <Unlink className="h-4 w-4" />
+        </button>
       </div>
       <div
         ref={ref}

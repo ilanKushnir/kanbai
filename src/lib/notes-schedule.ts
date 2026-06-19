@@ -77,16 +77,24 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
   const offsetFromWeekStart = (today.getDay() - weekStartsOn + 7) % 7; // 0..6
   const daysLeftThisWeek = 6 - offsetFromWeekStart;
 
+  // "Unsorted" (no day) leads — the default landing for quick captures.
   const sections: NoteSection[] = [
-    { key: "today", label: "Today", day: todayYmd, kind: "today" },
+    { key: "general", label: "Unsorted", day: null, kind: "general" },
+    {
+      key: "today",
+      label: "Today",
+      sublabel: today.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
+      day: todayYmd,
+      kind: "today",
+    },
   ];
 
-  // Remaining days of this week become individual "Coming next" day slots.
+  // Remaining days of this week become individual "This week" day slots.
   for (let i = 1; i <= daysLeftThisWeek; i++) {
     const d = addDays(today, i);
     sections.push({
       key: `day:${ymd(d)}`,
-      label: i === 1 ? "Tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" }),
+      label: d.toLocaleDateString(undefined, { weekday: "long" }),
       sublabel: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
       day: ymd(d),
       kind: "day",
@@ -99,7 +107,6 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
 
   sections.push({ key: "next_week", label: "Next week", day: ymd(startNextWeek), kind: "next_week" });
   sections.push({ key: "next_month", label: "Next month", day: ymd(firstOfNextMonth), kind: "next_month" });
-  sections.push({ key: "general", label: "General", day: null, kind: "general" });
 
   const endThisWeekYmd = daysLeftThisWeek > 0 ? ymd(addDays(today, daysLeftThisWeek)) : todayYmd;
   const startBeyondYmd = ymd(startBeyond);
