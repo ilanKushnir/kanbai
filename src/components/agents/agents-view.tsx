@@ -628,11 +628,12 @@ curl -X POST ${base}/tickets \\
   -d '{"boardId":"<id>","title":"Investigate flaky retries","columnName":"To Do","priority":"high","labelNames":["bug"],"description":"<p>Intermittent 500s on retry.</p><ul><li>Check backoff</li><li>Add a test</li></ul>"}'
 
 ## Process the capture inbox
-Inbox notes carry the user's text plus hints: bucket (today/tomorrow/next_week/next_month/general),
+Inbox notes carry the user's text plus hints: scheduledDay (the local "YYYY-MM-DD" the note is
+slated for, or null), bucket (a coarse today/tomorrow/next_week/next_month/general derived from it),
 priority, and suggestedDueDate. When filing a note into a ticket:
 - Set the ticket's priority to the note's "priority".
 - Set dueDate from any date the NOTE TEXT mentions (e.g. "by Thursday", "before the 5th"); if it
-  mentions none, fall back to "suggestedDueDate" (it reflects the chosen bucket; it is null for General,
+  mentions none, fall back to "suggestedDueDate" (it reflects scheduledDay; it is null when unscheduled,
   so leave the ticket with no due date then).
   POST ${base}/inbox/{noteId}/sort {"boardId":"<id>","title":"...","priority":"...","dueDate":"<ISO or null>"}
 

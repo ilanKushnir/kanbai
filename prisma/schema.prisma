@@ -241,7 +241,9 @@ model Note {
   body      String
   status    String   @default("inbox") // inbox | queued | sorting | sorted | archived
   pinned    Boolean  @default(false)
-  bucket    String   @default("today") // today | tomorrow | next_week | next_month | general
+  bucket    String   @default("today") // coarse, derived cache: today | tomorrow | next_week | next_month | general
+  scheduledDay String? // local "YYYY-MM-DD" the note is slated for; null = General/someday
+  doneOn       String? // local "YYYY-MM-DD" the note was completed; null = not done
   position  Int      @default(0)
   priority  String   @default("none") // none | low | medium | high | urgent
 

@@ -25,9 +25,13 @@ export function initials(name: string): string {
     .join("");
 }
 
-/** A plain-text excerpt from a description's HTML — for compact card previews. */
-export function htmlToPlainText(html: string): string {
-  return html
+/**
+ * A clean plain-text excerpt from a description — for compact card previews.
+ * Strips HTML tags AND common Markdown markup so legacy/agent content (which may
+ * be either) always renders as readable text rather than raw `**`/`#`/`<p>`.
+ */
+export function htmlToPlainText(input: string): string {
+  let s = input
     .replace(/<(li|p|h3|h4|br|div|blockquote)\b[^>]*>/gi, " ") // block boundaries → space
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/gi, " ")
@@ -35,7 +39,19 @@ export function htmlToPlainText(html: string): string {
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&quot;/gi, '"')
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/&quot;/gi, '"');
+
+  // Markdown → text
+  s = s
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1") // images → alt
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // links → text
+    .replace(/`{1,3}([^`]*)`{1,3}/g, "$1") // inline/code spans
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "") // ATX headings
+    .replace(/^\s{0,3}>\s?/gm, "") // blockquotes
+    .replace(/^\s*([-*+]|\d+\.)\s+(\[[ xX]\]\s+)?/gm, "") // list bullets + task checkboxes
+    .replace(/(\*\*|__)(.*?)\1/g, "$2") // bold
+    .replace(/(\*|_)(.*?)\1/g, "$2") // italic
+    .replace(/~~(.*?)~~/g, "$1"); // strikethrough
+
+  return s.replace(/\s+/g, " ").trim();
 }

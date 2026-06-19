@@ -3,6 +3,7 @@ import { generateApiKey, generateWebhookSecret } from "../src/lib/crypto";
 import { hashPassword } from "../src/lib/password";
 import { toRichHtml } from "../src/lib/sanitize";
 import { ALL_SCOPES } from "../src/lib/constants";
+import { ymd, addDays, coarseBucket, dayFromBucket } from "../src/lib/notes-schedule";
 
 const db = new PrismaClient();
 const DEMO_EMAIL = "you@kanbai.app";
@@ -206,43 +207,52 @@ async function main() {
   });
 
   // ── Notes (mobile fast-capture) ───────────────────────────────────────────────
-  // One running note split into when-buckets; some lines marked for an agent.
+  // One running note split by when (a scheduled local day); some lines marked for
+  // an agent, some ticked off (a fresh one stays in place; an older one is in Done).
+  const todayYmd = ymd(new Date());
   const noteData: {
     body: string;
-    bucket?: string;
+    when?: string; // today | tomorrow | next_week | next_month | general
+    scheduledDay?: string | null;
+    doneOn?: string;
     priority?: string;
     status?: string;
     pinned?: boolean;
     agentId?: string;
     sortContext?: string;
   }[] = [
-    { body: "Call the bank about the new card", bucket: "today", priority: "high" },
-    { body: "Reply to Dana's thread about the launch checklist", bucket: "today", priority: "medium" },
+    { body: "Call the bank about the new card", when: "today", priority: "high" },
+    { body: "Reply to Dana's thread about the launch checklist", when: "today", priority: "medium", doneOn: todayYmd },
     {
       body: "Follow up with the design contractor about the icon set",
-      bucket: "today",
+      when: "today",
       priority: "medium",
       status: "queued",
       agentId: hermes.id,
       sortContext: "Put this on the Product board, it's a design task, medium priority.",
     },
-    { body: "Bug — dragging a card to an empty column sometimes snaps back", bucket: "tomorrow", priority: "high" },
-    { body: "Prep the standup notes", bucket: "tomorrow" },
-    { body: "Blog post: how we sign webhooks so agents can trust Kanbai", bucket: "next_week", priority: "low" },
-    { body: "Book the offsite venue", bucket: "next_month", priority: "medium" },
-    { body: "Idea: let agents propose due dates based on the note text", bucket: "general", pinned: true },
-    { body: "Grocery: oat milk, coffee, eggs", bucket: "general" },
+    { body: "Bug — dragging a card to an empty column sometimes snaps back", when: "tomorrow", priority: "high" },
+    { body: "Prep the standup notes", when: "tomorrow" },
+    { body: "Blog post: how we sign webhooks so agents can trust Kanbai", when: "next_week", priority: "low" },
+    { body: "Book the offsite venue", when: "next_month", priority: "medium" },
+    { body: "Idea: let agents propose due dates based on the note text", when: "general", pinned: true },
+    { body: "Grocery: oat milk, coffee, eggs", when: "general" },
+    // Completed earlier in the week — lives in the collapsed Done section.
+    { body: "Send the Q2 numbers to finance", scheduledDay: ymd(addDays(new Date(), -2)), doneOn: ymd(addDays(new Date(), -2)) },
   ];
-  const posByBucket: Record<string, number> = {};
+  const posByDay: Record<string, number> = {};
   for (const n of noteData) {
-    const bucket = n.bucket ?? "today";
-    const position = posByBucket[bucket] ?? 0;
-    posByBucket[bucket] = position + 1;
+    const scheduledDay = n.scheduledDay !== undefined ? n.scheduledDay : dayFromBucket(n.when);
+    const dayKey = scheduledDay ?? "general";
+    const position = posByDay[dayKey] ?? 0;
+    posByDay[dayKey] = position + 1;
     await db.note.create({
       data: {
         userId: user.id,
         body: n.body,
-        bucket,
+        scheduledDay,
+        bucket: coarseBucket(scheduledDay),
+        doneOn: n.doneOn ?? null,
         position,
         priority: n.priority ?? "none",
         status: n.status ?? "inbox",

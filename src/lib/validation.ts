@@ -126,9 +126,13 @@ export const reorderColumnsSchema = z.object({
   orderedIds: z.array(z.string()).min(1),
 });
 
+/** Local calendar day "YYYY-MM-DD" (timezone-proof note scheduling). */
+const dayString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
 export const createNoteSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
-  bucket: z.enum(NOTE_BUCKETS).optional(),
+  scheduledDay: dayString.nullable().optional(),
+  bucket: z.enum(NOTE_BUCKETS).optional(), // legacy fallback if scheduledDay omitted
   priority: z.enum(PRIORITIES).optional(),
 });
 
@@ -136,12 +140,13 @@ export const updateNoteSchema = z.object({
   body: z.string().trim().min(1).max(10_000).optional(),
   pinned: z.boolean().optional(),
   status: z.enum(["inbox", "archived"]).optional(),
-  bucket: z.enum(NOTE_BUCKETS).optional(),
+  scheduledDay: dayString.nullable().optional(),
+  doneOn: dayString.nullable().optional(),
   priority: z.enum(PRIORITIES).optional(),
 });
 
 export const moveNoteSchema = z.object({
-  bucket: z.enum(NOTE_BUCKETS),
+  scheduledDay: dayString.nullable(),
   position: z.number().int().min(0),
 });
 
@@ -207,6 +212,7 @@ export const updateAccountSchema = z.object({
   email: z.email().max(200).optional(),
   avatarUrl: z.url().max(2000).nullable().optional().or(z.literal("")),
   defaultLanding: z.enum(LANDING_PAGES).optional(),
+  weekStartsOn: z.number().int().min(0).max(6).optional(),
 });
 
 export const changePasswordSchema = z.object({

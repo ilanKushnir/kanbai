@@ -12,8 +12,8 @@ export const POST = handler(
     const note = await db.note.findUnique({ where: { id: noteId }, select: { userId: true } });
     if (!note || note.userId !== user!.id) throw new HttpError(404, "Note not found");
 
-    const { bucket, position } = parse(moveNoteSchema, await readJson(req));
-    const updated = await moveNote(noteId, user!.id, bucket, position);
+    const { scheduledDay, position } = parse(moveNoteSchema, await readJson(req));
+    const updated = await moveNote(noteId, user!.id, scheduledDay, position);
     return ok({ note: updated });
   },
 );

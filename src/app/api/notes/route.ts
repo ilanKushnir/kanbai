@@ -6,7 +6,7 @@ import { createNote } from "@/lib/services/notes";
 
 export const POST = handler(async (req: Request) => {
   const { user } = await getCurrentContext();
-  const { body, bucket, priority } = parse(createNoteSchema, await readJson(req));
-  const note = await createNote(user!.id, body, { bucket, priority });
+  const { body, scheduledDay, bucket, priority } = parse(createNoteSchema, await readJson(req));
+  const note = await createNote(user!.id, body, { scheduledDay, bucket, priority });
   return created({ note });
 });

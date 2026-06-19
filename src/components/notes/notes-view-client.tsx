@@ -13,7 +13,12 @@ const NotesView = dynamic(() => import("./notes-view").then((m) => m.NotesView),
   loading: () => <NotesSkeleton />,
 });
 
-export function NotesViewClient(props: { notes: NoteT[]; agents: AgentLite[]; boards: BoardLite[] }) {
+export function NotesViewClient(props: {
+  notes: NoteT[];
+  agents: AgentLite[];
+  boards: BoardLite[];
+  weekStartsOn: number;
+}) {
   return <NotesView {...props} />;
 }
 

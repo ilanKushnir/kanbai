@@ -128,15 +128,16 @@ POST /inbox/{noteId}/sort     # turn a note into a ticket           scope: inbox
 ```
 
 A queued note includes the raw text, optional free-text `sortContext` from the
-user, and any `attachments` (e.g. a voice memo as a base64 data URL). Notes are
-captured into one of five **when-buckets** — the agent gets these as filing
+user, and any `attachments` (e.g. a voice memo as a base64 data URL). Each note
+is scheduled for a **local calendar day** — the agent gets that plus coarse
 hints so it can pick the right board/column and a sensible due date:
 
 | Field | Meaning |
 | --- | --- |
-| `bucket` | `today` · `tomorrow` · `next_week` · `next_month` · `general` |
+| `scheduledDay` | the local day the note is slated for, as `"YYYY-MM-DD"`, or `null` for unscheduled |
+| `bucket` | coarse hint derived from `scheduledDay`: `today` · `tomorrow` · `next_week` · `next_month` · `general` |
 | `priority` | user-set line priority: `none/low/medium/high/urgent` |
-| `suggestedDueDate` | ISO 8601 due date derived from the bucket (noon local), or `null` for `general` — apply it as-is or override |
+| `suggestedDueDate` | ISO 8601 due date (noon local) derived from `scheduledDay`, or `null` when unscheduled — apply it as-is or override |
 
 The agent decides the board, column, priority, labels, and due date, then files
 it (a good default: carry `priority` through and use `suggestedDueDate` as the

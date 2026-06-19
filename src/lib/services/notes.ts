@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/activity";
 import { dispatchWebhook } from "@/lib/webhooks";
 import { HttpError } from "@/lib/api";
 import { ticketInclude, serializeTicket } from "@/lib/serialize";
+import { coarseBucket, dueFromDay, dayFromBucket } from "@/lib/notes-schedule";
 import { createTicket, type Actor } from "./tickets";
 
 const noteInclude = {
@@ -19,37 +20,20 @@ async function loadNote(id: string) {
   return n;
 }
 
-/** A due-date hint derived from the bucket (noon, local) the agent can apply. */
-export function bucketDueDate(bucket: string): string | null {
-  const d = new Date();
-  d.setHours(12, 0, 0, 0);
-  switch (bucket) {
-    case "today":
-      return d.toISOString();
-    case "tomorrow":
-      d.setDate(d.getDate() + 1);
-      return d.toISOString();
-    case "next_week":
-      d.setDate(d.getDate() + 7);
-      return d.toISOString();
-    case "next_month":
-      d.setMonth(d.getMonth() + 1);
-      return d.toISOString();
-    default:
-      return null;
-  }
-}
-
 export function serializeNote(n: NoteWithRelations) {
+  // `scheduledDay` (a local calendar day) is the source of truth; the coarse
+  // `bucket` and `suggestedDueDate` are derived hints for agents.
   return {
     id: n.id,
     body: n.body,
     status: n.status,
     pinned: n.pinned,
-    bucket: n.bucket,
+    bucket: coarseBucket(n.scheduledDay),
+    scheduledDay: n.scheduledDay,
+    doneOn: n.doneOn,
     position: n.position,
     priority: n.priority,
-    suggestedDueDate: bucketDueDate(n.bucket),
+    suggestedDueDate: dueFromDay(n.scheduledDay),
     sortContext: n.sortContext,
     assignedAgent: n.assignedAgent
       ? { id: n.assignedAgent.id, name: n.assignedAgent.name, color: n.assignedAgent.color, kind: n.assignedAgent.kind }
@@ -99,16 +83,25 @@ export async function getNoteForAgent(noteId: string, agentId: string) {
 export async function createNote(
   userId: string,
   body: string,
-  opts?: { bucket?: string; priority?: string },
+  opts?: { scheduledDay?: string | null; bucket?: string; priority?: string },
 ) {
-  const bucket = opts?.bucket ?? "today";
+  // Prefer an explicit scheduledDay; fall back to mapping a legacy bucket.
+  const scheduledDay =
+    opts?.scheduledDay !== undefined ? opts.scheduledDay : dayFromBucket(opts?.bucket);
   const last = await db.note.findFirst({
-    where: { userId, bucket },
+    where: { userId, scheduledDay },
     orderBy: { position: "desc" },
     select: { position: true },
   });
   const note = await db.note.create({
-    data: { userId, body, bucket, priority: opts?.priority ?? "none", position: (last?.position ?? -1) + 1 },
+    data: {
+      userId,
+      body,
+      scheduledDay,
+      bucket: coarseBucket(scheduledDay),
+      priority: opts?.priority ?? "none",
+      position: (last?.position ?? -1) + 1,
+    },
     include: noteInclude,
   });
   return serializeNote(note);
@@ -116,17 +109,32 @@ export async function createNote(
 
 export async function updateNote(
   noteId: string,
-  input: Partial<{ body: string; pinned: boolean; status: string; bucket: string; priority: string }>,
+  input: Partial<{
+    body: string;
+    pinned: boolean;
+    status: string;
+    scheduledDay: string | null;
+    doneOn: string | null;
+    priority: string;
+  }>,
 ) {
-  const note = await db.note.update({ where: { id: noteId }, data: input, include: noteInclude });
+  const data: Record<string, unknown> = { ...input };
+  // Keep the coarse bucket cache in sync when the schedule changes.
+  if (input.scheduledDay !== undefined) data.bucket = coarseBucket(input.scheduledDay);
+  const note = await db.note.update({ where: { id: noteId }, data, include: noteInclude });
   return serializeNote(note);
 }
 
-/** Move a note to a bucket at a position, reindexing the target bucket. */
-export async function moveNote(noteId: string, userId: string, bucket: string, position: number) {
+/** Move a note to a scheduled day at a position, reindexing that day's group. */
+export async function moveNote(
+  noteId: string,
+  userId: string,
+  scheduledDay: string | null,
+  position: number,
+) {
   const targetIds = (
     await db.note.findMany({
-      where: { userId, bucket },
+      where: { userId, scheduledDay },
       orderBy: { position: "asc" },
       select: { id: true },
     })
@@ -135,8 +143,9 @@ export async function moveNote(noteId: string, userId: string, bucket: string, p
     .filter((id) => id !== noteId);
   const clamped = Math.max(0, Math.min(position, targetIds.length));
   targetIds.splice(clamped, 0, noteId);
+  const bucket = coarseBucket(scheduledDay);
   await db.$transaction(
-    targetIds.map((id, i) => db.note.update({ where: { id }, data: { bucket, position: i } })),
+    targetIds.map((id, i) => db.note.update({ where: { id }, data: { scheduledDay, bucket, position: i } })),
   );
   return serializeNote(await loadNote(noteId));
 }

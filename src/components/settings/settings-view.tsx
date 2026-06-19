@@ -17,6 +17,16 @@ const LANDING_OPTIONS = [
   { value: "boards", label: "Boards" },
 ];
 
+const WEEKDAY_OPTIONS = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+];
+
 const selectCls =
   "h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20";
 
@@ -24,26 +34,37 @@ type Props = {
   isManager: boolean;
   isOwner: boolean;
   defaultLanding: string;
+  weekStartsOn: number;
   workspaceId: string;
   workspace: { name: string; defaultAgentId: string | null; snapshotLimit: number } | null;
   agents: { id: string; name: string }[];
 };
 
-export function SettingsView({ isManager, isOwner, defaultLanding, workspaceId, workspace, agents }: Props) {
+export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn, workspaceId, workspace, agents }: Props) {
   const router = useRouter();
   const { toast } = useToast();
 
   const [landing, setLanding] = React.useState(defaultLanding);
+  const [weekStart, setWeekStart] = React.useState(String(weekStartsOn));
 
-  async function saveLanding(value: string) {
-    setLanding(value);
+  async function savePref(body: Record<string, unknown>) {
     try {
-      await api("/api/account", { method: "PATCH", body: { defaultLanding: value } });
+      await api("/api/account", { method: "PATCH", body });
       toast({ title: "Preference saved", variant: "success" });
       router.refresh();
     } catch (e) {
       toast({ title: "Couldn't save", description: e instanceof Error ? e.message : undefined, variant: "error" });
     }
+  }
+
+  function saveLanding(value: string) {
+    setLanding(value);
+    void savePref({ defaultLanding: value });
+  }
+
+  function saveWeekStart(value: string) {
+    setWeekStart(value);
+    void savePref({ weekStartsOn: Number(value) });
   }
 
   return (
@@ -78,6 +99,19 @@ export function SettingsView({ isManager, isOwner, defaultLanding, workspaceId, 
               ))}
             </select>
             <p className="mt-1.5 text-xs text-fg-subtle">Where Kanbai opens when you sign in.</p>
+          </div>
+          <div>
+            <Label htmlFor="weekstart">Week starts on</Label>
+            <select id="weekstart" className={selectCls} value={weekStart} onChange={(e) => saveWeekStart(e.target.value)}>
+              {WEEKDAY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-fg-subtle">
+              Sets how Notes splits “Coming next” into days and when next-week tasks roll into Today.
+            </p>
           </div>
         </div>
       </section>

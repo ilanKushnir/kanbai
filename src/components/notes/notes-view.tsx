@@ -35,13 +35,15 @@ import {
   Loader2,
   NotebookPen,
   Search,
-  ListChecks,
   GripVertical,
   ChevronDown,
   MoreHorizontal,
   Inbox,
   X,
+  Check,
+  RotateCcw,
   CalendarClock,
+  CalendarRange,
   CornerDownLeft,
   AlignLeft,
   AlignRight,
@@ -55,26 +57,42 @@ import { useToast } from "@/components/ui/toast";
 import { ProcessSheet } from "./process-sheet";
 import { useDictation } from "./use-dictation";
 import { api } from "@/lib/client-api";
-import { timeAgo, cn } from "@/lib/utils";
-import { NOTE_BUCKETS, BUCKET_LABEL, PRIORITIES, PRIORITY_META, type NoteBucket } from "@/lib/constants";
+import { cn } from "@/lib/utils";
+import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
+import {
+  buildSchedule,
+  coarseBucket,
+  dueFromDay,
+  dayFromBucket,
+  type Schedule,
+} from "@/lib/notes-schedule";
 import type { NoteT, AgentLite, BoardLite } from "@/lib/types";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-const ACTIVE = (n: NoteT) => n.status === "inbox" || n.status === "queued";
-function bucketOf(n: NoteT): NoteBucket {
-  return (NOTE_BUCKETS as readonly string[]).includes(n.bucket) ? (n.bucket as NoteBucket) : "general";
+/** Notes that occupy a time-section: active, and not a "done" note that already rolled out. */
+function inPlay(n: NoteT, todayYmd: string): boolean {
+  if (n.status !== "inbox" && n.status !== "queued") return false;
+  return n.doneOn == null || n.doneOn >= todayYmd; // done-today stays struck in place
 }
 
-/** Group active notes into ordered id-lists per bucket (preserving incoming order). */
-function buildContainers(notes: NoteT[]): Record<NoteBucket, string[]> {
-  const m = Object.fromEntries(NOTE_BUCKETS.map((b) => [b, [] as string[]])) as Record<NoteBucket, string[]>;
-  for (const n of notes) if (ACTIVE(n)) m[bucketOf(n)].push(n.id);
-  return m;
+/** Group notes into ordered id-lists keyed by section, ordered by position. */
+function groupNotes(notes: NoteT[], schedule: Schedule): Record<string, string[]> {
+  const map: Record<string, string[]> = {};
+  for (const s of schedule.sections) map[s.key] = [];
+  const active = notes
+    .filter((n) => inPlay(n, schedule.todayYmd))
+    .slice()
+    .sort((a, b) => a.position - b.position || +new Date(a.createdAt) - +new Date(b.createdAt));
+  for (const n of active) {
+    const key = schedule.classify(n.scheduledDay ?? null);
+    (map[key] ??= []).push(n.id);
+  }
+  return map;
 }
 
 const QUEUE_KEY = "kanbai-note-queue";
-type QueueItem = { tempId: string; body: string; bucket: NoteBucket; priority?: string };
+type QueueItem = { tempId: string; body: string; scheduledDay: string | null; bucket?: string; priority?: string };
 function readQueue(): QueueItem[] {
   try {
     return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
@@ -89,17 +107,19 @@ function writeQueue(q: QueueItem[]) {
     /* noop */
   }
 }
-function makeTempNote(body: string, bucket: NoteBucket): NoteT {
+function makeTempNote(body: string, scheduledDay: string | null): NoteT {
   const now = new Date().toISOString();
   return {
     id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     body,
     status: "inbox",
     pinned: false,
-    bucket,
+    bucket: coarseBucket(scheduledDay),
+    scheduledDay,
+    doneOn: null,
     position: 9999,
     priority: "none",
-    suggestedDueDate: null,
+    suggestedDueDate: dueFromDay(scheduledDay),
     sortContext: null,
     assignedAgent: null,
     attachments: [],
@@ -185,10 +205,12 @@ export function NotesView({
   notes: initial,
   agents,
   boards,
+  weekStartsOn,
 }: {
   notes: NoteT[];
   agents: AgentLite[];
   boards: BoardLite[];
+  weekStartsOn: number;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -197,18 +219,56 @@ export function NotesView({
   const [notesById, setNotesById] = React.useState<Record<string, NoteT>>(() =>
     Object.fromEntries(initial.map((n) => [n.id, n])),
   );
-  const [containers, setContainers] = React.useState<Record<NoteBucket, string[]>>(() => buildContainers(initial));
-  const containersRef = React.useRef(containers);
-  const setCont = (next: Record<NoteBucket, string[]>) => {
-    containersRef.current = next;
-    setContainers(next);
-  };
   const notesRef = React.useRef(notesById);
   notesRef.current = notesById;
   const upsertNote = (n: NoteT) => setNotesById((m) => ({ ...m, [n.id]: n }));
 
+  // `now` recomputes the time-sections; it ticks at local midnight and on focus
+  // so buckets roll forward (tomorrow → today, etc.) without a reload.
+  const [now, setNow] = React.useState<Date>(() => new Date());
+  React.useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    function arm() {
+      const n = new Date();
+      const nextMidnight = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 5);
+      timer = setTimeout(() => {
+        setNow(new Date());
+        router.refresh();
+        arm();
+      }, nextMidnight.getTime() - n.getTime());
+    }
+    arm();
+    const onFocus = () => setNow(new Date());
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [router]);
+
+  const schedule = React.useMemo(() => buildSchedule(now, weekStartsOn), [now, weekStartsOn]);
+  const daySections = React.useMemo(() => schedule.sections.filter((s) => s.kind === "day"), [schedule]);
+  const baseContainers = React.useMemo(
+    () => groupNotes(Object.values(notesById), schedule),
+    [notesById, schedule],
+  );
+
+  // Drag override: a transient container map active only while dragging.
+  const [dragMap, setDragMap] = React.useState<Record<string, string[]> | null>(null);
+  const dragMapRef = React.useRef(dragMap);
+  const setDM = (m: Record<string, string[]> | null) => {
+    dragMapRef.current = m;
+    setDragMap(m);
+  };
+  const containers = dragMap ?? baseContainers;
+
   const [draft, setDraft] = React.useState("");
-  const [draftBucket, setDraftBucket] = React.useState<NoteBucket>("today");
+  const [draftDay, setDraftDay] = React.useState<string | null>(schedule.todayYmd);
+  React.useEffect(() => {
+    // keep the composer target from pointing at a day that's now in the past
+    if (draftDay !== null && draftDay < schedule.todayYmd) setDraftDay(schedule.todayYmd);
+  }, [schedule.todayYmd, draftDay]);
+
   const [composerDir, setComposerDir] = React.useState<"ltr" | "rtl">("ltr");
   React.useEffect(() => {
     const saved = typeof localStorage !== "undefined" ? localStorage.getItem("kanbai-compose-dir") : null;
@@ -232,9 +292,17 @@ export function NotesView({
   const [query, setQuery] = React.useState("");
   const [sortNote, setSortNote] = React.useState<NoteT | null>(null);
   const [showArchived, setShowArchived] = React.useState(false);
-  const [collapsed, setCollapsed] = React.useState<Set<NoteBucket>>(
-    () => new Set(NOTE_BUCKETS.filter((b) => buildContainers(initial)[b].length === 0)),
-  );
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(() => {
+    const s0 = buildSchedule(new Date(), weekStartsOn);
+    const cont = groupNotes(initial, s0);
+    const init = new Set<string>();
+    for (const key of ["next_week", "next_month", "general"]) if ((cont[key]?.length ?? 0) === 0) init.add(key);
+    const comingCount = s0.sections
+      .filter((s) => s.kind === "day")
+      .reduce((sum, s) => sum + (cont[s.key]?.length ?? 0), 0);
+    if (comingCount === 0) init.add("coming_next");
+    return init;
+  });
   const [activeId, setActiveId] = React.useState<string | null>(null);
 
   const focusId = params.get("focus");
@@ -247,25 +315,26 @@ export function NotesView({
   );
 
   // ── capture ────────────────────────────────────────────────────────────────
-  async function addNote(body: string, bucket: NoteBucket, priority = "none") {
+  async function addNote(body: string, scheduledDay: string | null, priority = "none") {
     const text = body.trim();
     if (!text) return;
-    const optimistic = makeTempNote(text, bucket);
+    const optimistic = makeTempNote(text, scheduledDay);
     optimistic.priority = priority;
     upsertNote(optimistic);
-    setCont({ ...containersRef.current, [bucket]: [...containersRef.current[bucket], optimistic.id] });
     setCollapsed((s) => {
       const next = new Set(s);
-      next.delete(bucket);
+      next.delete(schedule.classify(scheduledDay));
+      if (scheduledDay !== null && scheduledDay > schedule.todayYmd && schedule.classify(scheduledDay).startsWith("day:"))
+        next.delete("coming_next");
       return next;
     });
     try {
       if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("offline");
-      const { note } = await api<{ note: NoteT }>("/api/notes", { body: { body: text, bucket, priority } });
+      const { note } = await api<{ note: NoteT }>("/api/notes", { body: { body: text, scheduledDay, priority } });
       replaceTemp(optimistic.id, note);
       router.refresh();
     } catch {
-      writeQueue([...readQueue(), { tempId: optimistic.id, body: text, bucket, priority }]);
+      writeQueue([...readQueue(), { tempId: optimistic.id, body: text, scheduledDay, priority }]);
       toast({ title: "Saved offline", description: "It'll sync when you're back online.", variant: "info" });
     }
   }
@@ -277,19 +346,12 @@ export function NotesView({
       next[note.id] = note;
       return next;
     });
-    // Swap the temp id in whichever bucket currently holds it — the user may
-    // have dragged the pending note to a different bucket than it was created in.
-    const next = { ...containersRef.current };
-    for (const b of NOTE_BUCKETS) {
-      if (next[b].includes(tempId)) next[b] = next[b].map((id) => (id === tempId ? note.id : id));
-    }
-    setCont(next);
   }
 
   function submitDraft() {
     if (!draft.trim()) return;
     dictation.stop();
-    addNote(draft, draftBucket);
+    addNote(draft, draftDay);
     setDraft("");
   }
 
@@ -303,8 +365,10 @@ export function NotesView({
       try {
         for (const item of readQueue()) {
           try {
+            const scheduledDay =
+              item.scheduledDay !== undefined ? item.scheduledDay : dayFromBucket(item.bucket);
             const { note } = await api<{ note: NoteT }>("/api/notes", {
-              body: { body: item.body, bucket: item.bucket, priority: item.priority },
+              body: { body: item.body, scheduledDay, priority: item.priority },
             });
             replaceTemp(item.tempId, note);
             writeQueue(readQueue().filter((x) => x.tempId !== item.tempId));
@@ -350,16 +414,21 @@ export function NotesView({
     patchNote(id, { priority });
   }
 
-  function removeFromContainers(id: string) {
-    const b = Object.keys(containersRef.current).find((k) =>
-      containersRef.current[k as NoteBucket].includes(id),
-    ) as NoteBucket | undefined;
-    if (b) setCont({ ...containersRef.current, [b]: containersRef.current[b].filter((x) => x !== id) });
+  function toggleDone(note: NoteT) {
+    const done = note.doneOn != null;
+    patchNote(note.id, { doneOn: done ? null : schedule.todayYmd });
+    if (!done) {
+      toast({
+        title: "Marked done",
+        description: "It moves to Done after midnight.",
+        actionLabel: "Undo",
+        onAction: () => patchNote(note.id, { doneOn: null }),
+      });
+    }
   }
 
   function archive(id: string) {
     const cur = notesRef.current[id];
-    removeFromContainers(id);
     if (cur) upsertNote({ ...cur, status: "archived" });
     void api(`/api/notes/${id}`, { method: "PATCH", body: { status: "archived" } }).catch(() => router.refresh());
     toast({
@@ -372,15 +441,11 @@ export function NotesView({
   function restore(id: string) {
     const cur = notesRef.current[id];
     if (!cur) return;
-    const b = bucketOf(cur);
     upsertNote({ ...cur, status: "inbox" });
-    if (!containersRef.current[b].includes(id))
-      setCont({ ...containersRef.current, [b]: [...containersRef.current[b], id] });
     void api(`/api/notes/${id}`, { method: "PATCH", body: { status: "inbox" } }).catch(() => router.refresh());
   }
 
   async function del(id: string) {
-    removeFromContainers(id);
     setNotesById((m) => {
       const next = { ...m };
       delete next[id];
@@ -420,71 +485,97 @@ export function NotesView({
     saveBody(note.id, toggleTask(note.body, index));
   }
 
-  // ── drag & drop across buckets ───────────────────────────────────────────────
-  function keyOf(map: Record<string, string[]>, id: string): NoteBucket | null {
-    if (id in map) return id as NoteBucket;
-    return (Object.keys(map).find((k) => map[k].includes(id)) as NoteBucket | undefined) ?? null;
+  // ── drag & drop across sections ──────────────────────────────────────────────
+  function keyOf(map: Record<string, string[]>, id: string): string | null {
+    if (id in map) return id;
+    return Object.keys(map).find((k) => map[k].includes(id)) ?? null;
   }
 
   function onDragStart(e: DragStartEvent) {
+    const snapshot = Object.fromEntries(Object.entries(baseContainers).map(([k, v]) => [k, [...v]]));
+    setDM(snapshot);
     setActiveId(String(e.active.id));
   }
 
   function onDragOver(e: DragOverEvent) {
     const { active, over } = e;
     if (!over) return;
+    const map = dragMapRef.current;
+    if (!map) return;
     const aId = String(active.id);
     const overId = String(over.id);
-    const prev = containersRef.current as Record<string, string[]>;
-    const activeContainer = keyOf(prev, aId);
-    const overContainer = overId in prev ? (overId as NoteBucket) : keyOf(prev, overId);
+    const activeContainer = keyOf(map, aId);
+    const overContainer = overId in map ? overId : keyOf(map, overId);
     if (!activeContainer || !overContainer || activeContainer === overContainer) return;
 
-    const activeItems = prev[activeContainer];
-    const overItems = prev[overContainer];
-    const overIndex = overId in prev ? overItems.length : Math.max(0, overItems.indexOf(overId));
-    setCont({
-      ...(prev as Record<NoteBucket, string[]>),
+    const activeItems = map[activeContainer];
+    const overItems = map[overContainer];
+    const overIndex = overId in map ? overItems.length : Math.max(0, overItems.indexOf(overId));
+    setDM({
+      ...map,
       [activeContainer]: activeItems.filter((id) => id !== aId),
       [overContainer]: [...overItems.slice(0, overIndex), aId, ...overItems.slice(overIndex)],
     });
   }
 
   function onDragEnd(e: DragEndEvent) {
-    setActiveId(null);
     const { active, over } = e;
-    if (!over) return;
+    setActiveId(null);
+    const map = dragMapRef.current;
+    if (!map || !over) {
+      setDM(null);
+      return;
+    }
     const aId = String(active.id);
     const overId = String(over.id);
-    const prev = containersRef.current as Record<string, string[]>;
-    const activeContainer = keyOf(prev, aId);
-    if (!activeContainer) return;
-    const overContainer = overId in prev ? (overId as NoteBucket) : keyOf(prev, overId);
+    const activeContainer = keyOf(map, aId);
+    if (!activeContainer) {
+      setDM(null);
+      return;
+    }
+    const overContainer = overId in map ? overId : keyOf(map, overId);
 
-    let result = prev;
+    let finalMap = map;
     if (overContainer && activeContainer === overContainer) {
-      const items = prev[activeContainer];
+      const items = map[activeContainer];
       const oldIndex = items.indexOf(aId);
-      const newIndex = overId in prev ? items.length - 1 : items.indexOf(overId);
+      const newIndex = overId in map ? items.length - 1 : items.indexOf(overId);
       if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        result = { ...prev, [activeContainer]: arrayMove(items, oldIndex, newIndex) };
-        setCont(result as Record<NoteBucket, string[]>);
+        finalMap = { ...map, [activeContainer]: arrayMove(items, oldIndex, newIndex) };
       }
     }
 
-    const finalContainer = keyOf(result, aId);
-    if (!finalContainer) return;
-    const finalIndex = result[finalContainer].indexOf(aId);
-    void persistMove(aId, finalContainer, finalIndex);
+    const finalKey = keyOf(finalMap, aId);
+    if (!finalKey) {
+      setDM(null);
+      return;
+    }
+    const section = schedule.sections.find((s) => s.key === finalKey);
+    const day = section ? section.day : null;
+    const ids = finalMap[finalKey];
+    const index = ids.indexOf(aId);
+
+    // Bake the new order + schedule into local state so it doesn't snap back.
+    setNotesById((m) => {
+      const next = { ...m };
+      ids.forEach((id, i) => {
+        const n = next[id];
+        if (!n) return;
+        next[id] =
+          id === aId
+            ? { ...n, position: i, scheduledDay: day, bucket: coarseBucket(day), suggestedDueDate: dueFromDay(day) }
+            : { ...n, position: i };
+      });
+      return next;
+    });
+    setDM(null);
+    void persistMove(aId, day, index);
   }
 
-  async function persistMove(id: string, bucket: NoteBucket, position: number) {
-    // reflect new bucket locally right away (affects suggested due date chip)
-    const cur = notesRef.current[id];
-    if (cur && cur.bucket !== bucket) upsertNote({ ...cur, bucket });
+  async function persistMove(id: string, scheduledDay: string | null, position: number) {
     if (id.startsWith("tmp-")) return; // offline-pending note; will sync first
     try {
-      const { note } = await api<{ note: NoteT }>(`/api/notes/${id}/move`, { body: { bucket, position } });
+      const { note } = await api<{ note: NoteT }>(`/api/notes/${id}/move`, { body: { scheduledDay, position } });
       upsertNote(note);
     } catch {
       toast({ title: "Couldn't move note", variant: "error" });
@@ -499,19 +590,29 @@ export function NotesView({
     .filter((n) => n.status === "sorted" && (!q || n.body.toLowerCase().includes(q)))
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   const archived = allNotes.filter((n) => n.status === "archived");
-  const totalActive = NOTE_BUCKETS.reduce((sum, b) => sum + containers[b].length, 0);
+  const done = allNotes
+    .filter(
+      (n) =>
+        n.doneOn != null &&
+        n.doneOn < schedule.todayYmd &&
+        n.status !== "archived" &&
+        n.status !== "sorted" &&
+        (!q || n.body.toLowerCase().includes(q)),
+    )
+    .sort((a, b) => (a.doneOn! < b.doneOn! ? 1 : a.doneOn! > b.doneOn! ? -1 : +new Date(b.updatedAt) - +new Date(a.updatedAt)));
+  const totalActive = schedule.sections.reduce((sum, s) => sum + (containers[s.key]?.length ?? 0), 0);
 
   const dragging = !!activeId;
-  function isOpen(b: NoteBucket, count: number) {
-    if (dragging) return true; // every bucket becomes a drop target mid-drag
+  function isOpen(key: string, count: number) {
+    if (dragging) return true; // every section becomes a drop target mid-drag
     if (q) return count > 0;
-    return !collapsed.has(b);
+    return !collapsed.has(key);
   }
-  function toggleBucket(b: NoteBucket) {
+  function toggleSection(key: string) {
     setCollapsed((s) => {
       const next = new Set(s);
-      if (next.has(b)) next.delete(b);
-      else next.add(b);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
@@ -521,14 +622,31 @@ export function NotesView({
     return (notesById[id]?.body ?? "").toLowerCase().includes(q);
   };
 
+  const comingCount = daySections.reduce((sum, s) => sum + (containers[s.key]?.filter(matchId).length ?? 0), 0);
+  const comingOpen = isOpen("coming_next", comingCount);
   const activeNote = activeId ? notesById[activeId] : null;
+
+  const sharedRowProps = {
+    notesById,
+    focusId,
+    dragDisabled: !!q,
+    onSaveBody: saveBody,
+    onToggleCheckbox: toggleCheckbox,
+    onToggleDone: toggleDone,
+    onSetPriority: setPriority,
+    onPin: (id: string, pinned: boolean) => patchNote(id, { pinned }),
+    onArchive: archive,
+    onDelete: del,
+    onIngest: toggleIngest,
+    onFile: (n: NoteT) => setSortNote(n),
+  };
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-6 md:px-6 md:py-8">
       <header className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Notes</h1>
         <p className="mt-1 text-sm text-fg-muted">
-          One running note, split by when. Drop a line in the right slot, mark it for an agent, and it becomes a ticket.
+          One running note, split by when. Drop a line in the right slot, tick it off, or mark it for an agent.
         </p>
       </header>
 
@@ -568,7 +686,7 @@ export function NotesView({
             >
               {composerDir === "rtl" ? <AlignRight className="h-3.5 w-3.5" /> : <AlignLeft className="h-3.5 w-3.5" />}
             </button>
-            <BucketChip value={draftBucket} onChange={setDraftBucket} />
+            <DayChip value={draftDay} schedule={schedule} onChange={setDraftDay} />
           </div>
           {draft.trim() && (
             <button
@@ -594,7 +712,7 @@ export function NotesView({
         </div>
       )}
 
-      {/* Buckets */}
+      {/* Sections */}
       <DndContext
         id="kanbai-notes"
         sensors={sensors}
@@ -604,32 +722,76 @@ export function NotesView({
         onDragEnd={onDragEnd}
       >
         <div className="mt-5 divide-y divide-border/60 rounded-2xl border border-border bg-surface/40">
-          {NOTE_BUCKETS.map((b) => {
-            const ids = containers[b].filter(matchId);
-            const open = isOpen(b, ids.length);
+          {/* Today */}
+          {(() => {
+            const s = schedule.sections.find((x) => x.kind === "today")!;
+            const ids = (containers[s.key] ?? []).filter(matchId);
             return (
-              <BucketSection
-                key={b}
-                bucket={b}
-                open={open}
-                count={containers[b].length}
+              <NoteSectionBlock
+                section={s}
+                open={isOpen(s.key, ids.length)}
+                count={containers[s.key]?.length ?? 0}
                 ids={ids}
-                notesById={notesById}
-                focusId={focusId}
-                dragDisabled={!!q}
-                onToggle={() => toggleBucket(b)}
-                onAdd={(text) => addNote(text, b)}
-                onSaveBody={saveBody}
-                onToggleCheckbox={toggleCheckbox}
-                onSetPriority={setPriority}
-                onPin={(id, pinned) => patchNote(id, { pinned })}
-                onArchive={archive}
-                onDelete={del}
-                onIngest={toggleIngest}
-                onFile={(n) => setSortNote(n)}
+                onToggle={() => toggleSection(s.key)}
+                onAdd={(text) => addNote(text, s.day)}
+                {...sharedRowProps}
               />
             );
-          })}
+          })()}
+
+          {/* Coming next (remaining days of the week, split by day) */}
+          {daySections.length > 0 && (
+            <div className={cn("px-2 py-1.5 transition-colors")}>
+              <button
+                onClick={() => toggleSection("coming_next")}
+                className="group flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2/60 cursor-pointer"
+              >
+                <ChevronDown className={cn("h-4 w-4 text-fg-subtle transition-transform", !comingOpen && "-rotate-90")} />
+                <CalendarRange className="h-3.5 w-3.5 text-fg-subtle" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Coming next</span>
+                {comingCount > 0 && <span className="text-xs font-medium text-fg-subtle">{comingCount}</span>}
+              </button>
+              {comingOpen && (
+                <div className="mt-1 space-y-1 border-l border-border/60 pl-2">
+                  {daySections.map((s) => {
+                    const ids = (containers[s.key] ?? []).filter(matchId);
+                    return (
+                      <NoteSectionBlock
+                        key={s.key}
+                        section={s}
+                        sub
+                        open
+                        count={containers[s.key]?.length ?? 0}
+                        ids={ids}
+                        onToggle={() => {}}
+                        onAdd={(text) => addNote(text, s.day)}
+                        {...sharedRowProps}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Next week / Next month / General */}
+          {schedule.sections
+            .filter((s) => s.kind === "next_week" || s.kind === "next_month" || s.kind === "general")
+            .map((s) => {
+              const ids = (containers[s.key] ?? []).filter(matchId);
+              return (
+                <NoteSectionBlock
+                  key={s.key}
+                  section={s}
+                  open={isOpen(s.key, ids.length)}
+                  count={containers[s.key]?.length ?? 0}
+                  ids={ids}
+                  onToggle={() => toggleSection(s.key)}
+                  onAdd={(text) => addNote(text, s.day)}
+                  {...sharedRowProps}
+                />
+              );
+            })}
         </div>
 
         <DragOverlay dropAnimation={null}>
@@ -641,17 +803,20 @@ export function NotesView({
         </DragOverlay>
       </DndContext>
 
-      {totalActive === 0 && sorted.length === 0 && archived.length === 0 && !q && (
+      {totalActive === 0 && sorted.length === 0 && archived.length === 0 && done.length === 0 && !q && (
         <EmptyState
           icon={NotebookPen}
           title="Nothing captured yet"
-          description="Jot a line above — then drag it to when it matters, or mark it for an agent to file."
+          description="Jot a line above — then drag it to when it matters, tick it off, or mark it for an agent."
           className="mt-6"
         />
       )}
-      {totalActive === 0 && q && (
+      {totalActive === 0 && done.length === 0 && q && (
         <p className="px-1 py-6 text-center text-sm text-fg-subtle">No notes match “{query}”.</p>
       )}
+
+      {/* Done */}
+      {done.length > 0 && <DoneSection notes={done} onRestore={(id) => patchNote(id, { doneOn: null })} onDelete={del} />}
 
       {/* Filed (sorted into tickets) */}
       {sorted.length > 0 && (
@@ -719,7 +884,6 @@ export function NotesView({
           agents={agents}
           onClose={() => setSortNote(null)}
           onDone={(updated) => {
-            removeFromContainers(updated.id);
             upsertNote(updated);
             setSortNote(null);
             router.refresh();
@@ -730,46 +894,129 @@ export function NotesView({
   );
 }
 
-// ── bucket section ────────────────────────────────────────────────────────────
+// ── done section ──────────────────────────────────────────────────────────────
 
-function BucketSection({
-  bucket,
-  open,
-  count,
-  ids,
-  notesById,
-  focusId,
-  dragDisabled,
-  onToggle,
-  onAdd,
-  onSaveBody,
-  onToggleCheckbox,
-  onSetPriority,
-  onPin,
-  onArchive,
+function DoneSection({
+  notes,
+  onRestore,
   onDelete,
-  onIngest,
-  onFile,
 }: {
-  bucket: NoteBucket;
-  open: boolean;
-  count: number;
-  ids: string[];
+  notes: NoteT[];
+  onRestore: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [shown, setShown] = React.useState(5);
+  const visible = open ? notes.slice(0, shown) : [];
+
+  return (
+    <section className="mt-7">
+      <button
+        onClick={() => setOpen((s) => !s)}
+        className="group flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg-muted cursor-pointer"
+      >
+        <ChevronDown className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")} />
+        <Check className="h-3.5 w-3.5" />
+        Done
+        <span className="text-fg-subtle/70">{notes.length}</span>
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {visible.map((n) => (
+            <div key={n.id} className="group flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-surface-2/50">
+              <button
+                onClick={() => onRestore(n.id)}
+                title="Mark not done"
+                className="grid h-[1.05rem] w-[1.05rem] shrink-0 place-items-center rounded-full border border-success bg-success text-white cursor-pointer"
+              >
+                <Check className="h-3 w-3" strokeWidth={3} />
+              </button>
+              <p className="min-w-0 flex-1 truncate text-sm text-fg-muted line-through decoration-fg-subtle/40">
+                {n.body}
+              </p>
+              <span className="shrink-0 text-[0.6875rem] text-fg-subtle">
+                {new Date(n.doneOn + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+              </span>
+              <button
+                onClick={() => onRestore(n.id)}
+                title="Restore"
+                className="shrink-0 text-fg-subtle opacity-0 transition-opacity hover:text-fg group-hover:opacity-100 cursor-pointer"
+                aria-label="Restore"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => onDelete(n.id)}
+                title="Delete"
+                className="shrink-0 text-fg-subtle opacity-0 transition-opacity hover:text-danger group-hover:opacity-100 cursor-pointer"
+                aria-label="Delete"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          {notes.length > shown && (
+            <button
+              onClick={() => setShown((s) => s + 10)}
+              className="px-2 py-1 text-xs font-medium text-primary hover:underline cursor-pointer"
+            >
+              Show more ({notes.length - shown})
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ── section block (a droppable list of note rows + inline add) ────────────────
+
+type RowHandlers = {
   notesById: Record<string, NoteT>;
   focusId: string | null;
   dragDisabled?: boolean;
-  onToggle: () => void;
-  onAdd: (text: string) => void;
   onSaveBody: (id: string, body: string) => void;
   onToggleCheckbox: (note: NoteT, index: number) => void;
+  onToggleDone: (note: NoteT) => void;
   onSetPriority: (id: string, p: string) => void;
   onPin: (id: string, pinned: boolean) => void;
   onArchive: (id: string) => void;
   onDelete: (id: string) => void;
   onIngest: (id: string, ingest: boolean) => void;
   onFile: (note: NoteT) => void;
+};
+
+function NoteSectionBlock({
+  section,
+  open,
+  count,
+  ids,
+  sub,
+  onToggle,
+  onAdd,
+  notesById,
+  focusId,
+  dragDisabled,
+  onSaveBody,
+  onToggleCheckbox,
+  onToggleDone,
+  onSetPriority,
+  onPin,
+  onArchive,
+  onDelete,
+  onIngest,
+  onFile,
+}: RowHandlers & {
+  section: { key: string; label: string; sublabel?: string; day: string | null };
+  open: boolean;
+  count: number;
+  ids: string[];
+  sub?: boolean;
+  onToggle: () => void;
+  onAdd: (text: string) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: bucket });
+  const { setNodeRef, isOver } = useDroppable({ id: section.key });
   const [adding, setAdding] = React.useState(false);
   const [addText, setAddText] = React.useState("");
 
@@ -780,20 +1027,26 @@ function BucketSection({
   }
 
   return (
-    <div ref={setNodeRef} className={cn("px-2 py-1.5 transition-colors", isOver && "bg-primary-soft/30")}>
-      <button
-        onClick={onToggle}
-        className="group flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2/60 cursor-pointer"
-      >
-        <ChevronDown
-          className={cn("h-4 w-4 text-fg-subtle transition-transform", !open && "-rotate-90")}
-        />
-        <span className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{BUCKET_LABEL[bucket]}</span>
-        {count > 0 && <span className="text-xs font-medium text-fg-subtle">{count}</span>}
-      </button>
+    <div ref={setNodeRef} className={cn("transition-colors", sub ? "py-0.5" : "px-2 py-1.5", isOver && "rounded-lg bg-primary-soft/30")}>
+      {sub ? (
+        <div className="flex items-baseline gap-2 px-1.5 py-1">
+          <span className="text-[0.7rem] font-semibold uppercase tracking-wider text-fg-muted">{section.label}</span>
+          {section.sublabel && <span className="text-[0.6875rem] text-fg-subtle">{section.sublabel}</span>}
+          {count > 0 && <span className="ml-auto text-[0.6875rem] font-medium text-fg-subtle">{count}</span>}
+        </div>
+      ) : (
+        <button
+          onClick={onToggle}
+          className="group flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2/60 cursor-pointer"
+        >
+          <ChevronDown className={cn("h-4 w-4 text-fg-subtle transition-transform", !open && "-rotate-90")} />
+          <span className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{section.label}</span>
+          {count > 0 && <span className="text-xs font-medium text-fg-subtle">{count}</span>}
+        </button>
+      )}
 
       {open && (
-        <div className="pb-1 pl-1.5">
+        <div className={cn("pb-1", sub ? "pl-1" : "pl-1.5")}>
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>
             <div className="mt-0.5">
               {ids.map((id) => {
@@ -807,6 +1060,7 @@ function BucketSection({
                     dragDisabled={dragDisabled}
                     onSaveBody={(body) => onSaveBody(id, body)}
                     onToggleCheckbox={(i) => onToggleCheckbox(n, i)}
+                    onToggleDone={() => onToggleDone(n)}
                     onSetPriority={(p) => onSetPriority(id, p)}
                     onPin={() => onPin(id, !n.pinned)}
                     onArchive={() => onArchive(id)}
@@ -832,7 +1086,7 @@ function BucketSection({
                   commitAdd();
                   setAdding(false);
                 }}
-                placeholder={`Add to ${BUCKET_LABEL[bucket]}…`}
+                placeholder={`Add to ${section.label}…`}
                 className="text-[0.95rem] leading-relaxed"
               />
             </div>
@@ -859,6 +1113,7 @@ function NoteRow({
   dragDisabled,
   onSaveBody,
   onToggleCheckbox,
+  onToggleDone,
   onSetPriority,
   onPin,
   onArchive,
@@ -871,6 +1126,7 @@ function NoteRow({
   dragDisabled?: boolean;
   onSaveBody: (body: string) => void;
   onToggleCheckbox: (index: number) => void;
+  onToggleDone: () => void;
   onSetPriority: (p: string) => void;
   onPin: () => void;
   onArchive: () => void;
@@ -885,6 +1141,7 @@ function NoteRow({
   const style = { transform: CSS.Translate.toString(transform), transition };
   const queued = note.status === "queued";
   const locked = queued || !!note.pending;
+  const done = note.doneOn != null;
   const [editing, setEditing] = React.useState(false);
   const [body, setBody] = React.useState(note.body);
   const rowRef = React.useRef<HTMLDivElement>(null);
@@ -916,23 +1173,42 @@ function NoteRow({
         aria-label="Drag to reorder"
         disabled={dragDisabled}
         className={cn(
-          "mt-0.5 shrink-0 cursor-grab touch-none text-fg-subtle opacity-40 transition-opacity hover:text-fg-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100",
+          "mt-1 shrink-0 cursor-grab touch-none text-fg-subtle opacity-40 transition-opacity hover:text-fg-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100",
           dragDisabled && "pointer-events-none !opacity-0",
         )}
       >
         <GripVertical className="h-4 w-4" />
       </button>
 
+      {/* done checkbox */}
+      {!locked && (
+        <button
+          onClick={onToggleDone}
+          aria-label={done ? "Mark not done" : "Mark done"}
+          title={done ? "Mark not done" : "Mark done"}
+          className={cn(
+            "mt-[0.3rem] grid h-[1.05rem] w-[1.05rem] shrink-0 place-items-center rounded-full border transition-colors cursor-pointer",
+            done
+              ? "border-success bg-success text-white"
+              : "border-fg-subtle/60 text-transparent hover:border-success hover:text-success/50",
+          )}
+        >
+          <Check className="h-3 w-3" strokeWidth={3} />
+        </button>
+      )}
+
       {/* priority dot / bullet */}
-      <PriorityDot
-        priority={note.priority}
-        color={pmeta.color}
-        onSelect={onSetPriority}
-        className={cn("mt-[0.45rem]", "group-hover:opacity-100", note.priority === "none" && "opacity-60")}
-      />
+      {!done && (
+        <PriorityDot
+          priority={note.priority}
+          color={pmeta.color}
+          onSelect={onSetPriority}
+          className={cn("mt-[0.45rem]", "group-hover:opacity-100", note.priority === "none" && "opacity-60")}
+        />
+      )}
 
       {/* body — dir="auto" so RTL (e.g. Hebrew/Arabic) lines display right-aligned */}
-      <div className="min-w-0 flex-1" dir="auto">
+      <div className={cn("min-w-0 flex-1", done && "text-fg-muted line-through decoration-fg-subtle/50")} dir="auto">
         {locked ? (
           <Markdown content={note.body} />
         ) : editing ? (
@@ -955,7 +1231,7 @@ function NoteRow({
               setEditing(true);
             }}
           >
-            <Markdown content={note.body} onToggleCheckbox={onToggleCheckbox} />
+            <Markdown content={note.body} onToggleCheckbox={done ? undefined : onToggleCheckbox} />
           </div>
         )}
 
@@ -966,7 +1242,7 @@ function NoteRow({
               <Loader2 className="h-3 w-3 animate-spin" />
               {note.assignedAgent ? `${note.assignedAgent.name} is filing this…` : "Waiting for an agent…"}
             </span>
-          ) : note.suggestedDueDate ? (
+          ) : note.suggestedDueDate && !done ? (
             <span className="inline-flex items-center gap-1 text-[0.6875rem] text-fg-subtle">
               <CalendarClock className="h-3 w-3" />
               due {new Date(note.suggestedDueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
@@ -1026,6 +1302,14 @@ function NoteRow({
           >
             {(close) => (
               <>
+                <MenuItem
+                  onClick={() => {
+                    onToggleDone();
+                    close();
+                  }}
+                >
+                  <Check className="h-4 w-4" /> {done ? "Mark not done" : "Mark done"}
+                </MenuItem>
                 <MenuItem
                   onClick={() => {
                     onFile();
@@ -1156,29 +1440,39 @@ function PriorityDot({
   );
 }
 
-function BucketChip({ value, onChange }: { value: NoteBucket; onChange: (b: NoteBucket) => void }) {
+function DayChip({
+  value,
+  schedule,
+  onChange,
+}: {
+  value: string | null;
+  schedule: Schedule;
+  onChange: (day: string | null) => void;
+}) {
+  const current = schedule.sections.find((s) => s.day === value) ?? schedule.sections.find((s) => s.kind === "general")!;
   return (
     <Menu
       trigger={
         <button className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-2.5 py-1.5 text-xs font-medium text-fg-muted hover:text-fg cursor-pointer">
           <CalendarClock className="h-3.5 w-3.5" />
-          {BUCKET_LABEL[value]}
+          {current.label}
           <ChevronDown className="h-3 w-3" />
         </button>
       }
     >
       {(close) => (
-        <div className="min-w-[9rem]">
-          {NOTE_BUCKETS.map((b) => (
+        <div className="min-w-[11rem]">
+          {schedule.sections.map((s) => (
             <MenuItem
-              key={b}
-              active={value === b}
+              key={s.key}
+              active={s.day === value}
               onClick={() => {
-                onChange(b);
+                onChange(s.day);
                 close();
               }}
             >
-              {BUCKET_LABEL[b]}
+              <span className="flex-1">{s.label}</span>
+              {s.sublabel && <span className="text-[0.6875rem] text-fg-subtle">{s.sublabel}</span>}
             </MenuItem>
           ))}
         </div>

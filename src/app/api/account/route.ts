@@ -23,9 +23,10 @@ export const PATCH = handler(async (req: Request) => {
     }
   }
   if (input.avatarUrl !== undefined) data.avatarUrl = input.avatarUrl || null;
-  if (input.defaultLanding !== undefined) {
+  if (input.defaultLanding !== undefined || input.weekStartsOn !== undefined) {
     const settings = parseUserSettings(ctx.user.settings);
-    settings.defaultLanding = input.defaultLanding;
+    if (input.defaultLanding !== undefined) settings.defaultLanding = input.defaultLanding;
+    if (input.weekStartsOn !== undefined) settings.weekStartsOn = input.weekStartsOn;
     data.settings = JSON.stringify(settings);
   }
 

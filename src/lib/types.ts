@@ -54,7 +54,9 @@ export type NoteT = {
   body: string;
   status: string; // inbox | queued | sorted | archived
   pinned: boolean;
-  bucket: string; // today | tomorrow | next_week | next_month | general
+  bucket: string; // coarse, derived: today | tomorrow | next_week | next_month | general
+  scheduledDay: string | null; // local "YYYY-MM-DD"; null = General
+  doneOn: string | null; // local "YYYY-MM-DD" completed; null = not done
   position: number;
   priority: string; // none | low | medium | high | urgent
   suggestedDueDate: string | null;
