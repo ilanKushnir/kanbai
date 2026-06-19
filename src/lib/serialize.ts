@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma";
+import { toRichHtml } from "@/lib/sanitize";
 
 export const ticketInclude = {
   labels: { include: { label: true } },
@@ -34,7 +35,8 @@ export function serializeTicket(t: TicketWithRelations, usersById?: Map<string, 
     columnId: t.columnId,
     column: t.column?.name,
     title: t.title,
-    description: t.description,
+    // Sanitize on read too — guards against any legacy/unsanitized rows reaching dangerouslySetInnerHTML.
+    description: toRichHtml(t.description),
     position: t.position,
     priority: t.priority,
     dueDate: t.dueDate?.toISOString() ?? null,
@@ -73,7 +75,7 @@ export function serializePublicTicket(t: TicketWithRelations, usersById?: Map<st
     id: t.id,
     number: t.number,
     title: t.title,
-    description: t.description,
+    description: toRichHtml(t.description),
     column: t.column?.name,
     priority: t.priority,
     dueDate: t.dueDate?.toISOString() ?? null,

@@ -4,6 +4,7 @@ import { broadcast, dispatchWebhook } from "@/lib/webhooks";
 import { ticketInclude, serializeTicket } from "@/lib/serialize";
 import { HttpError } from "@/lib/api";
 import { onMutation } from "@/lib/snapshots";
+import { toRichHtml } from "@/lib/sanitize";
 
 export type Actor = { type: "user" | "agent" | "system"; id?: string | null; name: string };
 
@@ -124,7 +125,7 @@ export async function createTicket(
     boardId: board.id,
     columnId,
     title: input.title,
-    description: input.description ?? "",
+    description: toRichHtml(input.description),
     priority: input.priority ?? "medium",
     dueDate: input.dueDate ? new Date(input.dueDate) : null,
     ...(input.createdAt ? { createdAt: new Date(input.createdAt) } : {}),
@@ -205,7 +206,7 @@ export async function updateTicket(
 
   const data: Record<string, unknown> = {};
   if (input.title !== undefined) data.title = input.title;
-  if (input.description !== undefined) data.description = input.description;
+  if (input.description !== undefined) data.description = toRichHtml(input.description);
   if (input.priority !== undefined) data.priority = input.priority;
   if (input.dueDate !== undefined) data.dueDate = input.dueDate ? new Date(input.dueDate) : null;
   if (input.columnId !== undefined) {

@@ -2,7 +2,7 @@ import { MessageSquare, CalendarClock, NotebookPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { priorityMeta, dueMeta } from "@/lib/display";
-import { cn } from "@/lib/utils";
+import { cn, htmlToPlainText } from "@/lib/utils";
 
 /** The subset of ticket fields a card renders — satisfied by both the full and public serializers. */
 export type TicketCardData = {
@@ -31,6 +31,7 @@ export function TicketCard({
   const pr = priorityMeta(ticket.priority);
   const due = dueMeta(ticket.dueDate);
   const accent = ticket.priority === "urgent" || ticket.priority === "high";
+  const excerpt = ticket.description ? htmlToPlainText(ticket.description) : "";
 
   return (
     <div
@@ -55,10 +56,8 @@ export function TicketCard({
 
       <p className="text-sm font-medium leading-snug text-fg">{ticket.title}</p>
 
-      {ticket.description && (
-        <p className="mt-1 line-clamp-2 text-xs text-fg-muted leading-relaxed">
-          {ticket.description}
-        </p>
+      {excerpt && (
+        <p className="mt-1 line-clamp-2 text-xs text-fg-muted leading-relaxed">{excerpt}</p>
       )}
 
       <div className="mt-2.5 flex items-center gap-2">

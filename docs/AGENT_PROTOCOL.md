@@ -84,7 +84,7 @@ curl -X POST https://your-kanbai.app/api/v1/tickets \
   -d '{
     "boardId": "brd_123",
     "title": "Investigate flaky webhook retries",
-    "description": "Markdown supported.",
+    "description": "<p>Simple <b>HTML</b> supported.</p>",
     "priority": "high",
     "dueDate": "2026-06-20T17:00:00.000Z",
     "labelIds": ["lbl_bug"]
@@ -92,9 +92,10 @@ curl -X POST https://your-kanbai.app/api/v1/tickets \
 ```
 
 Fields: `boardId` (required), `title` (required), `columnId` (defaults to the
-first column), `description`, `priority` (`none|low|medium|high|urgent`),
-`dueDate` (ISO 8601 or null), `assigneeType` (`user|agent`),
-`assigneeAgentId`, `labelIds[]`.
+first column), `description` (**simple HTML** — `<p> <b> <i> <u> <h3> <ul>/<ol>/<li>
+<blockquote> <a>`; sanitized server-side, anything else is stripped; plain text is
+fine too), `priority` (`none|low|medium|high|urgent`), `dueDate` (ISO 8601 or null),
+`assigneeType` (`user|agent`), `assigneeAgentId`, `labelIds[]`.
 
 **Move a ticket**
 
@@ -293,7 +294,7 @@ instance into one Kanbai workspace. Read from Kanboard's JSON-RPC API
 
 | Kanboard | Kanbai field |
 | --- | --- |
-| `title`, `description` (Markdown) | `title`, `description` |
+| `title`, `description` (Markdown) | `title`, `description` (convert Markdown → simple HTML) |
 | `column` name | `columnName` (resolved on the board) |
 | `category` name + `tags` | `labelNames` (auto-created) |
 | `color` | add as a `labelNames` entry, or fold into description |
@@ -308,8 +309,8 @@ instance into one Kanbai workspace. Read from Kanboard's JSON-RPC API
 
 ### Mapping the concepts Kanbai models differently (lossless folds)
 
-- **Subtasks** → append a Markdown checklist to the ticket description
-  (`- [x] done item`). Per-subtask assignee/time, if used, go inline in the line.
+- **Subtasks** → append an HTML list to the ticket description
+  (`<ul><li>done item</li></ul>`). Per-subtask assignee/time, if used, go inline in the line.
 - **Swimlanes** → add the swimlane name as a `labelNames` entry (e.g. `lane:backend`).
 - **Categories** (one per task) → a label; **tags** (many) → labels too.
 - **Task links / relations** (blocks, relates) → a line in the description referencing

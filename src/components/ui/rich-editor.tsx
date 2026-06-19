@@ -1,0 +1,108 @@
+"use client";
+
+import * as React from "react";
+import { Bold, Italic, Underline, Heading, List, ListOrdered, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+type Tool = { icon: React.ComponentType<{ className?: string }>; cmd: string; arg?: string; label: string };
+
+const TOOLS: Tool[] = [
+  { icon: Bold, cmd: "bold", label: "Bold" },
+  { icon: Italic, cmd: "italic", label: "Italic" },
+  { icon: Underline, cmd: "underline", label: "Underline" },
+  { icon: Heading, cmd: "formatBlock", arg: "<h3>", label: "Title" },
+  { icon: List, cmd: "insertUnorderedList", label: "Bulleted list" },
+  { icon: ListOrdered, cmd: "insertOrderedList", label: "Numbered list" },
+  { icon: AlignLeft, cmd: "justifyLeft", label: "Align left" },
+  { icon: AlignCenter, cmd: "justifyCenter", label: "Align center" },
+  { icon: AlignRight, cmd: "justifyRight", label: "Align right" },
+];
+
+/**
+ * A lightweight rich-text editor (contentEditable + execCommand) for ticket
+ * descriptions. Output HTML is sanitized server-side on save. Toolbar buttons
+ * use onMouseDown→preventDefault so the editor keeps focus/selection.
+ */
+export function RichEditor({
+  value,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  value: string;
+  onSave: (html: string) => void;
+  onCancel: () => void;
+  saving?: boolean;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.innerHTML = value || "";
+    el.focus();
+    // Put the caret at the end.
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function exec(cmd: string, arg?: string) {
+    // execCommand is deprecated but universally supported and ideal for a simple editor.
+    document.execCommand(cmd, false, arg);
+    ref.current?.focus();
+  }
+
+  function isEmpty(el: HTMLDivElement) {
+    return el.textContent?.trim() === "" && !el.querySelector("img, hr");
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-primary bg-surface ring-2 ring-primary/20">
+      <div className="flex flex-wrap items-center gap-0.5 overflow-x-auto border-b border-border bg-surface-2/50 p-1">
+        {TOOLS.map((t, i) => (
+          <React.Fragment key={t.label}>
+            {(i === 3 || i === 6) && <span className="mx-0.5 h-5 w-px bg-border" />}
+            <button
+              type="button"
+              title={t.label}
+              aria-label={t.label}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => exec(t.cmd, t.arg)}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg cursor-pointer"
+            >
+              <t.icon className="h-4 w-4" />
+            </button>
+          </React.Fragment>
+        ))}
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
+        data-placeholder="Add a description…"
+        className="rich max-h-[50vh] min-h-[7rem] overflow-y-auto px-3 py-2.5 text-sm outline-none"
+      />
+      <div className="flex justify-end gap-2 border-t border-border p-2">
+        <Button variant="ghost" size="sm" onMouseDown={(e) => e.preventDefault()} onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onSave(ref.current && !isEmpty(ref.current) ? ref.current.innerHTML : "")}
+          disabled={saving}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}

@@ -17,7 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Menu, MenuItem } from "@/components/ui/menu";
-import { Markdown, toggleTask } from "@/components/ui/markdown";
+import { RichText } from "@/components/ui/rich-text";
+import { RichEditor } from "@/components/ui/rich-editor";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
@@ -340,30 +341,36 @@ export function TicketModal({
       {/* Description */}
       <div className="mt-4">
         <div className="mb-1.5 text-xs font-medium text-fg-muted">Description</div>
-        {editingDesc || !t.description ? (
-          <textarea
+        {editingDesc ? (
+          <RichEditor
             value={desc}
-            autoFocus={editingDesc}
-            onChange={(e) => setDesc(e.target.value)}
-            onBlur={() => {
+            onSave={(html) => {
               setEditingDesc(false);
-              if (desc !== t.description) patch({ description: desc });
+              if (html !== t.description) patch({ description: html });
             }}
-            rows={4}
-            placeholder="Add more detail…  Markdown &amp; - [ ] checklists supported"
-            className="w-full resize-y rounded-xl border border-border bg-surface-2/40 px-3 py-2 text-sm leading-relaxed outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            onCancel={() => setEditingDesc(false)}
           />
-        ) : (
+        ) : t.description ? (
           <div
-            className="cursor-text rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-border hover:bg-surface-2/40"
+            className="cursor-text rounded-xl border border-transparent px-3 py-2 text-sm transition-colors hover:border-border hover:bg-surface-2/40"
             onClick={(e) => {
-              if ((e.target as HTMLElement).closest("a, input, button")) return;
+              if ((e.target as HTMLElement).closest("a, button")) return;
               setDesc(t.description);
               setEditingDesc(true);
             }}
           >
-            <Markdown content={t.description} onToggleCheckbox={(i) => patch({ description: toggleTask(t.description, i) })} />
+            <RichText html={t.description} />
           </div>
+        ) : (
+          <button
+            onClick={() => {
+              setDesc("");
+              setEditingDesc(true);
+            }}
+            className="w-full rounded-xl border border-dashed border-border px-3 py-3 text-left text-sm text-fg-subtle transition-colors hover:border-primary hover:text-fg-muted cursor-text"
+          >
+            Add a description…
+          </button>
         )}
       </div>
 

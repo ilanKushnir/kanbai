@@ -1,6 +1,7 @@
 import { PrismaClient } from "../src/generated/prisma";
 import { generateApiKey, generateWebhookSecret } from "../src/lib/crypto";
 import { hashPassword } from "../src/lib/password";
+import { toRichHtml } from "../src/lib/sanitize";
 import { ALL_SCOPES } from "../src/lib/constants";
 
 const db = new PrismaClient();
@@ -107,7 +108,7 @@ async function main() {
   await createTicket(product.id, pCols["In Progress"], {
     title: "Webhook signature verification",
     description:
-      "Sign outbound webhooks with HMAC-SHA256 and document the verification recipe for agents.",
+      "<p>Sign outbound webhooks with <b>HMAC-SHA256</b> and document the verification recipe.</p><ul><li>Header: <u>X-Kanbai-Signature</u></li><li>Reject stale timestamps (±5 min)</li></ul>",
     priority: "high",
     labels: [pLabels["Feature"], pLabels["Infra"]],
     assigneeAgentId: hermes.id,
@@ -305,7 +306,7 @@ async function main() {
         columnId,
         number: ticketCounters[boardId],
         title: t.title,
-        description: t.description ?? "",
+        description: toRichHtml(t.description ?? ""),
         priority: t.priority ?? "medium",
         dueDate: t.dueDate ?? null,
         position: t.position,
