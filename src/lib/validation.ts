@@ -129,6 +129,16 @@ export const updateColumnSchema = z.object({
   subStates: z.array(z.string().trim().min(1).max(24)).max(8).optional(),
 });
 
+/**
+ * Agent API column update (PATCH /boards/{boardId}/columns/{columnId}).
+ * Same editable surface as the UI, but a PATCH must change at least one field —
+ * an empty body is rejected so an agent can't issue a silent no-op write.
+ */
+export const updateBoardColumnV1Schema = updateColumnSchema.refine(
+  (v) => Object.keys(v).length > 0,
+  { message: "Provide at least one field to update (name, subStates, isDone, wipLimit)." },
+);
+
 export const createColumnSchema = z.object({
   boardId: z.string().min(1),
   name: z.string().trim().min(1).max(40),

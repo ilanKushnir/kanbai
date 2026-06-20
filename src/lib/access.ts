@@ -29,3 +29,18 @@ export async function assertColumnInWorkspace(columnId: string, workspaceId: str
   });
   if (!col || col.board.workspaceId !== workspaceId) throw new HttpError(404, "Column not found");
 }
+
+/**
+ * The column must both live in the agent's workspace AND belong to the named
+ * board — guards the nested `/boards/{boardId}/columns/{columnId}` route so a
+ * caller can't patch a column on a board they didn't address.
+ */
+export async function assertColumnInBoard(columnId: string, boardId: string, workspaceId: string) {
+  const col = await db.column.findUnique({
+    where: { id: columnId },
+    select: { boardId: true, board: { select: { workspaceId: true } } },
+  });
+  if (!col || col.board.workspaceId !== workspaceId || col.boardId !== boardId) {
+    throw new HttpError(404, "Column not found");
+  }
+}

@@ -3,7 +3,7 @@ import { HttpError } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
 import { shortToken } from "@/lib/password";
 import { ticketInclude, serializeTicket, serializePublicTicket, type UserLite } from "@/lib/serialize";
-import { parseSubStates } from "@/lib/substates";
+import { parseSubStates, stringifySubStates } from "@/lib/substates";
 import { onMutation } from "@/lib/snapshots";
 import type { Actor } from "./tickets";
 
@@ -154,6 +154,58 @@ export async function createBoardWithStructure(
   });
   await logActivity({ actor, action: "board.created", boardId: board.id, meta: { name: board.name } });
   return board;
+}
+
+/**
+ * Update a single column's editable fields (name, sub-states, done-flag, WIP
+ * limit) from the agent API. Caller must have already asserted the column lives
+ * in the board/workspace. Only the fields present in `input` are touched, so a
+ * partial PATCH never clobbers the rest of the column. Returns the readback.
+ */
+export async function updateBoardColumn(
+  workspaceId: string,
+  boardId: string,
+  columnId: string,
+  input: { name?: string; isDone?: boolean; wipLimit?: number | null; subStates?: string[] },
+  actor: Actor,
+) {
+  await onMutation(actor, workspaceId);
+  if (input.name !== undefined) {
+    // SQLite's Prisma connector has no `mode: "insensitive"` filter, so compare
+    // case-insensitively in JS over the board's other columns instead.
+    const wanted = input.name.trim().toLowerCase();
+    const siblings = await db.column.findMany({
+      where: { boardId, id: { not: columnId } },
+      select: { name: true },
+    });
+    if (siblings.some((c) => c.name.trim().toLowerCase() === wanted)) {
+      throw new HttpError(409, "A column with that name already exists on this board.", "column_name_conflict");
+    }
+  }
+
+  const data: Record<string, unknown> = {};
+  if (input.name !== undefined) data.name = input.name;
+  if (input.isDone !== undefined) data.isDone = input.isDone;
+  if (input.wipLimit !== undefined) data.wipLimit = input.wipLimit;
+  // subStates is the whole list for this column — normalized (trimmed, de-duped
+  // case-insensitively, capped) before it's stored. Sending [] clears them.
+  if (input.subStates !== undefined) data.subStates = stringifySubStates(input.subStates);
+
+  const column = await db.column.update({ where: { id: columnId }, data });
+  await logActivity({
+    actor,
+    action: "column.updated",
+    boardId: column.boardId,
+    meta: { columnId, fields: Object.keys(data) },
+  });
+  return {
+    id: column.id,
+    name: column.name,
+    isDone: column.isDone,
+    wipLimit: column.wipLimit,
+    position: column.position,
+    subStates: parseSubStates(column.subStates),
+  };
 }
 
 /** Toggle a board's public visibility; mints a stable publicId the first time. */

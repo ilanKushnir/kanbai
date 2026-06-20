@@ -79,16 +79,19 @@ Base URL: `https://your-kanbai.app/api/v1`. All bodies are JSON.
 ### Boards
 
 ```
-GET  /boards                  # list boards (+ columns, labels)   scope: boards:read
-GET  /boards/{boardId}        # board with all columns & tickets   scope: boards:read
-POST /boards                  # create a board w/ columns+labels    scope: boards:write
+GET   /boards                                # list boards (+ columns, labels)  scope: boards:read
+GET   /boards/{boardId}                      # board with all columns & tickets scope: boards:read
+POST  /boards                                # create a board w/ columns+labels  scope: boards:write
+GET   /boards/{boardId}/columns/{columnId}   # read one column                  scope: boards:read
+PATCH /boards/{boardId}/columns/{columnId}   # rename / set sub-states / flags   scope: boards:write
 ```
 
 **Create a board** (migration-friendly — define columns & labels up front):
 
 ```bash
 curl -X POST https://your-kanbai.app/api/v1/boards \
-  -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -H "Authorization: Bearer ***" \
+  -H "content-type: application/json" \
   -d '{
     "name": "Roadmap",
     "columns": [{"name":"Backlog"},{"name":"Doing"},{"name":"Done","isDone":true}],
@@ -97,6 +100,45 @@ curl -X POST https://your-kanbai.app/api/v1/boards \
   }'
 # → { board: { id, slug, columns:[{id,name,isDone}], labels:[{id,name,color}] } }
 ```
+
+#### Columns: rename & sub-states
+
+Manage an existing board's columns without recreating it. A **column** has a
+`name`, an `isDone` flag (tickets there count as completed), an optional
+`wipLimit`, and an ordered list of **sub-states** — lightweight stages *within*
+the column (e.g. `In progress` / `Blocked`) that a ticket can sit in.
+
+```bash
+# Rename a column and give it two sub-states
+curl -X PATCH https://your-kanbai.app/api/v1/boards/brd_123/columns/col_doing \
+  -H "Authorization: Bearer ***" \
+  -H "content-type: application/json" \
+  -d '{ "name": "In Progress", "subStates": ["Working", "Blocked"] }'
+# → { column: { id, name, isDone, wipLimit, position, subStates:["Working","Blocked"] } }
+
+# Read a single column back
+curl https://your-kanbai.app/api/v1/boards/brd_123/columns/col_doing \
+  -H "Authorization: Bearer ***"
+```
+
+`PATCH` is partial — send only the fields you want to change; the rest are left
+untouched. Accepted fields (**at least one is required** — an empty body is
+`422`, so a write is never a silent no-op):
+
+| Field | Rule |
+| --- | --- |
+| `name` | trimmed, non-empty, ≤ 40 chars, unique per board (case-insensitive); duplicate returns `409` |
+| `subStates` | array of trimmed names (each 1–24 chars), **max 8**; normalized server-side: blanks dropped, **de-duped case-insensitively**, order preserved. Send `[]` to clear all sub-states |
+| `isDone` | boolean — whether tickets in this column count as done |
+| `wipLimit` | integer 1–99, or `null` to remove the limit |
+
+Sending `subStates` replaces the column's whole list (it's not a merge), but
+because only the fields you include are written, omitting `subStates` leaves the
+existing ones intact. Sub-state names are not required to be unique across
+*different* columns; within a column they're de-duped for you.
+
+Errors: `403` if the key lacks `boards:write`; `404` if the board isn't in your
+workspace or the column doesn't belong to that board.
 
 ### Tickets
 
