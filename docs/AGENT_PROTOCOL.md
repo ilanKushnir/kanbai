@@ -10,7 +10,11 @@ There are two channels:
 | Direction | Channel | Trust mechanism |
 | --- | --- | --- |
 | **Agent → Kanbai** | REST API under `/api/v1` | Bearer **API key** |
-| **Kanbai → Agent** | Webhook to the agent's own URL | **HMAC signature** (secret you set) |
+| **Kanbai → Agent** | Webhook to the agent's own URL | **HMAC signature** — optional, recommended (secret you set) |
+
+Kanbai and its agents typically run locally/on the same network, so **prefer
+internal/LAN URLs** (e.g. `http://<host-lan-ip>:3000`) for both the API base URL
+and the agent's webhook URL over public hostnames.
 
 ---
 
@@ -41,7 +45,17 @@ Authorization: Bearer kbai_live_xxxxxxxxxxxxxxxxxxxxxxxx
 curl https://your-kanbai.app/api/v1/me \
   -H "Authorization: Bearer $KANBAI_KEY"
 # → {
+#   "service": { "name": "Kanbai", "version": "0.5.1" },
+#   "apiVersion": "v1",
+#   "baseUrl": "https://your-kanbai.app/api/v1",
 #   "agent": {...}, "workspaceId": "...", "scopes": [...],
+#   "capabilities": {
+#     "resources": ["boards","tickets","inbox","notes","comments","members"],
+#     "webhook": { "selfRegister": true, "test": true, "signing": "optional" },
+#     "events": ["note.queued","note.sorted","ticket.created", ...]
+#   },
+#   "webhook": { "url": "...", "active": true, "configured": true,
+#                "signed": true, "status": "signed" },
 #   "conventions": {
 #     "descriptionFormat": "html",
 #     "descriptionAllowedTags": ["p","b","i","u","h3","ul","ol","li","blockquote","a", ...],
@@ -51,9 +65,10 @@ curl https://your-kanbai.app/api/v1/me \
 # }
 ```
 
-`conventions` is self-describing: read it on connect so you format ticket
-descriptions (simple **HTML**, sanitized server-side) and set priorities correctly
-without hardcoding.
+Read this on connect: `service`/`apiVersion` tell you what you're talking to,
+`scopes`/`capabilities` what you may do, `webhook` your current callback status,
+and `conventions` is self-describing so you format ticket descriptions (simple
+**HTML**, sanitized server-side) and set priorities correctly without hardcoding.
 
 ---
 
@@ -272,8 +287,48 @@ curl -X POST https://your-kanbai.app/api/v1/members \
 
 ## 3. Webhooks (Kanbai → Agent)
 
-The agent registers **its own** webhook URL (Agents → Webhook URL). Kanbai POSTs
-signed events there so the agent can react in real time instead of polling.
+The agent registers **its own** webhook URL so Kanbai can POST events there and the
+agent can react in real time instead of polling. Two ways to register it:
+
+- **Self-setup (recommended)** — the agent registers itself with its bearer key.
+- **Manually** — a workspace manager sets it in **Agents → Webhook URL**.
+
+### Self-setup (Agent → Kanbai)
+
+```
+GET  /api/v1/agent/webhook        # current webhook status (url, active, signed)
+POST /api/v1/agent/webhook        # register/update url, active, optional secret
+POST /api/v1/agent/webhook/test   # fire a `ping` to your own URL to verify
+```
+
+No extra scope is required — an agent may always manage its own webhook. Prefer an
+**internal/LAN URL** (both sides run on the same network):
+
+```bash
+# Register (prefer an internal/LAN URL)
+curl -X POST https://your-kanbai.app/api/v1/agent/webhook \
+  -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -d '{ "url": "http://10.0.0.7:8080/kanbai/webhook" }'
+# → { "webhook": { "url": "...", "active": true, "configured": true,
+#                  "signed": false, "status": "unsigned" } }
+
+# Verify with a self-test ping
+curl -X POST https://your-kanbai.app/api/v1/agent/webhook/test \
+  -H "Authorization: Bearer $KANBAI_KEY"
+# → { "deliveryId": "..." }
+```
+
+`secret` is optional in the register body (signing is recommended, not required):
+include a value to sign callbacks, send `""`/`null` to clear it, or omit it to keep
+the current secret. `active:false` pauses delivery without forgetting the URL.
+
+### Signing is optional but recommended
+
+If a signing secret is configured (here or in **Agents → Signing secret**), Kanbai
+HMAC-signs every payload and sends `X-Kanbai-Signature` (see below). If **no** secret
+is set, callbacks are still delivered **unsigned** — they carry no signature header,
+so accept them only on a trusted/internal listener path. A secret gives you
+spoofing/misroute protection for a small operational cost; prefer it.
 
 ### Events
 
@@ -306,9 +361,13 @@ typed via `X-Kanbai-Event` and the `event` field for easy filtering.
 Content-Type: application/json
 X-Kanbai-Event:      ticket.assigned
 X-Kanbai-Timestamp:  1781636734            # unix seconds
-X-Kanbai-Signature:  sha256=<hex hmac>
+X-Kanbai-Signature:  sha256=<hex hmac>     # only when a signing secret is set
 X-Kanbai-Delivery:   <delivery id>         # idempotency key
 ```
+
+> When no signing secret is configured the `X-Kanbai-Signature` header is **absent**
+> (unsigned delivery). Treat its presence as the signal to verify; on a trusted
+> internal path you may accept unsigned events, but signing is recommended.
 
 ### Signature & verification
 
@@ -389,12 +448,15 @@ transient problem will drop the event with no retry.
 
 Hermes is the primary orchestration agent. Wiring it up:
 
-1. **Create the agent** — Agents → Add agent → *Hermes*. Copy the API key.
-2. **Set the webhook** — paste Hermes's public endpoint (e.g.
-   `https://hermes.example.com/kanbai/webhook`).
-3. **Set the signing secret** — generate one in Kanbai (or paste your own) and
-   configure the *same* secret in Hermes.
-4. **Verify** — click **Send test**; Hermes should accept the signed `ping`.
+1. **Create the agent** — Agents → Add agent → *Hermes*. Copy the brief + API key.
+2. **Register the webhook** — Hermes self-registers its own endpoint (prefer an
+   internal/LAN URL like `http://10.0.0.7:8080/kanbai/webhook`):
+   `POST /api/v1/agent/webhook { "url": "…" }`.
+3. **(Recommended) Sign it** — set a signing secret in Kanbai (or send `secret` in
+   the register call) and configure the *same* secret in Hermes. Skip this only on
+   a trusted internal path; callbacks then arrive unsigned.
+4. **Verify** — `POST /api/v1/agent/webhook/test` (or click **Send test** in the
+   UI); Hermes should accept the `ping`.
 5. **Go** — Hermes now receives `note.queued` events, reads the inbox, and files
    tickets via `POST /inbox/{id}/sort`. It can also self-assign work and comment.
 

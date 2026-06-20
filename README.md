@@ -24,7 +24,8 @@ Three surfaces, one brain:
 - **📋 Boards (desktop-serious)** — real Kanban: drag-and-drop columns, priorities,
   labels, due dates, assignees (human *or* agent), comments, activity.
 - **🤖 Agents (the connective tissue)** — Hermes, Open Claw, Claude Code, Codex,
-  or any custom agent. They authenticate with a key and verify a **signed webhook**.
+  or any custom agent. They authenticate with a key and receive events via a
+  webhook they self-register — **optionally signed** (HMAC, recommended).
 
 ## Why it's different
 
@@ -39,7 +40,8 @@ tool. Kanbai is both, joined by agents. The agent does the tedious part —
   archive / inline edit, and a one-tap **mark-for-ingestion** that an agent picks up
 - Voice-memo recording attached to the sort request
 - Secure agent API (`/api/v1`) with scoped, hashed **Bearer keys**
-- **HMAC-SHA256 signed webhooks** with timestamp replay protection + delivery log
+- Agent **self-registered webhooks** with **optional HMAC-SHA256 signing**
+  (recommended), timestamp replay protection + delivery log
 - Human-or-agent assignees, labels, priorities, due dates, comments, activity log
 - Polished, minimalist UI with light/dark themes and a responsive shell
 - **Public, read-only board links** to share progress without a login
