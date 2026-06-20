@@ -37,6 +37,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CircleCheck,
+  CornerUpRight,
   Trash2,
 } from "lucide-react";
 import { TicketCard } from "./ticket-card";
@@ -278,6 +279,47 @@ export function BoardView({
     }
   }
 
+  /** Move via the "Move to" menu (no drag): mirrors onDragEnd's optimistic update. */
+  function moveTicketTo(ticketId: string, columnId: string, subState?: string) {
+    const prev = containersRef.current;
+    const from = keyOf(prev, ticketId);
+    const sameCol = from === columnId;
+    let position: number;
+    if (sameCol) {
+      position = prev[columnId].indexOf(ticketId);
+    } else {
+      const next = { ...prev };
+      if (from) next[from] = next[from].filter((x) => x !== ticketId);
+      next[columnId] = [...(next[columnId] ?? []), ticketId];
+      setCont(next);
+      position = next[columnId].length - 1;
+    }
+
+    const col = cols.find((c) => c.id === columnId);
+    let resolved: string | null;
+    if (col?.subStates.length) {
+      if (subState && col.subStates.includes(subState)) {
+        resolved = subState;
+      } else {
+        resolved = col.subStates[0];
+        if (!sameCol) setChooserId(ticketId); // moved in without choosing → surface the chooser
+      }
+      setTicketsById((m) => ({ ...m, [ticketId]: { ...m[ticketId], subState: resolved } }));
+    } else {
+      resolved = null;
+      if (ticketsById[ticketId]?.subState) {
+        setTicketsById((m) => ({ ...m, [ticketId]: { ...m[ticketId], subState: null } }));
+      }
+    }
+
+    if (col?.isDone && !sameCol) {
+      setCelebrateId(ticketId);
+      setTimeout(() => setCelebrateId((id) => (id === ticketId ? null : id)), 1100);
+    }
+    if (liveRef.current) liveRef.current.textContent = `Moved ${ticketsById[ticketId]?.title ?? "card"} to ${col?.name ?? ""}`;
+    void persistMove(ticketId, columnId, position, resolved);
+  }
+
   async function handleCreate(columnId: string, title: string) {
     try {
       const { ticket } = await api<{ ticket: SerializedTicket }>("/api/tickets", {
@@ -463,6 +505,8 @@ export function BoardView({
               celebrateId={celebrateId}
               focusedId={focusedId}
               chooserId={chooserId}
+              allColumns={cols}
+              onMoveTo={moveTicketTo}
               onCardClick={(id) => setSelectedId(id)}
               onCreate={(title) => handleCreate(col.id, title)}
               onRename={(name) => renameColumn(col.id, name)}
@@ -647,6 +691,8 @@ function Column({
   celebrateId,
   focusedId,
   chooserId,
+  allColumns,
+  onMoveTo,
   onCardClick,
   onCreate,
   onRename,
@@ -668,6 +714,8 @@ function Column({
   celebrateId: string | null;
   focusedId: string | null;
   chooserId: string | null;
+  allColumns: ColumnMeta[];
+  onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
   onCardClick: (id: string) => void;
   onCreate: (title: string) => void;
   onRename: (name: string) => void;
@@ -827,6 +875,8 @@ function Column({
                 focused={focusedId === id}
                 subStates={col.subStates}
                 chooserOpen={chooserId === id}
+                allColumns={allColumns}
+                onMoveTo={onMoveTo}
                 onToggleChooser={() => onToggleChooser(id)}
                 onSetSubState={onSetCardSubState}
                 onClick={() => onCardClick(id)}
@@ -927,6 +977,8 @@ function SortableTicket({
   focused,
   subStates,
   chooserOpen,
+  allColumns,
+  onMoveTo,
   onToggleChooser,
   onSetSubState,
   onClick,
@@ -936,11 +988,14 @@ function SortableTicket({
   focused: boolean;
   subStates: string[];
   chooserOpen: boolean;
+  allColumns: ColumnMeta[];
+  onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
   onToggleChooser: () => void;
   onSetSubState: (ticketId: string, sub: string) => void;
   onClick: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
     <div
       ref={setNodeRef}
@@ -948,7 +1003,7 @@ function SortableTicket({
       style={{ transform: CSS.Translate.toString(transform), transition }}
       {...attributes}
       {...listeners}
-      className="relative"
+      className="group/card relative"
     >
       <TicketCard
         ticket={ticket}
@@ -956,19 +1011,93 @@ function SortableTicket({
         dragging={isDragging}
         className={focused ? "ring-2 ring-primary ring-offset-2 ring-offset-surface-2" : undefined}
       />
-      {subStates.length > 0 && (
-        <SubStateBar
-          subStates={subStates}
-          current={ticket.subState ?? null}
-          open={chooserOpen}
-          onToggle={onToggleChooser}
-          onPick={(s) => onSetSubState(ticket.id, s)}
-        />
-      )}
+      <div className="mt-1 flex flex-wrap items-center gap-1.5 px-0.5">
+        {/* "Move to" — no-drag way to change column (and sub-state) on mobile */}
+        <Menu
+          align="start"
+          trigger={
+            <button
+              onPointerDown={stop}
+              title="Move to…"
+              aria-label="Move to another column"
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-0.5 text-[0.6875rem] font-medium text-fg-muted hover:bg-surface-2 cursor-pointer"
+            >
+              <CornerUpRight className="h-3 w-3" /> Move
+            </button>
+          }
+        >
+          {(close) => (
+            <MoveMenu columns={allColumns} ticket={ticket} onMoveTo={onMoveTo} close={close} />
+          )}
+        </Menu>
+
+        {subStates.length > 0 && (
+          <SubStateBar
+            subStates={subStates}
+            current={ticket.subState ?? null}
+            open={chooserOpen}
+            onToggle={onToggleChooser}
+            onPick={(s) => onSetSubState(ticket.id, s)}
+          />
+        )}
+      </div>
       {celebrate && (
         <span className="pointer-events-none absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-success text-white shadow-md animate-check-pop">
           <Check className="h-3.5 w-3.5" />
         </span>
+      )}
+    </div>
+  );
+}
+
+/** Flat "Move to" menu: every column, with each sub-state as a direct destination. */
+function MoveMenu({
+  columns,
+  ticket,
+  onMoveTo,
+  close,
+}: {
+  columns: ColumnMeta[];
+  ticket: SerializedTicket;
+  onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
+  close: () => void;
+}) {
+  return (
+    <div className="max-h-[60vh] min-w-[12rem] overflow-y-auto py-1">
+      <div className="px-2.5 pb-1 pt-0.5 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">
+        Move to
+      </div>
+      {columns.map((c) =>
+        c.subStates.length === 0 ? (
+          <MenuItem
+            key={c.id}
+            active={c.id === ticket.columnId}
+            onClick={() => {
+              onMoveTo(ticket.id, c.id);
+              close();
+            }}
+          >
+            {c.name}
+          </MenuItem>
+        ) : (
+          <div key={c.id}>
+            <div className="px-2.5 pb-0.5 pt-1.5 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">
+              {c.name}
+            </div>
+            {c.subStates.map((s) => (
+              <MenuItem
+                key={c.id + s}
+                active={c.id === ticket.columnId && ticket.subState === s}
+                onClick={() => {
+                  onMoveTo(ticket.id, c.id, s);
+                  close();
+                }}
+              >
+                <span className="pl-1.5">{s}</span>
+              </MenuItem>
+            ))}
+          </div>
+        ),
       )}
     </div>
   );

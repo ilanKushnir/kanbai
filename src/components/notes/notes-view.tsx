@@ -228,6 +228,47 @@ export function NotesView({
   notesRef.current = notesById;
   const upsertNote = (n: NoteT) => setNotesById((m) => ({ ...m, [n.id]: n }));
 
+  // Notes with an in-flight optimistic mutation (a local edit whose PATCH hasn't
+  // returned) and notes just deleted — both must survive a background poll/refresh
+  // that may read the DB before our write commits, or it would revert/resurrect them.
+  const busyIds = React.useRef<Set<string>>(new Set());
+  const deletedIds = React.useRef<Set<string>>(new Set());
+
+  // Re-sync from the server whenever fresh props arrive (e.g. after a poll/refresh
+  // an agent has filed a queued note → status "sorted"). Keep optimistic notes the
+  // server hasn't seen yet (offline-pending / temp ids / in-flight edits) and don't
+  // resurrect just-deleted ones; let the server prune everything else.
+  React.useEffect(() => {
+    setNotesById((prev) => {
+      const next: Record<string, NoteT> = {};
+      for (const [id, n] of Object.entries(prev)) {
+        if (n.pending || id.startsWith("tmp-") || busyIds.current.has(id)) next[id] = n;
+      }
+      for (const n of initial) {
+        if (deletedIds.current.has(n.id)) continue;
+        if (!next[n.id]) next[n.id] = n;
+      }
+      return next;
+    });
+  }, [initial]);
+
+  // Poll while any note is "queued" so an agent's fulfillment surfaces without a
+  // manual reload. Stops as soon as nothing is queued; pauses on a hidden tab.
+  const hasQueued = React.useMemo(
+    () => Object.values(notesById).some((n) => n.status === "queued"),
+    [notesById],
+  );
+  React.useEffect(() => {
+    if (!hasQueued) return;
+    const iv = setInterval(() => {
+      if (typeof document === "undefined" || !document.hidden) router.refresh();
+    }, 4000);
+    return () => clearInterval(iv);
+  }, [hasQueued, router]);
+
+  // The note id currently flashing a hand-off animation as it's sent to an agent.
+  const [ingestingId, setIngestingId] = React.useState<string | null>(null);
+
   // `now` recomputes the time-sections; it ticks at local midnight and on focus
   // so buckets roll forward (tomorrow → today, etc.) without a reload.
   const [now, setNow] = React.useState<Date>(() => new Date());
@@ -386,6 +427,7 @@ export function NotesView({
   async function patchNote(id: string, partial: Record<string, unknown>, refresh = false) {
     const cur = notesRef.current[id];
     if (cur) upsertNote({ ...cur, ...(partial as Partial<NoteT>) });
+    busyIds.current.add(id);
     try {
       const { note } = await api<{ note: NoteT }>(`/api/notes/${id}`, { method: "PATCH", body: partial });
       upsertNote(note);
@@ -393,6 +435,8 @@ export function NotesView({
     } catch (e) {
       toast({ title: "Something went wrong", description: e instanceof Error ? e.message : undefined, variant: "error" });
       router.refresh();
+    } finally {
+      busyIds.current.delete(id);
     }
   }
 
@@ -415,7 +459,10 @@ export function NotesView({
   function archive(id: string) {
     const cur = notesRef.current[id];
     if (cur) upsertNote({ ...cur, status: "archived" });
-    void api(`/api/notes/${id}`, { method: "PATCH", body: { status: "archived" } }).catch(() => router.refresh());
+    busyIds.current.add(id);
+    void api(`/api/notes/${id}`, { method: "PATCH", body: { status: "archived" } })
+      .catch(() => router.refresh())
+      .finally(() => busyIds.current.delete(id));
     toast({
       title: "Note archived",
       actionLabel: "Undo",
@@ -427,7 +474,10 @@ export function NotesView({
     const cur = notesRef.current[id];
     if (!cur) return;
     upsertNote({ ...cur, status: "inbox" });
-    void api(`/api/notes/${id}`, { method: "PATCH", body: { status: "inbox" } }).catch(() => router.refresh());
+    busyIds.current.add(id);
+    void api(`/api/notes/${id}`, { method: "PATCH", body: { status: "inbox" } })
+      .catch(() => router.refresh())
+      .finally(() => busyIds.current.delete(id));
   }
 
   async function del(id: string) {
@@ -436,10 +486,13 @@ export function NotesView({
       delete next[id];
       return next;
     });
+    deletedIds.current.add(id); // tombstone so a poll refresh can't resurrect it
     try {
       await api(`/api/notes/${id}`, { method: "DELETE" });
     } catch {
       router.refresh();
+    } finally {
+      setTimeout(() => deletedIds.current.delete(id), 8000);
     }
   }
 
@@ -447,6 +500,11 @@ export function NotesView({
   async function toggleIngest(id: string, ingest: boolean) {
     const cur = notesRef.current[id];
     if (cur) upsertNote({ ...cur, status: ingest ? "queued" : "inbox" });
+    if (ingest) {
+      setIngestingId(id);
+      setTimeout(() => setIngestingId((c) => (c === id ? null : c)), 900);
+    }
+    busyIds.current.add(id);
     try {
       const { note } = await api<{ note: NoteT }>(`/api/notes/${id}/ingest`, { body: { ingest } });
       upsertNote(note);
@@ -463,6 +521,8 @@ export function NotesView({
     } catch (e) {
       if (cur) upsertNote(cur);
       toast({ title: "Couldn't update", description: e instanceof Error ? e.message : undefined, variant: "error" });
+    } finally {
+      busyIds.current.delete(id);
     }
   }
 
@@ -559,12 +619,15 @@ export function NotesView({
 
   async function persistMove(id: string, scheduledDay: string | null, position: number) {
     if (id.startsWith("tmp-")) return; // offline-pending note; will sync first
+    busyIds.current.add(id);
     try {
       const { note } = await api<{ note: NoteT }>(`/api/notes/${id}/move`, { body: { scheduledDay, position } });
       upsertNote(note);
     } catch {
       toast({ title: "Couldn't move note", variant: "error" });
       router.refresh();
+    } finally {
+      busyIds.current.delete(id);
     }
   }
 
@@ -615,6 +678,7 @@ export function NotesView({
     notesById,
     focusId,
     handedness,
+    ingestingId,
     dragDisabled: !!q,
     onSaveBody: saveBody,
     onToggleCheckbox: toggleCheckbox,
@@ -807,7 +871,7 @@ export function NotesView({
           <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Filed into tickets</h2>
           <div className="space-y-2">
             {sorted.map((n) => (
-              <div key={n.id} className="flex items-center gap-3 rounded-xl border border-border bg-surface-2/40 px-3 py-2.5">
+              <div key={n.id} className="flex animate-scale-in items-center gap-3 rounded-xl border border-border bg-surface-2/40 px-3 py-2.5">
                 <Avatar name={n.assignedAgent?.name ?? "Agent"} color={n.assignedAgent?.color} isAgent size={24} />
                 <p className="min-w-0 flex-1 truncate text-sm text-fg-muted line-through decoration-fg-subtle/40">
                   {n.body}
@@ -959,6 +1023,7 @@ type RowHandlers = {
   notesById: Record<string, NoteT>;
   focusId: string | null;
   handedness: "right" | "left";
+  ingestingId: string | null;
   dragDisabled?: boolean;
   onSaveBody: (id: string, body: string) => void;
   onToggleCheckbox: (note: NoteT, index: number) => void;
@@ -986,6 +1051,7 @@ function NoteSectionBlock({
   notesById,
   focusId,
   handedness,
+  ingestingId,
   dragDisabled,
   onSaveBody,
   onToggleCheckbox,
@@ -1099,6 +1165,7 @@ function NoteSectionBlock({
                     note={n}
                     highlight={focusId === id}
                     handedness={handedness}
+                    handoff={ingestingId === id}
                     dragDisabled={dragDisabled}
                     onSaveBody={(body) => onSaveBody(id, body)}
                     onToggleCheckbox={(i) => onToggleCheckbox(n, i)}
@@ -1153,6 +1220,7 @@ function NoteRow({
   note,
   highlight,
   handedness,
+  handoff,
   dragDisabled,
   onSaveBody,
   onToggleCheckbox,
@@ -1167,6 +1235,7 @@ function NoteRow({
   note: NoteT;
   highlight?: boolean;
   handedness: "right" | "left";
+  handoff?: boolean;
   dragDisabled?: boolean;
   onSaveBody: (body: string) => void;
   onToggleCheckbox: (index: number) => void;
@@ -1188,11 +1257,25 @@ function NoteRow({
   const done = note.doneOn != null;
   const [editing, setEditing] = React.useState(false);
   const [body, setBody] = React.useState(note.body);
+  const [showFull, setShowFull] = React.useState(false);
   const rowRef = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => setBody(note.body), [note.body]);
+  // Don't reset the textarea from props while actively editing (avoids a poll
+  // refresh wiping in-progress typing). showFull intentionally persists across
+  // body changes (e.g. ticking an in-body checkbox) — it resets on unmount since
+  // each row is keyed by note id.
+  React.useEffect(() => {
+    if (!editing) setBody(note.body);
+  }, [note.body, editing]);
   React.useEffect(() => {
     if (highlight && rowRef.current) rowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [highlight]);
+
+  // Collapse a multi-line or long single-line body into a short preview with a
+  // "Show more" toggle (full markdown, all newlines, on expand).
+  const isLong = React.useMemo(() => {
+    const b = note.body.trim();
+    return b.includes("\n") || b.length > 140;
+  }, [note.body]);
 
   const pmeta = PRIORITY_META[(note.priority as keyof typeof PRIORITY_META) ?? "none"] ?? PRIORITY_META.none;
   const hasPriority = note.priority !== "none";
@@ -1229,6 +1312,7 @@ function NoteRow({
         !isDragging && "hover:bg-surface-2/50",
         isDragging && "opacity-40",
         queued && "bg-primary-soft/40",
+        handoff && "animate-ai-handoff",
         highlight && "ring-2 ring-primary",
       )}
     >
@@ -1270,7 +1354,9 @@ function NoteRow({
       {/* body — dir="auto" so RTL (e.g. Hebrew/Arabic) lines display right-aligned */}
       <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-muted line-through decoration-fg-subtle/50")} dir="auto">
         {locked ? (
-          <Markdown content={note.body} />
+          <div className={cn(isLong && !showFull && "max-h-[3.2rem] overflow-hidden")}>
+            <Markdown content={note.body} />
+          </div>
         ) : editing ? (
           <AutoGrow
             value={body}
@@ -1285,17 +1371,34 @@ function NoteRow({
           />
         ) : (
           <div className="cursor-pointer" onClick={onBodyClick}>
-            <Markdown content={note.body} onToggleCheckbox={done ? undefined : onToggleCheckbox} />
+            <div className={cn(isLong && !showFull && "max-h-[3.2rem] overflow-hidden")}>
+              <Markdown content={note.body} onToggleCheckbox={done ? undefined : onToggleCheckbox} />
+            </div>
           </div>
+        )}
+
+        {isLong && !editing && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowFull((v) => !v);
+            }}
+            className="mt-0.5 text-[0.6875rem] font-medium text-primary hover:underline cursor-pointer"
+          >
+            {showFull ? "Show less" : "Show more"}
+          </button>
         )}
 
         {/* status row: queued chip / meta */}
         {(queued || note.pinned || note.attachments.some((a) => a.kind === "audio") || note.pending) && (
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
             {queued && (
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-surface/70 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {note.assignedAgent ? `${note.assignedAgent.name} is filing this…` : "Waiting for an agent…"}
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-surface/70 px-1.5 py-0.5 text-[0.6875rem] font-medium">
+                <Sparkles className="h-3 w-3 text-primary animate-pulse-soft" />
+                <span className="ai-shimmer">
+                  {note.assignedAgent ? `${note.assignedAgent.name} is filing this…` : "Waiting for an agent…"}
+                </span>
               </span>
             )}
             {note.pinned && (

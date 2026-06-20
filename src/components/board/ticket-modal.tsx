@@ -26,7 +26,7 @@ import { priorityMeta, dueMeta } from "@/lib/display";
 import { timeAgo, cn } from "@/lib/utils";
 import type { SerializedTicket } from "@/lib/serialize";
 
-type ColumnMeta = { id: string; name: string; isDone: boolean };
+type ColumnMeta = { id: string; name: string; isDone: boolean; subStates: string[] };
 type LabelLite = { id: string; name: string; color: string };
 type AgentLite = { id: string; name: string; color: string; kind: string };
 
@@ -127,23 +127,46 @@ export function TicketModal({
             <button className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-medium text-fg-muted hover:bg-surface-3 cursor-pointer">
               <Columns3 className="h-3.5 w-3.5" />
               {column?.name ?? "Column"}
+              {t.subState ? ` · ${t.subState}` : ""}
             </button>
           }
         >
-          {(close) =>
-            columns.map((c) => (
-              <MenuItem
-                key={c.id}
-                active={c.id === t.columnId}
-                onClick={() => {
-                  close();
-                  if (c.id !== t.columnId) patch({ columnId: c.id });
-                }}
-              >
-                {c.name}
-              </MenuItem>
-            ))
-          }
+          {(close) => (
+            <div className="max-h-[60vh] min-w-[11rem] overflow-y-auto py-1">
+              {columns.map((c) =>
+                c.subStates.length === 0 ? (
+                  <MenuItem
+                    key={c.id}
+                    active={c.id === t.columnId}
+                    onClick={() => {
+                      close();
+                      if (c.id !== t.columnId || t.subState) patch({ columnId: c.id, subState: null });
+                    }}
+                  >
+                    {c.name}
+                  </MenuItem>
+                ) : (
+                  <div key={c.id}>
+                    <div className="px-2.5 pb-0.5 pt-1.5 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">
+                      {c.name}
+                    </div>
+                    {c.subStates.map((s) => (
+                      <MenuItem
+                        key={c.id + s}
+                        active={c.id === t.columnId && t.subState === s}
+                        onClick={() => {
+                          close();
+                          patch({ columnId: c.id, subState: s });
+                        }}
+                      >
+                        <span className="pl-1.5">{s}</span>
+                      </MenuItem>
+                    ))}
+                  </div>
+                ),
+              )}
+            </div>
+          )}
         </Menu>
           {t.number != null && (
             <span className="text-xs font-medium text-fg-subtle">#{t.number}</span>

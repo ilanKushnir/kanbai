@@ -33,18 +33,40 @@ export function TrashView({
   React.useEffect(() => setNotes(initialNotes), [initialNotes]);
   React.useEffect(() => setTickets(initialTickets), [initialTickets]);
 
-  async function act(action: "restore" | "purge", type: "note" | "ticket", id: string) {
+  async function act(action: "restore" | "purge", type: "note" | "ticket", item: TrashNote | TrashTicket) {
+    const id = item.id;
     setBusy(id);
     try {
       await api("/api/trash", { method: "POST", body: { action, type, id } });
       if (type === "note") setNotes((n) => n.filter((x) => x.id !== id));
       else setTickets((t) => t.filter((x) => x.id !== id));
-      toast({ title: action === "restore" ? "Restored" : "Deleted permanently", variant: "success" });
+      if (action === "restore") {
+        toast({
+          title: "Restored",
+          variant: "success",
+          actionLabel: "Undo",
+          onAction: () => undoRestore(type, item),
+        });
+      } else {
+        toast({ title: "Deleted permanently", variant: "success" });
+      }
       router.refresh();
     } catch (e) {
       toast({ title: "Couldn't update", description: e instanceof Error ? e.message : undefined, variant: "error" });
     } finally {
       setBusy(null);
+    }
+  }
+
+  /** Re-trash an item the user just restored (soft-delete puts it back at the top). */
+  async function undoRestore(type: "note" | "ticket", item: TrashNote | TrashTicket) {
+    try {
+      await api(type === "note" ? `/api/notes/${item.id}` : `/api/tickets/${item.id}`, { method: "DELETE" });
+      if (type === "note") setNotes((n) => [item as TrashNote, ...n.filter((x) => x.id !== item.id)]);
+      else setTickets((t) => [item as TrashTicket, ...t.filter((x) => x.id !== item.id)]);
+      router.refresh();
+    } catch (e) {
+      toast({ title: "Couldn't undo", description: e instanceof Error ? e.message : undefined, variant: "error" });
     }
   }
 
@@ -72,8 +94,8 @@ export function TrashView({
                   title={t.title}
                   meta={`${t.number != null ? `#${t.number} · ` : ""}${t.board} · deleted ${timeAgo(t.deletedAt)} ago`}
                   busy={busy === t.id}
-                  onRestore={() => act("restore", "ticket", t.id)}
-                  onPurge={() => act("purge", "ticket", t.id)}
+                  onRestore={() => act("restore", "ticket", t)}
+                  onPurge={() => act("purge", "ticket", t)}
                 />
               ))}
             </Group>
@@ -87,8 +109,8 @@ export function TrashView({
                   title={n.body || "(empty note)"}
                   meta={`deleted ${timeAgo(n.deletedAt)} ago`}
                   busy={busy === n.id}
-                  onRestore={() => act("restore", "note", n.id)}
-                  onPurge={() => act("purge", "note", n.id)}
+                  onRestore={() => act("restore", "note", n)}
+                  onPurge={() => act("purge", "note", n)}
                 />
               ))}
             </Group>

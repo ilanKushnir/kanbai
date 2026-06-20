@@ -76,6 +76,10 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
   // How many days remain in the current week *after* today.
   const offsetFromWeekStart = (today.getDay() - weekStartsOn + 7) % 7; // 0..6
   const daysLeftThisWeek = 6 - offsetFromWeekStart;
+  // On the LAST day of the week (e.g. Saturday with a Sunday start) nothing
+  // would remain, so "This week" would vanish. Roll the window forward to the
+  // upcoming week instead so the day-split is always there to plan into.
+  const daySlotCount = daysLeftThisWeek === 0 ? 6 : daysLeftThisWeek;
 
   // "Unsorted" (no day) leads — the default landing for quick captures.
   const sections: NoteSection[] = [
@@ -90,7 +94,7 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
   ];
 
   // Remaining days of this week become individual "This week" day slots.
-  for (let i = 1; i <= daysLeftThisWeek; i++) {
+  for (let i = 1; i <= daySlotCount; i++) {
     const d = addDays(today, i);
     sections.push({
       key: `day:${ymd(d)}`,
@@ -101,14 +105,14 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
     });
   }
 
-  const startNextWeek = addDays(today, daysLeftThisWeek + 1);
+  const startNextWeek = addDays(today, daySlotCount + 1);
   const startBeyond = addDays(startNextWeek, 7); // first day past "next week"
   const firstOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
 
   sections.push({ key: "next_week", label: "Next week", day: ymd(startNextWeek), kind: "next_week" });
   sections.push({ key: "next_month", label: "Next month", day: ymd(firstOfNextMonth), kind: "next_month" });
 
-  const endThisWeekYmd = daysLeftThisWeek > 0 ? ymd(addDays(today, daysLeftThisWeek)) : todayYmd;
+  const endThisWeekYmd = ymd(addDays(today, daySlotCount));
   const startBeyondYmd = ymd(startBeyond);
 
   const classify = (day: string | null): string => {

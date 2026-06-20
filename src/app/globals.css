@@ -213,6 +213,10 @@ body {
 @keyframes pulse-soft { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(0.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
 @keyframes check-pop { 0% { transform: scale(0.6); opacity: 0 } 60% { transform: scale(1.15) } 100% { transform: scale(1); opacity: 1 } }
+/* AI "thinking" shimmer that sweeps across the queued chip's text. */
+@keyframes ai-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+/* A note being handed off to an agent: a quick ring pulse (reads over the queued bg). */
+@keyframes ai-handoff { 0% { box-shadow: 0 0 0 0 var(--color-primary) } 30% { box-shadow: 0 0 0 2px var(--color-primary) } 100% { box-shadow: 0 0 0 0 transparent } }
 
 .animate-fade-in { animation: fade-in 0.18s ease-out both; }
 .animate-scale-in { animation: scale-in 0.16s cubic-bezier(0.16,1,0.3,1) both; }
@@ -221,6 +225,15 @@ body {
 .animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
 .animate-toast-in { animation: toast-in 0.22s cubic-bezier(0.16,1,0.3,1) both; }
 .animate-check-pop { animation: check-pop 0.32s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-ai-handoff { animation: ai-handoff 0.9s ease-out both; }
+.ai-shimmer {
+  background-image: linear-gradient(100deg, var(--color-primary) 30%, var(--color-primary-soft-fg) 50%, var(--color-primary) 70%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: ai-shimmer 1.6s linear infinite;
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
