@@ -1011,10 +1011,31 @@ function SortableTicket({
         dragging={isDragging}
         className={focused ? "ring-2 ring-primary ring-offset-2 ring-offset-surface-2" : undefined}
       />
-      <div className="mt-1 flex flex-wrap items-center gap-1.5 px-0.5">
-        {/* "Move to" — no-drag way to change column (and sub-state) on mobile */}
+      <div
+        className={cn(
+          "mt-1 flex flex-wrap items-center gap-1.5 px-0.5",
+          // On tablet/desktop a column is changed by dragging the card, so the
+          // Move control is hidden there. With no sub-state bar to keep, collapse
+          // the whole row at ≥ md so the card doesn't carry an empty gap.
+          subStates.length === 0 && "md:hidden",
+        )}
+      >
+        {subStates.length > 0 && (
+          <SubStateBar
+            subStates={subStates}
+            current={ticket.subState ?? null}
+            open={chooserOpen}
+            onToggle={onToggleChooser}
+            onPick={(s) => onSetSubState(ticket.id, s)}
+          />
+        )}
+
+        {/* "Move to" — a no-drag way to change column on touch devices, where
+            drag-and-drop is fiddly. Phones/small screens only; hidden ≥ md.
+            ml-auto tucks it to the card's trailing edge for a cleaner corner. */}
         <Menu
-          align="start"
+          align="end"
+          className="ml-auto md:hidden"
           trigger={
             <button
               onPointerDown={stop}
@@ -1030,16 +1051,6 @@ function SortableTicket({
             <MoveMenu columns={allColumns} ticket={ticket} onMoveTo={onMoveTo} close={close} />
           )}
         </Menu>
-
-        {subStates.length > 0 && (
-          <SubStateBar
-            subStates={subStates}
-            current={ticket.subState ?? null}
-            open={chooserOpen}
-            onToggle={onToggleChooser}
-            onPick={(s) => onSetSubState(ticket.id, s)}
-          />
-        )}
       </div>
       {celebrate && (
         <span className="pointer-events-none absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-success text-white shadow-md animate-check-pop">

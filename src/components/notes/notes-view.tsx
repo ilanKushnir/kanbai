@@ -59,6 +59,7 @@ import { useToast } from "@/components/ui/toast";
 import { ProcessSheet } from "./process-sheet";
 import { useDictation } from "./use-dictation";
 import { api } from "@/lib/client-api";
+import { ticketHref } from "@/lib/links";
 import { cn } from "@/lib/utils";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
 import {
@@ -878,7 +879,7 @@ export function NotesView({
                 </p>
                 {n.ticket && (
                   <Link
-                    href="/boards"
+                    href={ticketHref(n.ticket, boards)}
                     className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-surface px-2 py-1 text-xs font-medium text-primary hover:bg-primary-soft"
                   >
                     View ticket <ArrowUpRight className="h-3.5 w-3.5" />
