@@ -193,7 +193,8 @@ everywhere `dueDate` is accepted (`POST /tickets`, `PATCH /tickets/{id}`,
 
 ```bash
 curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/move \
-  -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -H "Authorization: Bearer $KANBAI_KEY" \
+  -H "content-type: application/json" \
   -d '{ "columnId": "col_done", "position": 0 }'
 ```
 
@@ -225,7 +226,8 @@ it (a good default: carry `priority` through and use `suggestedDueDate` as the
 
 ```bash
 curl -X POST https://your-kanbai.app/api/v1/inbox/note_123/sort \
-  -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -H "Authorization: Bearer $KANBAI_KEY" \
+  -H "content-type: application/json" \
   -d '{
     "boardId": "brd_product",
     "title": "Follow up with design contractor on the icon set",
@@ -319,7 +321,8 @@ POST /members                 # create/add a user to this workspace      scope: 
 
 ```bash
 curl -X POST https://your-kanbai.app/api/v1/members \
-  -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -H "Authorization: Bearer $KANBAI_KEY" \
+  -H "content-type: application/json" \
   -d '{ "email":"jo@example.com", "name":"Jo", "role":"member",
         "boardAccess":[{"boardId":"brd_123","level":"edit"}] }'
 # → { userId, email, created: true, tempPassword: "…" }
@@ -349,7 +352,8 @@ No extra scope is required — an agent may always manage its own webhook. Prefe
 ```bash
 # Register (prefer an internal/LAN URL)
 curl -X POST https://your-kanbai.app/api/v1/agent/webhook \
-  -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -H "Authorization: Bearer $KANBAI_KEY" \
+  -H "content-type: application/json" \
   -d '{ "url": "http://10.0.0.7:8080/kanbai/webhook" }'
 # → { "webhook": { "url": "...", "active": true, "configured": true,
 #                  "signed": false, "status": "unsigned" } }
