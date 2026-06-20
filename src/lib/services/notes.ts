@@ -278,7 +278,7 @@ export async function ingestNote(
   });
   const serialized = serializeNote(note);
   await logActivity({ actor, action: "note.queued", meta: { noteId } });
-  if (agentId) await dispatchWebhook(agentId, "note.queued", { note: serialized });
+  if (agentId) await dispatchWebhook(agentId, "note.queued", { note: serialized }, { actor });
   return serialized;
 }
 
@@ -300,7 +300,7 @@ export async function queueNoteToAgent(
   });
   const serialized = serializeNote(note);
   await logActivity({ actor, action: "note.queued", meta: { noteId, agent: agent.name } });
-  await dispatchWebhook(agentId, "note.queued", { note: serialized });
+  await dispatchWebhook(agentId, "note.queued", { note: serialized }, { actor });
   return serialized;
 }
 
@@ -337,6 +337,21 @@ export async function fulfillNote(
   await db.ticket.update({ where: { id: ticket.id }, data: { sourceNoteId: noteId } });
   await db.note.update({ where: { id: noteId }, data: { status: "sorted" } });
   await logActivity({ actor, action: "note.sorted", boardId: input.boardId, ticketId: ticket.id, meta: { noteId } });
+
+  // Close the loop: tell the agent the note was queued to that it's been filed,
+  // so it can stop polling/churning on it after note.queued. shouldDeliver()
+  // suppresses the echo when that same agent did the sorting itself.
+  if (note.assignedAgentId) {
+    await dispatchWebhook(
+      note.assignedAgentId,
+      "note.sorted",
+      {
+        note: { id: note.id, status: "sorted" },
+        ticket: { id: ticket.id, number: ticket.number, boardId: ticket.boardId, title: ticket.title },
+      },
+      { actor },
+    );
+  }
 
   const linked = await db.ticket.findUnique({ where: { id: ticket.id }, include: ticketInclude });
   return linked ? serializeTicket(linked) : ticket;

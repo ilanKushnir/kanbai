@@ -1,6 +1,17 @@
 import { z } from "zod";
 import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS, NOTE_BUCKETS } from "./constants";
 
+/**
+ * A due date in ISO 8601, accepted in any of three unambiguous shapes:
+ *   • date-only      "2026-06-20"            (interpreted as UTC midnight)
+ *   • UTC instant    "2026-06-20T17:00:00Z"
+ *   • zoned instant  "2026-06-20T17:00:00+02:00"
+ * All normalize to a stable `Date` server-side via `new Date(value)`. A bare
+ * local datetime with no zone ("2026-06-20T17:00:00") is rejected as ambiguous.
+ * Keep this in sync with docs/AGENT_PROTOCOL.md (§ dueDate).
+ */
+export const dueDateSchema = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
+
 export const signupSchema = z.object({
   email: z.email().max(200),
   name: z.string().trim().min(1).max(60),
@@ -58,7 +69,7 @@ export const createTicketV1Schema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: z.iso.datetime().nullable().optional(),
+  dueDate: dueDateSchema.nullable().optional(),
   assigneeAgentId: z.string().optional(),
   assigneeEmail: z.email().optional(),
   labelIds: z.array(z.string()).optional(),
@@ -80,7 +91,7 @@ export const createTicketSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: z.iso.datetime().nullable().optional(),
+  dueDate: dueDateSchema.nullable().optional(),
   assigneeType: z.enum(["user", "agent"]).nullable().optional(),
   assigneeUserId: z.string().nullable().optional(),
   assigneeAgentId: z.string().nullable().optional(),
@@ -91,7 +102,7 @@ export const updateTicketSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: z.iso.datetime().nullable().optional(),
+  dueDate: dueDateSchema.nullable().optional(),
   assigneeType: z.enum(["user", "agent"]).nullable().optional(),
   assigneeUserId: z.string().nullable().optional(),
   assigneeAgentId: z.string().nullable().optional(),
@@ -194,7 +205,7 @@ export const fulfillNoteSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: z.iso.datetime().nullable().optional(),
+  dueDate: dueDateSchema.nullable().optional(),
   labelIds: z.array(z.string()).optional(),
 });
 
@@ -205,7 +216,7 @@ export const promoteNoteSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: z.iso.datetime().nullable().optional(),
+  dueDate: dueDateSchema.nullable().optional(),
   labelNames: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
 });
 

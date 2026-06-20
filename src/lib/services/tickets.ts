@@ -173,9 +173,9 @@ export async function createTicket(
     ticketId: ticket.id,
     meta: { title: ticket.title },
   });
-  await broadcast(board.workspaceId, "ticket.created", { ticket: serialized });
+  await broadcast(board.workspaceId, "ticket.created", { ticket: serialized }, { actor });
   if (ticket.assigneeType === "agent" && ticket.assigneeAgentId) {
-    await dispatchWebhook(ticket.assigneeAgentId, "ticket.assigned", { ticket: serialized });
+    await dispatchWebhook(ticket.assigneeAgentId, "ticket.assigned", { ticket: serialized }, { actor });
   }
   return serialized;
 }
@@ -236,9 +236,9 @@ export async function updateTicket(
   const serialized = serializeTicket(updated);
 
   await logActivity({ actor, action: "ticket.updated", boardId: board.id, ticketId });
-  await broadcast(board.workspaceId, "ticket.updated", { ticket: serialized });
+  await broadcast(board.workspaceId, "ticket.updated", { ticket: serialized }, { actor });
   if (assigneeChanged && updated.assigneeType === "agent" && updated.assigneeAgentId) {
-    await dispatchWebhook(updated.assigneeAgentId, "ticket.assigned", { ticket: serialized });
+    await dispatchWebhook(updated.assigneeAgentId, "ticket.assigned", { ticket: serialized }, { actor });
   }
   return serialized;
 }
@@ -317,7 +317,7 @@ export async function moveTicket(
     ticket: serialized,
     from: fromColumnId,
     to: toColumnId,
-  });
+  }, { actor });
   return serialized;
 }
 
@@ -346,7 +346,7 @@ export async function addComment(ticketId: string, body: string, actor: Actor) {
       body: comment.body,
       createdAt: comment.createdAt.toISOString(),
     },
-  });
+  }, { actor });
   return comment;
 }
 
@@ -362,5 +362,5 @@ export async function deleteTicket(ticketId: string, actor: Actor) {
     boardId: board.id,
     meta: { title: ticket.title },
   });
-  await broadcast(board.workspaceId, "ticket.updated", { deletedId: ticketId });
+  await broadcast(board.workspaceId, "ticket.updated", { deletedId: ticketId }, { actor });
 }

@@ -42,6 +42,7 @@ export type Scope = (typeof ALL_SCOPES)[number];
 
 export const WEBHOOK_EVENTS = [
   "note.queued", // a note was sent to this agent to sort
+  "note.sorted", // a queued note was filed into a ticket — the agent can stop polling it
   "ticket.created",
   "ticket.updated",
   "ticket.moved",

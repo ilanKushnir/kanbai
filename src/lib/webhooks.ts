@@ -2,6 +2,46 @@ import { db } from "./db";
 import { signWebhook, randomId } from "./crypto";
 import type { WebhookEvent } from "./constants";
 
+/** Who triggered the event — used to avoid echoing an agent's own actions back to it. */
+export type WebhookActor = { type: "user" | "agent" | "system"; id?: string | null; name?: string };
+
+export type DispatchOptions = {
+  /**
+   * The actor that caused the event. An agent is never sent an event it caused
+   * itself (its own actor/source events), so it doesn't churn on its own writes.
+   */
+  actor?: WebhookActor | null;
+};
+
+/**
+ * Centralized fan-out filter. Generic for any agent — not hard-coded to a
+ * specific one. Decides whether `agentId` should receive `event`.
+ *
+ * Rules today:
+ *   • Never deliver an event back to the agent that caused it (no self-echo).
+ *
+ * This is the single seam where future per-agent event subscriptions would
+ * plug in (e.g. an Agent.eventSubscriptions column gating by event type). Until
+ * the data model carries subscriptions, agents simply ignore event types they
+ * don't care about on their end; this keeps that decision in one place.
+ */
+export function shouldDeliver(agentId: string, _event: WebhookEvent, opts?: DispatchOptions): boolean {
+  const actor = opts?.actor;
+  if (actor && actor.type === "agent" && actor.id === agentId) return false;
+  return true;
+}
+
+/**
+ * Which HTTP responses are worth retrying. Terminal 4xx (e.g. 400/401/403/404/
+ * 422 — bad request, auth, not-found, validation) will never succeed on replay,
+ * so we stop immediately and don't waste the retry budget. Only transient
+ * failures are retried: 429 (rate limited) and any 5xx. Network errors and
+ * timeouts produce no status code and are retried separately.
+ */
+export function isRetryableStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
 /**
  * Deliver a signed event to one agent's webhook.
  *
@@ -11,7 +51,14 @@ import type { WebhookEvent } from "./constants";
  *   X-Kanbai-Signature   "sha256=<hex HMAC of `${timestamp}.${rawBody}`>"
  *   X-Kanbai-Delivery    delivery id (idempotency key)
  */
-export async function dispatchWebhook(agentId: string, event: WebhookEvent, data: unknown) {
+export async function dispatchWebhook(
+  agentId: string,
+  event: WebhookEvent,
+  data: unknown,
+  opts?: DispatchOptions,
+) {
+  if (!shouldDeliver(agentId, event, opts)) return;
+
   const agent = await db.agent.findUnique({ where: { id: agentId } });
   if (!agent || !agent.webhookUrl || !agent.webhookActive || agent.status !== "active") return;
 
@@ -87,7 +134,22 @@ async function deliver(
         return;
       }
       lastErr = `HTTP ${res.status}`;
+      // Terminal 4xx (bad request, auth, not-found, validation) won't recover on
+      // replay — fail fast instead of burning the retry budget.
+      if (!isRetryableStatus(res.status)) {
+        await db.webhookDelivery.update({
+          where: { id: deliveryId },
+          data: {
+            status: "failed",
+            statusCode,
+            attempts: attempt,
+            error: `${lastErr} — not retried (terminal response)`,
+          },
+        });
+        return;
+      }
     } catch (err) {
+      // Network error / timeout — no status code, transient, so keep retrying.
       lastErr = err instanceof Error ? err.message : String(err);
     }
     // simple linear backoff
@@ -100,13 +162,26 @@ async function deliver(
   });
 }
 
-/** Fan out an event to every active subscriber in a workspace. */
-export async function broadcast(workspaceId: string, event: WebhookEvent, data: unknown) {
+/**
+ * Fan out an event to every active subscriber in a workspace, minus the agent
+ * that triggered it (see {@link shouldDeliver}). Pass `opts.actor` so an agent's
+ * own writes aren't echoed back to it.
+ */
+export async function broadcast(
+  workspaceId: string,
+  event: WebhookEvent,
+  data: unknown,
+  opts?: DispatchOptions,
+) {
   const agents = await db.agent.findMany({
     where: { workspaceId, status: "active", webhookActive: true, NOT: { webhookUrl: null } },
     select: { id: true },
   });
-  await Promise.all(agents.map((a) => dispatchWebhook(a.id, event, data)));
+  await Promise.all(
+    agents
+      .filter((a) => shouldDeliver(a.id, event, opts))
+      .map((a) => dispatchWebhook(a.id, event, data, opts)),
+  );
 }
 
 function sleep(ms: number) {

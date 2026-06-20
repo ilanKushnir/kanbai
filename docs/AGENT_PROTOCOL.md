@@ -112,8 +112,25 @@ curl -X POST https://your-kanbai.app/api/v1/tickets \
 Fields: `boardId` (required), `title` (required), `columnId` (defaults to the
 first column), `description` (**simple HTML** — `<p> <b> <i> <u> <h3> <ul>/<ol>/<li>
 <blockquote> <a>`; sanitized server-side, anything else is stripped; plain text is
-fine too), `priority` (`none|low|medium|high|urgent`), `dueDate` (ISO 8601 or null),
-`assigneeType` (`user|agent`), `assigneeAgentId`, `labelIds[]`.
+fine too), `priority` (`none|low|medium|high|urgent`), `dueDate` (ISO 8601 — see
+below — or null), `assigneeType` (`user|agent`), `assigneeAgentId`, `labelIds[]`.
+
+#### `dueDate` contract
+
+`dueDate` accepts ISO 8601 in any of these shapes and normalizes to a stable
+instant server-side:
+
+| Form | Example | Interpreted as |
+| --- | --- | --- |
+| date-only | `2026-06-20` | UTC midnight of that day |
+| UTC instant | `2026-06-20T17:00:00.000Z` | as given |
+| zoned instant | `2026-06-20T17:00:00+02:00` | the equivalent UTC instant |
+
+`null` clears the due date. A **bare local datetime with no zone**
+(`2026-06-20T17:00:00`) is rejected with `422` because it's ambiguous — append
+`Z` or an offset, or send the date-only form. The same contract applies
+everywhere `dueDate` is accepted (`POST /tickets`, `PATCH /tickets/{id}`,
+`POST /inbox/{noteId}/sort`).
 
 **Move a ticket**
 
@@ -260,8 +277,28 @@ signed events there so the agent can react in real time instead of polling.
 
 ### Events
 
-`note.queued` · `ticket.created` · `ticket.updated` · `ticket.moved` ·
-`ticket.assigned` · `comment.created` · `ping`
+`note.queued` · `note.sorted` · `ticket.created` · `ticket.updated` ·
+`ticket.moved` · `ticket.assigned` · `comment.created` · `ping`
+
+- **`note.sorted`** fires to the agent a note was **queued to** once that note
+  is filed into a ticket (by anyone — a human, that agent, or another agent).
+  Use it to stop polling/churning on a note you received via `note.queued`. The
+  payload carries the identifiers you need to reconcile:
+  ```json
+  { "event": "note.sorted",
+    "data": { "note": { "id": "note_123", "status": "sorted" },
+              "ticket": { "id": "tkt_456", "number": 12, "boardId": "brd_1", "title": "…" } } }
+  ```
+
+#### Fan-out & self-events
+
+Workspace events (`ticket.*`, `comment.created`) are broadcast to every active
+agent with a webhook **except the agent that caused the event** — you never
+receive an echo of your own writes, so an agent can't loop on its own changes.
+Targeted events (`note.queued`, `note.sorted`, `ticket.assigned`) go only to the
+relevant agent, and are likewise suppressed when that agent is itself the actor.
+Subscribe to the event types you care about and ignore the rest — every event is
+typed via `X-Kanbai-Event` and the `event` field for easy filtering.
 
 ### Request headers
 
@@ -279,10 +316,19 @@ Kanbai computes `HMAC_SHA256(secret, "{timestamp}.{rawBody}")` and sends it as
 `X-Kanbai-Signature: sha256=<hex>`. **You** choose the `secret` (Agents →
 Signing secret) and give the same value to your agent.
 
+> **Sign the raw body — not re-serialized JSON.** `rawBody` is the exact byte
+> string Kanbai sent, character-for-character. You **must** capture the raw
+> request body *before* any JSON parsing and HMAC **that**. Parsing then
+> re-stringifying (`JSON.stringify(JSON.parse(body))`) reorders keys and changes
+> whitespace, so the HMAC won't match and verification will fail. In Express use
+> `express.raw()` (or `req.rawBody`); in Next.js route handlers use
+> `await req.text()`; in frameworks that auto-parse, configure a raw-body hook.
+
 The agent must:
-1. Recompute the HMAC over `` `${timestamp}.${rawRequestBody}` ``.
-2. Compare in **constant time** to the signature header.
-3. Reject if the timestamp is older than ~5 minutes (replay protection).
+1. Capture the **raw request body** (bytes/string as received, pre-parse).
+2. Recompute the HMAC over `` `${timestamp}.${rawRequestBody}` ``.
+3. Compare in **constant time** to the signature header.
+4. Reject if the timestamp is older than ~5 minutes (replay protection).
 
 **Node.js**
 
@@ -315,7 +361,27 @@ def verify(headers, raw_body: bytes, secret: str) -> bool:
 
 Use **Send test** in the Agents UI to fire a signed `ping` and confirm your
 verification works. Delivery results (status, code, signature) are logged per
-agent. Failed deliveries are retried up to 3 times with linear backoff.
+agent.
+
+### Delivery & retries
+
+Each delivery is attempted up to **3 times** with linear backoff (~0.4s, then
+~0.8s), and times out after 8s per attempt. What gets retried is decided by the
+response:
+
+| Outcome | Retried? |
+| --- | --- |
+| `2xx` | — (success) |
+| Timeout / connection error | ✅ yes |
+| `429`, any `5xx` | ✅ yes (transient) |
+| `400`, `401`, `403`, `404`, `422` (and other `4xx`) | ❌ no — terminal |
+
+A terminal `4xx` means the request itself is unacceptable (bad signature config,
+auth, validation) and won't succeed on replay, so Kanbai stops immediately and
+records the delivery as `failed`. **Return `2xx` quickly** once you've verified
+the signature and accepted the event (idempotently, keyed on
+`X-Kanbai-Delivery`); do heavy work asynchronously. Returning a `4xx` for a
+transient problem will drop the event with no retry.
 
 ---
 
