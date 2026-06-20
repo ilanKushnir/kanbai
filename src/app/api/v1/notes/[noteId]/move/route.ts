@@ -6,15 +6,15 @@ import { getWorkspaceNote, moveNote } from "@/lib/services/notes";
 
 export const dynamic = "force-dynamic";
 
-/** Move a note to a bucket/position within its owner's list. */
+/** Move a note to a scheduledDay/position within its owner's list. */
 export const POST = handler(
   async (req: Request, { params }: { params: Promise<{ noteId: string }> }) => {
     const agent = await requireAgent(req);
     requireScope(agent, "notes:write");
     const { noteId } = await params;
     const note = await getWorkspaceNote(noteId, agent.workspaceId);
-    const { bucket, position } = parse(moveNoteSchema, await readJson(req));
-    const updated = await moveNote(noteId, note.userId, bucket, position);
+    const { scheduledDay, position } = parse(moveNoteSchema, await readJson(req));
+    const updated = await moveNote(noteId, note.userId, scheduledDay, position);
     return ok({ note: updated });
   },
 );
