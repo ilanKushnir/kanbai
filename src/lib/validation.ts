@@ -144,6 +144,22 @@ export const moveNoteSchema = z.object({
   position: z.number().int().min(0),
 });
 
+// ── Notes (agent API) ──
+/** Agent creates a note on behalf of a workspace user (defaults to the owner). */
+export const createNoteV1Schema = z.object({
+  body: z.string().trim().min(1).max(10_000),
+  bucket: z.enum(NOTE_BUCKETS).optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  userId: z.string().min(1).optional(),
+  userEmail: z.email().max(200).optional(),
+});
+
+/** Agent queues a note to an agent to sort (defaults to itself). */
+export const queueNoteV1Schema = z.object({
+  agentId: z.string().min(1).optional(),
+  sortContext: z.string().max(4000).optional(),
+});
+
 export const ingestNoteSchema = z.object({
   ingest: z.boolean(),
   agentId: z.string().min(1).nullable().optional(),
