@@ -226,6 +226,18 @@ export const createAgentSchema = z.object({
   color: z.string().optional(),
 });
 
+/**
+ * Agent self-setup: an authenticated agent registers/updates its OWN webhook
+ * via its bearer key (POST /api/v1/agent/webhook). URL is required to register;
+ * `active` toggles delivery; `secret` is optional (signing is recommended, not
+ * required) — omit it to keep the current secret, send "" or null to clear it.
+ */
+export const registerWebhookV1Schema = z.object({
+  url: z.url().max(2000).nullable().optional().or(z.literal("")),
+  active: z.boolean().optional(),
+  secret: z.string().min(8).max(200).nullable().optional().or(z.literal("")),
+});
+
 export const updateAgentSchema = z.object({
   name: z.string().trim().min(1).max(60).optional(),
   webhookUrl: z.url().nullable().optional().or(z.literal("")),

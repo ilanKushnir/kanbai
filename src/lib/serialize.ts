@@ -98,3 +98,26 @@ export function serializeAgentPublic(a: {
 }) {
   return { id: a.id, name: a.name, kind: a.kind, color: a.color, status: a.status };
 }
+
+/**
+ * Webhook status for an agent, as reported to the agent itself (GET /api/v1/me,
+ * the self-setup endpoint). Never leaks the signing secret — only whether one
+ * is configured. `signed` reflects optional HMAC: callbacks still fire when
+ * false, just unsigned.
+ */
+export function serializeWebhookStatus(a: {
+  webhookUrl: string | null;
+  webhookActive: boolean;
+  webhookSecret: string | null;
+}) {
+  const configured = !!a.webhookUrl;
+  const signed = !!a.webhookSecret;
+  return {
+    url: a.webhookUrl,
+    active: a.webhookActive,
+    configured,
+    signed,
+    // Human-readable status mirroring the Agents UI labels.
+    status: !configured ? "not_configured" : !a.webhookActive ? "disabled" : signed ? "signed" : "unsigned",
+  };
+}

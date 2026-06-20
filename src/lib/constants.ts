@@ -40,6 +40,25 @@ export const ALL_SCOPES = [
 ] as const;
 export type Scope = (typeof ALL_SCOPES)[number];
 
+/** Service identity advertised to agents via GET /api/v1/me. */
+export const SERVICE_NAME = "Kanbai";
+export const API_VERSION = "v1";
+
+/**
+ * Capabilities the Kanbai agent API exposes, independent of any one agent's
+ * granted scopes. Reported by GET /api/v1/me so an agent can discover what the
+ * service supports (resources to drive, webhook self-setup, optional signing)
+ * without scraping the docs. Per-agent permissions are conveyed by `scopes`.
+ */
+export const AGENT_CAPABILITIES = {
+  resources: ["boards", "tickets", "inbox", "notes", "comments", "members"],
+  webhook: {
+    selfRegister: true, // POST /api/v1/agent/webhook with the agent's bearer key
+    test: true, // POST /api/v1/agent/webhook/test fires a ping to itself
+    signing: "optional", // HMAC SHA-256 — recommended, not required
+  },
+} as const;
+
 export const WEBHOOK_EVENTS = [
   "note.queued", // a note was sent to this agent to sort
   "note.sorted", // a queued note was filed into a ticket — the agent can stop polling it

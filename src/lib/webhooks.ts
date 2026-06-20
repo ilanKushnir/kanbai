@@ -43,12 +43,17 @@ export function isRetryableStatus(status: number): boolean {
 }
 
 /**
- * Deliver a signed event to one agent's webhook.
+ * Deliver an event to one agent's webhook.
  *
- * Headers the agent should verify:
+ * Signing is OPTIONAL but recommended. If the agent has a signing secret,
+ * every payload is HMAC-signed so the receiver can prove authenticity; if not,
+ * the callback is still delivered (relying on a trusted/internal listener path)
+ * and simply carries no signature header.
+ *
+ * Headers the agent receives:
  *   X-Kanbai-Event       the event name
  *   X-Kanbai-Timestamp   unix seconds (used in the signed string + replay window)
- *   X-Kanbai-Signature   "sha256=<hex HMAC of `${timestamp}.${rawBody}`>"
+ *   X-Kanbai-Signature   "sha256=<hex HMAC of `${timestamp}.${rawBody}`>" — only when signed
  *   X-Kanbai-Delivery    delivery id (idempotency key)
  */
 export async function dispatchWebhook(
@@ -62,22 +67,11 @@ export async function dispatchWebhook(
   const agent = await db.agent.findUnique({ where: { id: agentId } });
   if (!agent || !agent.webhookUrl || !agent.webhookActive || agent.status !== "active") return;
 
-  // Never sign with an empty key — an HMAC keyed with "" authenticates nothing
-  // and would be trivially forgeable. Refuse to deliver until a secret is set.
+  // Signing is optional. With a secret we HMAC the payload; without one we send
+  // it unsigned (never sign with an empty key — an HMAC keyed with "" proves
+  // nothing and would be trivially forgeable, so we omit the header entirely).
   const secret = agent.webhookSecret ?? "";
-  if (!secret) {
-    await db.webhookDelivery.create({
-      data: {
-        agentId: agent.id,
-        event,
-        payload: "",
-        signature: "",
-        status: "failed",
-        error: "No signing secret set — refusing to send an unsigned webhook. Set a signing secret in Agents.",
-      },
-    });
-    return;
-  }
+  const signed = secret.length > 0;
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const body = JSON.stringify({
     id: randomId("evt"),
@@ -86,13 +80,13 @@ export async function dispatchWebhook(
     workspaceId: agent.workspaceId,
     data,
   });
-  const signature = signWebhook(secret, timestamp, body);
+  const signature = signed ? signWebhook(secret, timestamp, body) : "";
 
   const delivery = await db.webhookDelivery.create({
     data: { agentId: agent.id, event, payload: body, signature, status: "pending" },
   });
 
-  void deliver(agent.webhookUrl, body, event, timestamp, signature, delivery.id);
+  void deliver(agent.webhookUrl, body, event, timestamp, signature, delivery.id, signed);
   return delivery.id;
 }
 
@@ -103,6 +97,7 @@ async function deliver(
   timestamp: string,
   signature: string,
   deliveryId: string,
+  signed: boolean,
   maxAttempts = 3,
 ) {
   let attempt = 0;
@@ -119,7 +114,8 @@ async function deliver(
           "user-agent": "Kanbai-Webhook/1.0",
           "X-Kanbai-Event": event,
           "X-Kanbai-Timestamp": timestamp,
-          "X-Kanbai-Signature": `sha256=${signature}`,
+          // Signature header only when a secret is configured; unsigned callbacks omit it.
+          ...(signed ? { "X-Kanbai-Signature": `sha256=${signature}` } : {}),
           "X-Kanbai-Delivery": deliveryId,
         },
         body,

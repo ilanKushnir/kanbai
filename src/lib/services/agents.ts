@@ -3,6 +3,7 @@ import { HttpError } from "@/lib/api";
 import { generateApiKey, generateWebhookSecret } from "@/lib/crypto";
 import { dispatchWebhook } from "@/lib/webhooks";
 import { ALL_SCOPES } from "@/lib/constants";
+import { serializeWebhookStatus } from "@/lib/serialize";
 
 export function serializeAgent(a: {
   id: string;
@@ -101,13 +102,32 @@ export async function deleteAgent(agentId: string) {
   await db.agent.delete({ where: { id: agentId } });
 }
 
-/** Fire a signed "ping" so the user can confirm their webhook + signature setup. */
+/**
+ * Self-setup: an agent registers/updates its own webhook with its bearer key.
+ * `secret` semantics: undefined → keep current; "" or null → clear (unsigned);
+ * a value → set it. Returns the resulting webhook status (never the secret).
+ */
+export async function setOwnWebhook(
+  agentId: string,
+  input: { url?: string | null; active?: boolean; secret?: string | null },
+) {
+  const data: Record<string, unknown> = {};
+  if (input.url !== undefined) data.webhookUrl = input.url || null;
+  if (input.active !== undefined) data.webhookActive = input.active;
+  if (input.secret !== undefined) data.webhookSecret = input.secret || null;
+  const agent = await db.agent.update({ where: { id: agentId }, data });
+  return serializeWebhookStatus(agent);
+}
+
+/** Fire a "ping" (signed if a secret is set) so the agent/user can confirm webhook setup. */
 export async function sendTestWebhook(agentId: string) {
   const agent = await db.agent.findUnique({ where: { id: agentId } });
   if (!agent) throw new HttpError(404, "Agent not found");
   if (!agent.webhookUrl) throw new HttpError(422, "Set a webhook URL first");
   const deliveryId = await dispatchWebhook(agentId, "ping", {
-    message: "Hello from Kanbai 👋 — if you can verify this signature, you're wired up.",
+    message: agent.webhookSecret
+      ? "Hello from Kanbai 👋 — if you can verify this signature, you're wired up."
+      : "Hello from Kanbai 👋 — your webhook is reachable (unsigned: no signing secret set).",
   });
   return { deliveryId };
 }
