@@ -9,6 +9,7 @@ import {
   Webhook,
   Copy,
   Check,
+  Download,
   RefreshCw,
   Send,
   Trash2,
@@ -28,6 +29,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { api } from "@/lib/client-api";
 import { useToast } from "@/components/ui/toast";
 import { AGENT_KINDS, AGENT_META, ALL_SCOPES } from "@/lib/constants";
+import { APP_VERSION } from "@/lib/version";
 import { agentConnection } from "@/lib/agent-status";
 import { timeAgo, cn } from "@/lib/utils";
 import type { AgentFull } from "@/lib/types";
@@ -109,7 +111,8 @@ export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; a
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Agents</h1>
           <p className="mt-1 text-sm text-fg-muted">
-            Connect AI agents securely. They authenticate with a key and verify a signed webhook.
+            Connect AI agents securely. They authenticate with a key and receive events via a
+            webhook (optionally signed).
           </p>
         </div>
         <Button variant="primary" onClick={() => setCreating(true)}>
@@ -117,16 +120,20 @@ export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; a
         </Button>
       </header>
 
-      {/* How it works */}
-      <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-3">
-        <Step n={1} icon={KeyRound} title="Give it a key">
-          The agent calls Kanbai with <code className="text-primary">Authorization: Bearer</code> its key.
+      {/* How it works — canonical 4-step flow, shared across apps */}
+      <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Step n={1} icon={Plus} title="Create agent">
+          Add the agent and grab its one-time API key.
         </Step>
-        <Step n={2} icon={Webhook} title="It sets a webhook">
-          The agent points a webhook at itself to receive new work and inbox notes.
+        <Step n={2} icon={BookOpen} title="Copy brief">
+          Hand the generated brief to the agent — base URL, key, and how to drive Kanbai.
         </Step>
-        <Step n={3} icon={ShieldCheck} title="You sign it">
-          You set a secret; Kanbai signs every payload so the agent can trust it.
+        <Step n={3} icon={Webhook} title="Agent registers webhook">
+          The agent self-registers its callback URL via{" "}
+          <code className="text-primary">POST /api/v1/agent/webhook</code>.
+        </Step>
+        <Step n={4} icon={ShieldCheck} title="Verify &amp; test">
+          Send a test ping. Set a signing secret to sign payloads — recommended, not required.
         </Step>
       </div>
 
@@ -392,7 +399,10 @@ function AgentCard({
       </Field>
 
       {/* Signing secret */}
-      <Field icon={ShieldCheck} label="Signing secret (you set this; the agent verifies with it)">
+      <Field
+        icon={ShieldCheck}
+        label="Signing secret — optional but recommended (you set this; the agent verifies with it)"
+      >
         <div className="flex items-center gap-1">
           <code className="flex-1 truncate rounded-lg bg-surface-2 px-2.5 py-1.5 font-mono text-xs">
             {secret ? (showSecret ? secret : "•".repeat(Math.min(secret.length, 28))) : "none"}
@@ -601,25 +611,32 @@ function buildAgentBrief(name: string, key: string, origin: string) {
   const base = `${origin || "https://your-kanbai.app"}/api/v1`;
   return `# Kanbai integration — ${name}
 
-You are connected to Kanbai (a Kanban board system) as the agent "${name}".
+You are connected to Kanbai (a Kanban board system), v${APP_VERSION}, as the agent "${name}".
 This key grants FULL control of this workspace: boards, tickets, the capture
 inbox, comments, and members. Authenticate every request with the key below.
+
+Setup is four steps: 1) create agent  2) copy this brief  3) the agent registers
+its webhook  4) verify with a test ping.
 
 ## Credentials (store securely — the key is shown only once)
 Base URL:   ${base}
 Auth:       Authorization: Bearer ${key}
 API key:    ${key}
+> Kanbai and its agents run locally/on the same network — prefer the internal/LAN
+> base URL (e.g. http://<kanbai-lan-ip>:3000/api/v1) over a public hostname.
 
 ## Verify the connection
 curl ${base}/me -H "Authorization: Bearer ${key}"
-(returns your scopes + a "conventions" block describing the description format, allowed
-HTML tags, priorities, and note buckets — read it so you file tickets correctly.)
+(returns service name + version, apiVersion, your scopes, capabilities, your webhook
+status, and a "conventions" block describing the description format, allowed HTML
+tags, priorities, and note buckets — read it so you file tickets correctly.)
 
 ## What you can do
 - Boards:   GET ${base}/boards  ·  GET ${base}/boards/{id}  ·  POST ${base}/boards
 - Tickets:  POST ${base}/tickets  ·  PATCH ${base}/tickets/{id}  ·  POST ${base}/tickets/{id}/move
 - Comment:  POST ${base}/tickets/{id}/comments
 - Inbox:    GET ${base}/inbox  →  POST ${base}/inbox/{noteId}/sort   (turn captured notes into tickets)
+- Notes:    GET ${base}/notes  ·  POST ${base}/notes  ·  POST ${base}/notes/{id}/queue
 - Members:  GET ${base}/members  ·  POST ${base}/members
 
 ## Create a ticket
@@ -637,15 +654,30 @@ priority, and suggestedDueDate. When filing a note into a ticket:
   so leave the ticket with no due date then).
   POST ${base}/inbox/{noteId}/sort {"boardId":"<id>","title":"...","priority":"...","dueDate":"<ISO or null>"}
 
-## Webhooks (recommended)
-Kanbai POSTs signed events to your webhook URL. Verify the signature header
-  X-Kanbai-Signature: sha256=<hex HMAC of "{timestamp}.{rawBody}" with your signing secret>
-and reject timestamps older than 5 minutes.
+## Register your webhook (self-setup)
+Point Kanbai at your own callback URL so you get events instead of polling. Prefer
+an internal/LAN URL since both run on the same network:
+curl -X POST ${base}/agent/webhook \\
+  -H "Authorization: Bearer ${key}" -H "content-type: application/json" \\
+  -d '{"url":"http://<agent-lan-ip>:<port>/kanbai/webhook"}'
+Then fire a test ping to yourself:
+curl -X POST ${base}/agent/webhook/test -H "Authorization: Bearer ${key}"
+
+## Webhook events & signing (optional, recommended)
+Kanbai POSTs events (ticket.*, note.queued, note.sorted, comment.created, ping) to your URL.
+Signing is OPTIONAL but recommended. If a signing secret is set (Agents → Signing secret, or
+include "secret" when you register above), Kanbai signs every payload — verify the header
+  X-Kanbai-Signature: sha256=<hex HMAC of "{timestamp}.{rawBody}" with the secret>
+and reject timestamps older than 5 minutes. With no secret, callbacks are still delivered
+UNSIGNED (no signature header) — accept those only on a trusted/internal listener path.
 
 Ticket descriptions are SIMPLE HTML — use <p> <b> <i> <u> <h3> <ul>/<ol>/<li> <blockquote> <a>.
 It is sanitized server-side (anything else is stripped); plain text is fine too. Not Markdown.
 Priorities: none | low | medium | high | urgent.
-Full protocol: docs/AGENT_PROTOCOL.md.`;
+
+## Security
+Store the API key securely; do not paste it into public logs or shared chats. Rotate it from
+Agents → Rotate API key if it leaks. Full protocol: docs/AGENT_PROTOCOL.md.`;
 }
 
 function KeyRevealModal({ name, value, onClose }: { name: string; value: string; onClose: () => void }) {
@@ -656,6 +688,17 @@ function KeyRevealModal({ name, value, onClose }: { name: string; value: string;
     if (typeof window !== "undefined") setOrigin(window.location.origin);
   }, []);
   const brief = buildAgentBrief(name, value, origin);
+
+  function downloadBrief() {
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "agent";
+    const blob = new Blob([brief], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `kanbai-brief-${slug}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <Modal open onClose={onClose} title={`Connect ${name}`} size="lg">
@@ -680,13 +723,18 @@ function KeyRevealModal({ name, value, onClose }: { name: string; value: string;
             <span className="text-xs font-medium text-fg-muted">
               Agent brief — paste this to the agent to integrate (full control)
             </span>
-            <Button variant="ghost" size="sm" onClick={() => briefCopy.copy(brief)}>
-              {briefCopy.copied ? (
-                <><Check className="h-4 w-4" /> Copied</>
-              ) : (
-                <><Copy className="h-4 w-4" /> Copy brief</>
-              )}
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={downloadBrief}>
+                <Download className="h-4 w-4" /> Download
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => briefCopy.copy(brief)}>
+                {briefCopy.copied ? (
+                  <><Check className="h-4 w-4" /> Copied</>
+                ) : (
+                  <><Copy className="h-4 w-4" /> Copy brief</>
+                )}
+              </Button>
+            </div>
           </div>
           <pre className="max-h-72 overflow-auto rounded-xl border border-border bg-surface-2 p-3 text-xs leading-relaxed whitespace-pre-wrap break-words">
 {brief}

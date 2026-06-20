@@ -83,7 +83,7 @@ export default async function BoardsPage({
                 <Bot className="h-4.5 w-4.5" />
               </span>
               <h3 className="mt-2.5 text-sm font-semibold">Connect an agent</h3>
-              <p className="mt-1 text-xs text-fg-muted">Hermes &amp; friends, with signed webhooks.</p>
+              <p className="mt-1 text-xs text-fg-muted">Hermes &amp; friends, via self-registered webhooks.</p>
             </Link>
           </div>
           <p className="hidden border-t border-border px-6 py-3 text-center text-xs text-fg-subtle md:block">
