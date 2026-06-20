@@ -111,8 +111,8 @@ export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; a
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Agents</h1>
           <p className="mt-1 text-sm text-fg-muted">
-            Connect AI agents securely. They authenticate with a key and receive events via a
-            webhook (optionally signed).
+            Connect an AI agent to Kanbai. It authenticates with an API key and receives events
+            through an optional, signed webhook — keep everything on your LAN.
           </p>
         </div>
         <Button variant="primary" onClick={() => setCreating(true)}>
@@ -123,17 +123,16 @@ export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; a
       {/* How it works — canonical 4-step flow, shared across apps */}
       <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-4">
         <Step n={1} icon={Plus} title="Create agent">
-          Add the agent and grab its one-time API key.
+          Name it and choose its kind.
         </Step>
-        <Step n={2} icon={BookOpen} title="Copy brief">
-          Hand the generated brief to the agent — base URL, key, and how to drive Kanbai.
+        <Step n={2} icon={BookOpen} title="Agent brief">
+          Copy the one-time key and setup brief.
         </Step>
-        <Step n={3} icon={Webhook} title="Agent registers webhook">
-          The agent self-registers its callback URL via{" "}
-          <code className="text-primary">POST /api/v1/agent/webhook</code>.
+        <Step n={3} icon={Webhook} title="Webhook">
+          Point it at your LAN URL — signing optional.
         </Step>
-        <Step n={4} icon={ShieldCheck} title="Verify &amp; test">
-          Send a test ping. Set a signing secret to sign payloads — recommended, not required.
+        <Step n={4} icon={ShieldCheck} title="Manage">
+          Rotate keys, toggle access, watch status.
         </Step>
       </div>
 
@@ -384,7 +383,7 @@ function AgentCard({
           <Input
             value={webhookUrl}
             onChange={(e) => setWebhookUrl(e.target.value)}
-            placeholder="https://your-agent.example.com/kanbai/webhook"
+            placeholder="http://<your-lan-ip>:<port>/kanbai/webhook"
             className="font-mono text-xs"
           />
           <Button
@@ -396,13 +395,40 @@ function AgentCard({
             Save
           </Button>
         </div>
+        <p className="mt-1.5 text-xs text-fg-subtle">
+          Use an internal LAN address the agent can reach. Don&apos;t expose it to the public
+          internet.
+        </p>
+        {agent.webhookUrl && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {(() => {
+              const last = agent.deliveries[0];
+              const verified = last?.status === "success";
+              return (
+                <>
+                  <Badge tone={verified ? "emerald" : "slate"} dot>
+                    {verified ? "Verified" : "Not verified"}
+                  </Badge>
+                  <Badge tone={secret ? "emerald" : "amber"} dot>
+                    {secret ? "Signed (HMAC)" : "Unsigned"}
+                  </Badge>
+                  {last && (
+                    <Badge tone="slate">
+                      <span suppressHydrationWarning>
+                        last ping {timeAgo(last.createdAt)} ·{" "}
+                        {last.statusCode ? `HTTP ${last.statusCode}` : last.status}
+                      </span>
+                    </Badge>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
       </Field>
 
       {/* Signing secret */}
-      <Field
-        icon={ShieldCheck}
-        label="Signing secret — optional but recommended (you set this; the agent verifies with it)"
-      >
+      <Field icon={ShieldCheck} label="Signing secret — optional but recommended">
         <div className="flex items-center gap-1">
           <code className="flex-1 truncate rounded-lg bg-surface-2 px-2.5 py-1.5 font-mono text-xs">
             {secret ? (showSecret ? secret : "•".repeat(Math.min(secret.length, 28))) : "none"}
