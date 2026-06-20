@@ -302,7 +302,7 @@ model Agent {
   webhookSecret String?
   webhookActive Boolean @default(true)
 
-  scopes    String   @default("boards:read,boards:write,tickets:read,tickets:write,inbox:read,inbox:write")
+  scopes    String   @default("boards:read,boards:write,tickets:read,tickets:write,inbox:read,inbox:write,notes:read,notes:write")
   lastSeenAt DateTime?
   createdAt DateTime @default(now())
 

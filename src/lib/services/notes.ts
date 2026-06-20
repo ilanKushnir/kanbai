@@ -1,3 +1,4 @@
+import { Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { dispatchWebhook } from "@/lib/webhooks";
@@ -70,6 +71,84 @@ export async function listInboxForAgent(agentId: string) {
     include: noteInclude,
   });
   return notes.map(serializeNote);
+}
+
+/**
+ * Load a note and assert it belongs to the agent's workspace — i.e. its owner
+ * is a member of that workspace. 404s otherwise so we never leak existence of
+ * notes in other workspaces. Returns the raw note (with relations).
+ */
+export async function getWorkspaceNote(noteId: string, workspaceId: string) {
+  const note = await db.note.findUnique({ where: { id: noteId }, include: noteInclude });
+  if (!note) throw new HttpError(404, "Note not found");
+  const member = await db.workspaceMember.findFirst({
+    where: { workspaceId, userId: note.userId },
+    select: { id: true },
+  });
+  if (!member) throw new HttpError(404, "Note not found");
+  return note;
+}
+
+/** List notes owned by members of this workspace, with optional filters. */
+export async function listNotesForWorkspace(
+  workspaceId: string,
+  filters: { status?: string; bucket?: string; assignedAgentId?: string; userId?: string } = {},
+) {
+  const where: Prisma.NoteWhereInput = {
+    user: { workspaces: { some: { workspaceId } } },
+  };
+  if (filters.userId) where.userId = filters.userId;
+  if (filters.status) where.status = filters.status;
+  if (filters.bucket) where.bucket = filters.bucket;
+  if (filters.assignedAgentId) where.assignedAgentId = filters.assignedAgentId;
+  const notes = await db.note.findMany({
+    where,
+    orderBy: [{ bucket: "asc" }, { position: "asc" }, { createdAt: "asc" }],
+    include: noteInclude,
+  });
+  return notes.map(serializeNote);
+}
+
+/**
+ * Resolve which workspace user should own an agent-created note. An explicit
+ * userId/userEmail must resolve to a member of this workspace; otherwise we
+ * fall back to the workspace owner (then any member).
+ */
+export async function resolveWorkspaceUserId(
+  workspaceId: string,
+  opts: { userId?: string; userEmail?: string },
+): Promise<string> {
+  if (opts.userId) {
+    const m = await db.workspaceMember.findFirst({
+      where: { workspaceId, userId: opts.userId },
+      select: { userId: true },
+    });
+    if (!m) throw new HttpError(404, "User not found in this workspace");
+    return m.userId;
+  }
+  if (opts.userEmail) {
+    const m = await db.workspaceMember.findFirst({
+      where: { workspaceId, user: { email: opts.userEmail.toLowerCase() } },
+      select: { userId: true },
+    });
+    if (!m) throw new HttpError(404, "User not found in this workspace");
+    return m.userId;
+  }
+  const ws = await db.workspace.findUnique({ where: { id: workspaceId }, select: { ownerId: true } });
+  if (ws?.ownerId) {
+    const owner = await db.workspaceMember.findFirst({
+      where: { workspaceId, userId: ws.ownerId },
+      select: { userId: true },
+    });
+    if (owner) return owner.userId;
+  }
+  const first = await db.workspaceMember.findFirst({
+    where: { workspaceId },
+    orderBy: { id: "asc" },
+    select: { userId: true },
+  });
+  if (!first) throw new HttpError(422, "Workspace has no members to own the note");
+  return first.userId;
 }
 
 export async function getNoteForAgent(noteId: string, agentId: string) {

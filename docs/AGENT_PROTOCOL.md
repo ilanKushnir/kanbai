@@ -27,7 +27,13 @@ Authorization: Bearer kbai_live_xxxxxxxxxxxxxxxxxxxxxxxx
 - Keys are scoped. A call missing the required scope returns `403`.
 
 **Scopes:** `boards:read`, `boards:write`, `tickets:read`, `tickets:write`,
-`inbox:read`, `inbox:write`, `comments:write`, `members:read`, `members:write`.
+`inbox:read`, `inbox:write`, `notes:read`, `notes:write`, `comments:write`,
+`members:read`, `members:write`.
+
+> New agents are granted every scope by default. Agents created before
+> `notes:read`/`notes:write` existed won't have them until you re-grant scopes
+> in **Agents → Scopes** — their existing flows (inbox, tickets, boards) are
+> unaffected.
 
 ### Quick check
 
@@ -156,6 +162,76 @@ curl -X POST https://your-kanbai.app/api/v1/inbox/note_123/sort \
 ```
 
 This creates the ticket, links it to the note, and marks the note **sorted**.
+
+### Notes (full management)
+
+The inbox above is the read-and-file queue for notes a human routed to *this*
+agent. The endpoints below let an agent manage **all** notes across its
+workspace — captured ideas before they become tickets. Every note belongs to a
+workspace member; an agent only ever sees notes whose owner is in its workspace.
+
+```
+GET    /notes                  # list workspace notes (filterable)        scope: notes:read
+POST   /notes                  # create a note (for a workspace user)      scope: notes:write
+GET    /notes/{noteId}         # fetch one note                           scope: notes:read
+PATCH  /notes/{noteId}         # edit body/pinned/status/bucket/priority   scope: notes:write
+DELETE /notes/{noteId}         # delete a note                            scope: notes:write
+POST   /notes/{noteId}/move    # move to a bucket + position              scope: notes:write
+POST   /notes/{noteId}/queue   # queue the note to an agent to sort       scope: notes:write
+POST   /notes/{noteId}/attachments  # attach audio/image/file (data URL)  scope: notes:write
+```
+
+**List** supports query filters (all optional, combinable):
+
+| Param | Effect |
+| --- | --- |
+| `status` | `inbox` · `queued` · `sorting` · `sorted` · `archived` |
+| `bucket` | `today` · `tomorrow` · `next_week` · `next_month` · `general` |
+| `userId` | only notes owned by this workspace member |
+| `assigned=me` | only notes currently queued to the calling agent |
+
+```bash
+curl "https://your-kanbai.app/api/v1/notes?status=inbox&bucket=today" \
+  -H "Authorization: Bearer <TOKEN>"
+# → { notes: [ { id, body, status, bucket, priority, suggestedDueDate, attachments, ... } ] }
+```
+
+**Create** a note. Owner resolution: `userId` or `userEmail` (must be a member
+of this workspace), otherwise it defaults to the workspace owner.
+
+```bash
+curl -X POST https://your-kanbai.app/api/v1/notes \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{ "body":"Draft Q3 roadmap", "bucket":"next_week", "priority":"high",
+        "userEmail":"jo@example.com" }'
+# → { note: { id, body, bucket, priority, ... } }
+```
+
+**Edit / move / queue / attach**
+
+```bash
+# Edit fields (any subset)
+curl -X PATCH https://your-kanbai.app/api/v1/notes/note_123 \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{ "priority":"urgent", "pinned":true }'
+
+# Reorder within a bucket
+curl -X POST https://your-kanbai.app/api/v1/notes/note_123/move \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{ "bucket":"today", "position":0 }'
+
+# Queue to an agent to sort (omit agentId to queue to yourself)
+curl -X POST https://your-kanbai.app/api/v1/notes/note_123/queue \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{ "agentId":"agt_hermes", "sortContext":"File under the product board" }'
+```
+
+A note queued this way fires the same `note.queued` webhook to the target agent,
+which then files it with `POST /inbox/{noteId}/sort` exactly as above.
 
 ### Members (for migration)
 

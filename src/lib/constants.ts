@@ -32,6 +32,8 @@ export const ALL_SCOPES = [
   "tickets:write",
   "inbox:read",
   "inbox:write",
+  "notes:read",
+  "notes:write",
   "comments:write",
   "members:read",
   "members:write",
