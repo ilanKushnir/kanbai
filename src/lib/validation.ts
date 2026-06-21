@@ -258,6 +258,7 @@ export const updateAgentSchema = z.object({
 });
 
 export const LANDING_PAGES = ["my-day", "notes", "boards"] as const;
+export const DICTATION_LANGUAGE_VALUES = ["auto", "en", "he", "es", "fr", "de", "it", "pt", "ar", "ru", "zh", "ja", "ko"] as const;
 
 export const updateAccountSchema = z.object({
   name: z.string().trim().min(1).max(60).optional(),
@@ -266,6 +267,7 @@ export const updateAccountSchema = z.object({
   defaultLanding: z.enum(LANDING_PAGES).optional(),
   weekStartsOn: z.number().int().min(0).max(6).optional(),
   handedness: z.enum(["right", "left"]).optional(),
+  dictationLanguage: z.enum(DICTATION_LANGUAGE_VALUES).optional(),
 });
 
 export const changePasswordSchema = z.object({

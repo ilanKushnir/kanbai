@@ -23,11 +23,17 @@ export const PATCH = handler(async (req: Request) => {
     }
   }
   if (input.avatarUrl !== undefined) data.avatarUrl = input.avatarUrl || null;
-  if (input.defaultLanding !== undefined || input.weekStartsOn !== undefined || input.handedness !== undefined) {
+  if (
+    input.defaultLanding !== undefined ||
+    input.weekStartsOn !== undefined ||
+    input.handedness !== undefined ||
+    input.dictationLanguage !== undefined
+  ) {
     const settings = parseUserSettings(ctx.user.settings);
     if (input.defaultLanding !== undefined) settings.defaultLanding = input.defaultLanding;
     if (input.weekStartsOn !== undefined) settings.weekStartsOn = input.weekStartsOn;
     if (input.handedness !== undefined) settings.handedness = input.handedness;
+    if (input.dictationLanguage !== undefined) settings.dictationLanguage = input.dictationLanguage;
     data.settings = JSON.stringify(settings);
   }
 

@@ -20,6 +20,7 @@ export function NotesViewClient(props: {
   reflections: TicketReflectionT[];
   weekStartsOn: number;
   handedness: "right" | "left";
+  dictationLanguage: string;
 }) {
   return <NotesView {...props} />;
 }

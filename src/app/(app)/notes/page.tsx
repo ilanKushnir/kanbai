@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function NotesPage() {
   const ctx = await getContext();
-  const { weekStartsOn, handedness } = parseUserSettings(ctx.user.settings);
+  const { weekStartsOn, handedness, dictationLanguage } = parseUserSettings(ctx.user.settings);
 
   const [notes, agents, boards, dueTickets] = await Promise.all([
     listNotesForUser(ctx.user.id),
@@ -73,6 +73,7 @@ export default async function NotesPage() {
         reflections={reflections}
         weekStartsOn={weekStartsOn}
         handedness={handedness}
+        dictationLanguage={dictationLanguage}
       />
     </Suspense>
   );

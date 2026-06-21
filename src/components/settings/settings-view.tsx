@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { SettingsTabs } from "./settings-tabs";
 import { api } from "@/lib/client-api";
 import { APP_VERSION, POWERED_BY } from "@/lib/version";
+import { DICTATION_LANGUAGES } from "@/lib/user-settings";
 import { cn } from "@/lib/utils";
 
 const LANDING_OPTIONS = [
@@ -36,18 +37,20 @@ type Props = {
   defaultLanding: string;
   weekStartsOn: number;
   handedness: string;
+  dictationLanguage: string;
   workspaceId: string;
   workspace: { name: string; defaultAgentId: string | null; snapshotLimit: number } | null;
   agents: { id: string; name: string }[];
 };
 
-export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn, handedness, workspaceId, workspace, agents }: Props) {
+export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn, handedness, dictationLanguage, workspaceId, workspace, agents }: Props) {
   const router = useRouter();
   const { toast } = useToast();
 
   const [landing, setLanding] = React.useState(defaultLanding);
   const [weekStart, setWeekStart] = React.useState(String(weekStartsOn));
   const [hand, setHand] = React.useState(handedness);
+  const [dictLang, setDictLang] = React.useState(dictationLanguage);
 
   async function savePref(body: Record<string, unknown>) {
     try {
@@ -72,6 +75,11 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
   function saveHand(value: string) {
     setHand(value);
     void savePref({ handedness: value });
+  }
+
+  function saveDictationLanguage(value: string) {
+    setDictLang(value);
+    void savePref({ dictationLanguage: value });
   }
 
   return (
@@ -128,6 +136,24 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
             </select>
             <p className="mt-1.5 text-xs text-fg-subtle">
               Puts the mobile drag handles on the hand you hold your phone with.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="dictation-language">Dictation language</Label>
+            <select
+              id="dictation-language"
+              className={selectCls}
+              value={dictLang}
+              onChange={(e) => saveDictationLanguage(e.target.value)}
+            >
+              {DICTATION_LANGUAGES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-fg-subtle">
+              Uses server-side Whisper when configured; Hebrew prefers an Ivrit/whisper-ivrit capable model. iPhone Safari cannot reliably run Whisper models or background sync on-device.
             </p>
           </div>
         </div>

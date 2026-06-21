@@ -32,6 +32,7 @@ export default async function SettingsPage() {
       defaultLanding={settings.defaultLanding}
       weekStartsOn={settings.weekStartsOn}
       handedness={settings.handedness}
+      dictationLanguage={settings.dictationLanguage}
       workspaceId={ctx.workspace.id}
       workspace={ws ? { name: ws.name, defaultAgentId: ws.defaultAgentId, snapshotLimit: ws.snapshotLimit } : null}
       agents={agents}

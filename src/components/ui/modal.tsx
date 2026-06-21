@@ -31,11 +31,14 @@ export function Modal({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
     };
   }, [open, onClose]);
 
@@ -44,7 +47,7 @@ export function Modal({
   const widths = { sm: "sm:max-w-sm", md: "sm:max-w-lg", lg: "sm:max-w-2xl", xl: "sm:max-w-4xl" };
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-50 flex touch-none items-end justify-center overflow-hidden sm:items-center sm:p-4">
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in"
         onClick={onClose}
@@ -79,7 +82,7 @@ export function Modal({
             )}
           </div>
         )}
-        <div className={cn("overflow-y-auto px-5 pb-5 grow", !(title || !hideClose) && "pt-5")}>{children}</div>
+        <div className={cn("grow overflow-y-auto overscroll-contain px-5 pb-5", !(title || !hideClose) && "pt-5")}>{children}</div>
       </div>
     </div>,
     document.body,

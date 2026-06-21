@@ -234,6 +234,7 @@ export function NotesView({
   reflections = [],
   weekStartsOn,
   handedness = "right",
+  dictationLanguage = "auto",
 }: {
   notes: NoteT[];
   agents: AgentLite[];
@@ -241,17 +242,33 @@ export function NotesView({
   reflections?: TicketReflectionT[];
   weekStartsOn: number;
   handedness?: "right" | "left";
+  dictationLanguage?: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
   const { toast } = useToast();
 
-  const [notesById, setNotesById] = React.useState<Record<string, NoteT>>(() =>
-    Object.fromEntries(initial.map((n) => [n.id, n])),
-  );
+  const [notesById, setNotesById] = React.useState<Record<string, NoteT>>(() => {
+    if (initial.length > 0 || typeof localStorage === "undefined") {
+      return Object.fromEntries(initial.map((n) => [n.id, n]));
+    }
+    try {
+      const cached = JSON.parse(localStorage.getItem("kanbai-notes-cache") || "[]") as NoteT[];
+      return Object.fromEntries(cached.map((n) => [n.id, n]));
+    } catch {
+      return {};
+    }
+  });
   const notesRef = React.useRef(notesById);
   notesRef.current = notesById;
   const upsertNote = (n: NoteT) => setNotesById((m) => ({ ...m, [n.id]: n }));
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("kanbai-notes-cache", JSON.stringify(Object.values(notesById).filter((n) => !n.id.startsWith("tmp-"))));
+    } catch {
+      /* noop */
+    }
+  }, [notesById]);
 
   // Notes with an in-flight optimistic mutation (a local edit whose PATCH hasn't
   // returned) and notes just deleted — both must survive a background poll/refresh
@@ -351,7 +368,7 @@ export function NotesView({
   const dictateBase = React.useRef("");
   const dictation = useDictation((text) => {
     setDraft((dictateBase.current ? dictateBase.current + " " : "") + text);
-  });
+  }, dictationLanguage);
   const [query, setQuery] = React.useState("");
   const [sortNote, setSortNote] = React.useState<NoteT | null>(null);
   const [showArchived, setShowArchived] = React.useState(false);
@@ -360,7 +377,7 @@ export function NotesView({
     const cont = groupNotes(initial, s0);
     const refs = groupReflections(reflections, s0);
     const filled = (key: string) => (cont[key]?.length ?? 0) + (refs[key]?.length ?? 0);
-    const init = new Set<string>();
+    const init = new Set<string>(["general"]);
     for (const key of ["next_week", "later_this_month", "next_month"]) if (filled(key) === 0) init.add(key);
     init.add("long_term");
     const weekCount = s0.sections
@@ -370,6 +387,7 @@ export function NotesView({
     return init;
   });
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  const [recentlyDone, setRecentlyDone] = React.useState<Set<string>>(() => new Set());
 
   const focusId = params.get("focus");
   const composeFocus = params.get("compose") === "1";
@@ -448,14 +466,23 @@ export function NotesView({
       }
       router.refresh();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   React.useEffect(() => {
-    flush();
-    window.addEventListener("online", flush);
-    return () => window.removeEventListener("online", flush);
-  }, [flush]);
+    const foregroundSync = () => {
+      flush();
+      if (typeof navigator === "undefined" || navigator.onLine !== false) router.refresh();
+    };
+    foregroundSync();
+    window.addEventListener("online", foregroundSync);
+    window.addEventListener("focus", foregroundSync);
+    document.addEventListener("visibilitychange", foregroundSync);
+    return () => {
+      window.removeEventListener("online", foregroundSync);
+      window.removeEventListener("focus", foregroundSync);
+      document.removeEventListener("visibilitychange", foregroundSync);
+    };
+  }, [flush, router]);
 
   // ── mutations ────────────────────────────────────────────────────────────────
   async function patchNote(id: string, partial: Record<string, unknown>, refresh = false) {
@@ -485,9 +512,24 @@ export function NotesView({
   }
 
   function toggleDone(note: NoteT) {
-    // No toast — a done note stays struck-through in place until midnight, so the
-    // user can simply click again to undo before it moves to Done.
-    patchNote(note.id, { doneOn: note.doneOn != null ? null : schedule.todayYmd });
+    const nextDone = note.doneOn == null;
+    if (nextDone) {
+      setRecentlyDone((s) => new Set(s).add(note.id));
+      setTimeout(() => {
+        setRecentlyDone((s) => {
+          const next = new Set(s);
+          next.delete(note.id);
+          return next;
+        });
+      }, 1500);
+    } else {
+      setRecentlyDone((s) => {
+        const next = new Set(s);
+        next.delete(note.id);
+        return next;
+      });
+    }
+    patchNote(note.id, { doneOn: nextDone ? schedule.todayYmd : null });
   }
 
   function archive(id: string) {
@@ -671,6 +713,10 @@ export function NotesView({
   const sorted = allNotes
     .filter((n) => n.status === "sorted" && (!q || n.body.toLowerCase().includes(q)))
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  const recentSorted = sorted.filter((n) => {
+    const t = +new Date(n.updatedAt || n.createdAt);
+    return Number.isFinite(t) && +now - t < 48 * 60 * 60 * 1000;
+  });
   const archived = allNotes.filter((n) => n.status === "archived");
   const done = allNotes
     .filter(
@@ -723,11 +769,38 @@ export function NotesView({
   const weekOpen = isOpen("this_week", weekCount);
   const activeNote = activeId ? notesById[activeId] : null;
 
+  React.useEffect(() => {
+    if (!dragging) return;
+    let pointerY: number | null = null;
+    let frame = 0;
+    const onMove = (e: PointerEvent | TouchEvent) => {
+      pointerY = "touches" in e ? e.touches[0]?.clientY ?? null : e.clientY;
+    };
+    const tick = () => {
+      if (pointerY != null) {
+        const margin = 88;
+        const max = window.innerHeight;
+        if (pointerY < margin) window.scrollBy({ top: -14, behavior: "auto" });
+        else if (pointerY > max - margin) window.scrollBy({ top: 14, behavior: "auto" });
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("touchmove", onMove, { passive: true });
+    frame = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("touchmove", onMove);
+    };
+  }, [dragging]);
+
   const rowProps = {
     notesById,
     focusId,
     handedness,
     ingestingId,
+    recentlyDone,
     dragDisabled: !!q,
     onSaveBody: saveBody,
     onToggleCheckbox: toggleCheckbox,
@@ -803,28 +876,40 @@ export function NotesView({
                 )}
               >
                 <Mic className="h-3.5 w-3.5" />
-                {dictation.listening ? "Listening… tap to stop" : "Dictate"}
+                {dictation.listening ? "Recording… tap to stop" : "Dictate"}
               </button>
             )}
+            <DayChip value={draftDay} schedule={schedule} onChange={setDraftDay} />
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={() => setExpanded((e) => !e)}
               title={expanded ? "Shrink" : "Expand for a longer note"}
               aria-label={expanded ? "Shrink composer" : "Expand composer"}
-              className="inline-flex shrink-0 items-center justify-center rounded-lg bg-surface-2 p-1.5 text-fg-muted transition-colors hover:text-fg cursor-pointer"
+              className="inline-flex items-center justify-center rounded-lg bg-primary-soft px-2 py-1.5 text-primary transition-colors hover:bg-primary/20 cursor-pointer"
             >
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </button>
-            <DayChip value={draftDay} schedule={schedule} onChange={setDraftDay} />
+            {draft.trim() && (
+              <button
+                onClick={submitDraft}
+                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg hover:bg-primary-hover cursor-pointer"
+              >
+                Add Note
+              </button>
+            )}
           </div>
-          {draft.trim() && (
-            <button
-              onClick={submitDraft}
-              className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg hover:bg-primary-hover cursor-pointer"
-            >
-              Add line
-            </button>
-          )}
         </div>
+        {dictation.status && (
+          <div className="mt-2 text-xs text-fg-subtle">
+            {dictation.status}
+            {dictation.progress > 0 && dictation.progress < 100 && (
+              <span className="ml-2 inline-block h-1.5 w-24 overflow-hidden rounded-full bg-surface-2 align-middle">
+                <span className="block h-full rounded-full bg-primary transition-all" style={{ width: `${dictation.progress}%` }} />
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Search */}
@@ -925,27 +1010,7 @@ export function NotesView({
 
       {/* Filed (sorted into tickets) */}
       {sorted.length > 0 && (
-        <section className="mt-7">
-          <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Filed into tickets</h2>
-          <div className="space-y-2">
-            {sorted.map((n) => (
-              <div key={n.id} className="flex animate-scale-in items-center gap-3 rounded-xl border border-border bg-surface-2/40 px-3 py-2.5">
-                <Avatar name={n.assignedAgent?.name ?? "Agent"} color={n.assignedAgent?.color} isAgent size={24} />
-                <p className="min-w-0 flex-1 truncate text-sm text-fg-muted/90 line-through decoration-fg-muted decoration-2">
-                  {n.body}
-                </p>
-                {n.ticket && (
-                  <Link
-                    href={ticketHref(n.ticket, boards)}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-surface px-2 py-1 text-xs font-medium text-primary hover:bg-primary-soft"
-                  >
-                    View ticket <ArrowUpRight className="h-3.5 w-3.5" />
-                  </Link>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
+        <FiledSection notes={sorted} initialCount={recentSorted.length ? recentSorted.length : Math.min(sorted.length, 5)} boards={boards} />
       )}
 
       {/* Archived */}
@@ -999,6 +1064,43 @@ export function NotesView({
   );
 }
 
+// ── filed section ─────────────────────────────────────────────────────────────
+
+function FiledSection({ notes, initialCount, boards }: { notes: NoteT[]; initialCount: number; boards: BoardLite[] }) {
+  const [showOlder, setShowOlder] = React.useState(false);
+  const visible = showOlder ? notes : notes.slice(0, initialCount);
+  const olderCount = Math.max(0, notes.length - initialCount);
+  const compact = "truncate";
+  return (
+    <section className="mt-7">
+      <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Filed into tickets</h2>
+      <div className="space-y-2">
+        {visible.map((n) => (
+          <div key={n.id} className="flex animate-scale-in items-center gap-3 rounded-xl border border-border bg-surface-2/40 px-3 py-2.5">
+            <Avatar name={n.assignedAgent?.name ?? "Agent"} color={n.assignedAgent?.color} isAgent size={24} />
+            <p className={cn("min-w-0 flex-1 text-sm text-fg-subtle/75 line-through decoration-fg-muted decoration-[3px]", compact)}>
+              {n.body}
+            </p>
+            {n.ticket && (
+              <Link
+                href={ticketHref(n.ticket, boards)}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-surface px-2 py-1 text-xs font-medium text-primary hover:bg-primary-soft"
+              >
+                View ticket <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            )}
+          </div>
+        ))}
+      </div>
+      {olderCount > 0 && !showOlder && (
+        <button className="mt-2 px-1 text-xs font-medium text-primary hover:underline cursor-pointer" onClick={() => setShowOlder(true)}>
+          Show more ({olderCount} older)
+        </button>
+      )}
+    </section>
+  );
+}
+
 // ── done section ──────────────────────────────────────────────────────────────
 
 function DoneSection({
@@ -1037,7 +1139,7 @@ function DoneSection({
               >
                 <Check className="h-3 w-3" strokeWidth={3} />
               </button>
-              <p className="min-w-0 flex-1 truncate text-sm text-fg-muted/90 line-through decoration-fg-muted decoration-2">
+              <p className="min-w-0 flex-1 truncate text-sm text-fg-subtle/70 line-through decoration-fg-muted decoration-[3px]">
                 {n.body}
               </p>
               <span className="shrink-0 text-[0.6875rem] text-fg-subtle">
@@ -1082,6 +1184,7 @@ type RowHandlers = {
   focusId: string | null;
   handedness: "right" | "left";
   ingestingId: string | null;
+  recentlyDone: Set<string>;
   dragDisabled?: boolean;
   onSaveBody: (id: string, body: string) => void;
   onToggleCheckbox: (note: NoteT, index: number) => void;
@@ -1112,6 +1215,7 @@ function NoteSectionBlock({
   focusId,
   handedness,
   ingestingId,
+  recentlyDone,
   dragDisabled,
   onSaveBody,
   onToggleCheckbox,
@@ -1216,7 +1320,9 @@ function NoteSectionBlock({
             {section.label}
           </span>
           {section.sublabel && <span className="text-[0.6875rem] font-normal normal-case text-fg-subtle">{section.sublabel}</span>}
-          {count > 0 && <span className="text-xs font-medium text-fg-subtle">{count}</span>}
+          {count > 0 && (
+            <span className={cn("rounded-full px-1.5 py-0.5 text-xs font-semibold", variant === "unsorted" ? "bg-danger-soft text-danger" : "text-fg-subtle")}>{count}</span>
+          )}
         </button>
       )}
 
@@ -1234,6 +1340,7 @@ function NoteSectionBlock({
                     highlight={focusId === id}
                     handedness={handedness}
                     handoff={ingestingId === id}
+                    justDone={recentlyDone.has(id)}
                     dragDisabled={dragDisabled}
                     onSaveBody={(body) => onSaveBody(id, body)}
                     onToggleCheckbox={(i) => onToggleCheckbox(n, i)}
@@ -1281,7 +1388,7 @@ function NoteSectionBlock({
               className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-fg-subtle hover:bg-surface-2/60 hover:text-fg-muted cursor-pointer"
             >
               <span className="grid h-4 w-4 place-items-center text-fg-subtle">+</span>
-              Add a line
+              Add a note
             </button>
           )}
         </div>
@@ -1351,6 +1458,7 @@ function NoteRow({
   highlight,
   handedness,
   handoff,
+  justDone,
   dragDisabled,
   onSaveBody,
   onToggleCheckbox,
@@ -1366,6 +1474,7 @@ function NoteRow({
   highlight?: boolean;
   handedness: "right" | "left";
   handoff?: boolean;
+  justDone?: boolean;
   dragDisabled?: boolean;
   onSaveBody: (body: string) => void;
   onToggleCheckbox: (index: number) => void;
@@ -1550,6 +1659,7 @@ function NoteRow({
         isDragging && "opacity-40",
         queued && "bg-primary-soft/40",
         handoff && "animate-ai-handoff",
+        justDone && "animate-done-bump",
         highlight && "ring-2 ring-primary",
       )}
     >
@@ -1577,13 +1687,14 @@ function NoteRow({
         >
           <span
             className={cn(
-              "grid h-[1.15rem] w-[1.15rem] place-items-center rounded-full border-[1.5px] transition-colors",
+              "relative grid h-[1.15rem] w-[1.15rem] place-items-center rounded-full border-[1.5px] transition-colors",
               done
                 ? "border-success bg-success text-white"
                 : "border-fg-subtle/60 text-transparent group-hover:border-fg-subtle hover:!border-success hover:text-success/60",
             )}
           >
-            <Check className="h-3 w-3" strokeWidth={3} />
+            {justDone && <span className="absolute left-1/2 top-0 h-5 w-8 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,var(--success)_1px,transparent_2px)] animate-confetti-pop" />}
+            <Check className={cn("h-3 w-3", justDone && "animate-check-pop")} strokeWidth={3} />
           </span>
         </button>
       )}
@@ -1592,7 +1703,7 @@ function NoteRow({
       {moreMenu}
 
       {/* body — dir="auto" so RTL (e.g. Hebrew/Arabic) lines display right-aligned */}
-      <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-muted/90 line-through decoration-fg-muted decoration-2")} dir="auto">
+      <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-subtle/70 line-through decoration-fg-muted decoration-[3px]")} dir="auto">
         {locked ? (
           <div className={cn(isLong && !showFull && "max-h-[3.2rem] overflow-hidden")}>
             <Markdown content={note.body} />
