@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
 import { dueMeta, priorityMeta } from "@/lib/display";
-import { PRIORITY_META, type Priority } from "@/lib/constants";
+import { buildMyDayFocusItems, countMyDayUnsortedNotes, getMyDayTicketBuckets, type MyDayNote } from "@/lib/my-day";
 import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 
@@ -30,44 +30,43 @@ export default async function MyDayPage() {
     ? { workspaceId: ctx.workspace.id, archived: false }
     : { workspaceId: ctx.workspace.id, archived: false, access: { some: { userId: ctx.user.id } } };
 
-  const [tickets, inboxCount] = await Promise.all([
+  const [tickets, notes] = await Promise.all([
     db.ticket.findMany({
       where: { board: boardScope, column: { isDone: false }, deletedAt: null },
       include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true } } },
       orderBy: { dueDate: "asc" },
     }),
-    db.note.count({ where: { userId: ctx.user.id, status: "inbox" } }),
+    db.note.findMany({
+      where: { userId: ctx.user.id, deletedAt: null },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        body: true,
+        status: true,
+        scheduledDay: true,
+        bucket: true,
+        doneOn: true,
+        position: true,
+        createdAt: true,
+      },
+    }),
   ]);
 
-  const rank = (p: string) => PRIORITY_META[(p as Priority)]?.rank ?? 0;
-  const rows: Row[] = tickets
-    .map((t) => ({
-      ...serializeTicket(t, usersById),
-      boardSlug: t.board.slug,
-      boardName: t.board.name,
-      boardColor: t.board.color,
-    }))
-    .sort((a, b) => {
-      const da = a.dueDate ? +new Date(a.dueDate) : Infinity;
-      const dbb = b.dueDate ? +new Date(b.dueDate) : Infinity;
-      return da - dbb || rank(b.priority) - rank(a.priority);
-    });
+  const rows: Row[] = tickets.map((t) => ({
+    ...serializeTicket(t, usersById),
+    boardSlug: t.board.slug,
+    boardName: t.board.name,
+    boardColor: t.board.color,
+  }));
+  const todayNotes: MyDayNote[] = notes.map((n) => ({
+    ...n,
+    createdAt: n.createdAt.toISOString(),
+  }));
 
   const now = new Date();
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const endToday = startToday + 86400000 - 1;
-  const endWeek = startToday + 7 * 86400000;
-  const due = (r: Row) => (r.dueDate ? new Date(r.dueDate).getTime() : null);
-
-  const overdue = rows.filter((r) => due(r) !== null && (due(r) as number) < startToday);
-  const today = rows.filter((r) => due(r) !== null && (due(r) as number) >= startToday && (due(r) as number) <= endToday);
-  const week = rows.filter((r) => due(r) !== null && (due(r) as number) > endToday && (due(r) as number) <= endWeek);
-  const datedIds = new Set([...overdue, ...today, ...week].map((r) => r.id));
-  const mine = rows.filter(
-    (r) => !datedIds.has(r.id) && r.assignee?.type === "user" && r.assignee.id === ctx.user.id,
-  );
-
-  const focus = [...overdue, ...today, ...mine].slice(0, 5);
+  const { overdue, week } = getMyDayTicketBuckets(rows, now, ctx.user.id);
+  const focus = buildMyDayFocusItems({ now, tickets: rows, notes: todayNotes, userId: ctx.user.id });
+  const inboxCount = countMyDayUnsortedNotes({ now, notes: todayNotes });
   const onDeck = week.slice(0, 6);
   const dateLabel = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   const doneToday = 0;
@@ -83,7 +82,7 @@ export default async function MyDayPage() {
             </div>
             <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Today’s execution lane</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-fg-muted">
-              {dateLabel}. Pick the few tickets that matter now; everything else stays quietly on deck.
+              {dateLabel}. Pick the few tickets and notes that matter now; everything else stays quietly on deck.
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center">
@@ -110,7 +109,7 @@ export default async function MyDayPage() {
           <div className="mb-3 flex items-center justify-between px-1">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">Do next</h2>
-              <p className="text-xs text-fg-subtle">Overdue, due today, then assigned work.</p>
+              <p className="text-xs text-fg-subtle">Overdue and due-today tickets, today notes, then assigned work.</p>
             </div>
             <CircleDashed className="h-5 w-5 text-fg-subtle" />
           </div>
@@ -124,9 +123,13 @@ export default async function MyDayPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {focus.map((r, i) => (
-                <FocusCard key={r.id} row={r} index={i + 1} urgent={overdue.some((o) => o.id === r.id)} />
-              ))}
+              {focus.map((item, i) =>
+                item.kind === "ticket" ? (
+                  <FocusCard key={`ticket-${item.id}`} row={item.ticket} index={i + 1} urgent={item.urgent} />
+                ) : (
+                  <FocusNoteCard key={`note-${item.id}`} note={item.note} index={i + 1} />
+                ),
+              )}
             </div>
           )}
         </section>
@@ -188,6 +191,29 @@ function FocusCard({ row, index, urgent }: { row: Row; index: number; urgent?: b
         </Badge>
       )}
       {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.type === "agent" ? row.assignee.color : undefined} isAgent={row.assignee.type === "agent"} size={26} />}
+    </Link>
+  );
+}
+
+function FocusNoteCard({ note, index }: { note: MyDayNote; index: number }) {
+  return (
+    <Link
+      href="/notes"
+      className="group flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary-soft/20 px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"
+    >
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface text-primary">
+        {index}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="line-clamp-2 text-base font-semibold leading-snug">{note.body}</div>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
+          <span className="inline-flex items-center gap-1 text-primary">
+            <NotebookPen className="h-3.5 w-3.5" />
+            Today note
+          </span>
+        </div>
+      </div>
+      <Badge tone="primary">Note</Badge>
     </Link>
   );
 }
