@@ -14,7 +14,9 @@ export default async function NotesPage() {
   const ctx = await getContext();
   const { weekStartsOn, handedness, dictationLanguage } = parseUserSettings(ctx.user.settings);
 
-  const [notes, agents, boards, dueTickets] = await Promise.all([
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const [notes, agents, boards, dueTickets, actionLogs] = await Promise.all([
     listNotesForUser(ctx.user.id),
     db.agent.findMany({
       where: { workspaceId: ctx.workspace.id, status: "active" },
@@ -49,6 +51,12 @@ export default async function NotesPage() {
         column: { select: { isDone: true } },
       },
     }),
+    db.activityLog.findMany({
+      where: { action: "note.sorted", createdAt: { gte: thirtyDaysAgo }, board: boardWhereForContext(ctx) },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+      select: { id: true, actorName: true, actorType: true, action: true, ticketId: true, meta: true, createdAt: true },
+    }),
   ]);
 
   const reflections = dueTickets.map((t) => ({
@@ -64,6 +72,60 @@ export default async function NotesPage() {
     done: t.column.isDone,
   }));
 
+  const notesById = new Map(notes.map((n) => [n.id, n]));
+  const ticketIds = [...new Set(actionLogs.map((a) => a.ticketId).filter((id): id is string => Boolean(id)))];
+  const actionTickets = ticketIds.length
+    ? await db.ticket.findMany({
+        where: { id: { in: ticketIds }, deletedAt: null, board: boardWhereForContext(ctx) },
+        select: { id: true, number: true, title: true, boardId: true, board: { select: { slug: true } } },
+      })
+    : [];
+  const ticketById = new Map(actionTickets.map((t) => [t.id, t]));
+
+  const recentActions = actionLogs
+    .map((a) => {
+      let noteId: string | null = null;
+      try {
+        const meta = a.meta ? (JSON.parse(a.meta) as { noteId?: unknown }) : null;
+        noteId = typeof meta?.noteId === "string" ? meta.noteId : null;
+      } catch {
+        noteId = null;
+      }
+      const note = noteId ? notesById.get(noteId) : null;
+      const ticket = a.ticketId ? ticketById.get(a.ticketId) : null;
+      return {
+        id: a.id,
+        actorName: a.actorName,
+        actorType: a.actorType,
+        action: a.action,
+        noteBody: note?.body ?? "Note filed into a ticket",
+        resourceHref: ticket ? `/boards/${ticket.board.slug}?ticket=${ticket.id}` : null,
+        resourceLabel: ticket ? `#${ticket.number ?? ""} ${ticket.title}`.trim() : null,
+        createdAt: a.createdAt.toISOString(),
+      };
+    })
+    .filter((a) => a.noteBody);
+
+  // Historical installs only started emitting note.sorted activity recently; until
+  // logs fill in, fall back to sorted notes so the section is still useful.
+  const fallbackActions = recentActions.length
+    ? []
+    : notes
+        .filter((n) => n.status === "sorted")
+        .slice()
+        .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))
+        .slice(0, 12)
+        .map((n) => ({
+          id: `note-${n.id}`,
+          actorName: n.assignedAgent?.name ?? "Kanbai",
+          actorType: n.assignedAgent ? "agent" : "system",
+          action: "note.sorted",
+          noteBody: n.body,
+          resourceHref: n.ticket ? `/boards/${boards.find((b) => b.id === n.ticket?.boardId)?.slug ?? ""}?ticket=${n.ticket.id}` : null,
+          resourceLabel: n.ticket?.title ?? null,
+          createdAt: n.updatedAt,
+        }));
+
   return (
     <Suspense fallback={null}>
       <NotesViewClient
@@ -71,6 +133,7 @@ export default async function NotesPage() {
         agents={agents}
         boards={boards}
         reflections={reflections}
+        recentActions={recentActions.length ? recentActions : fallbackActions}
         weekStartsOn={weekStartsOn}
         handedness={handedness}
         dictationLanguage={dictationLanguage}

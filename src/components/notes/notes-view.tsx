@@ -34,7 +34,6 @@ import {
   ArrowUpRight,
   Loader2,
   NotebookPen,
-  Search,
   GripVertical,
   ChevronDown,
   MoreHorizontal,
@@ -74,14 +73,14 @@ import {
   type Schedule,
   type NoteSection,
 } from "@/lib/notes-schedule";
-import type { NoteT, AgentLite, BoardLite, TicketReflectionT } from "@/lib/types";
+import type { NoteT, AgentLite, BoardLite, TicketReflectionT, RecentActionT } from "@/lib/types";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-/** Notes that occupy a time-section: active, and not a "done" note that already rolled out. */
-function inPlay(n: NoteT, todayYmd: string): boolean {
+/** Notes that occupy a time-section: active inbox/queued notes only. */
+function inPlay(n: NoteT, _todayYmd: string): boolean {
   if (n.status !== "inbox" && n.status !== "queued") return false;
-  return n.doneOn == null || n.doneOn >= todayYmd; // done-today stays struck in place
+  return n.doneOn == null;
 }
 
 /** Group notes into ordered id-lists keyed by section, ordered by position. */
@@ -232,6 +231,7 @@ export function NotesView({
   agents,
   boards,
   reflections = [],
+  recentActions = [],
   weekStartsOn,
   handedness = "right",
   dictationLanguage = "auto",
@@ -240,6 +240,7 @@ export function NotesView({
   agents: AgentLite[];
   boards: BoardLite[];
   reflections?: TicketReflectionT[];
+  recentActions?: RecentActionT[];
   weekStartsOn: number;
   handedness?: "right" | "left";
   dictationLanguage?: string;
@@ -369,7 +370,6 @@ export function NotesView({
   const dictation = useDictation((text) => {
     setDraft((dictateBase.current ? dictateBase.current + " " : "") + text);
   }, dictationLanguage);
-  const [query, setQuery] = React.useState("");
   const [sortNote, setSortNote] = React.useState<NoteT | null>(null);
   const [showArchived, setShowArchived] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => {
@@ -388,6 +388,16 @@ export function NotesView({
   });
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [recentlyDone, setRecentlyDone] = React.useState<Set<string>>(() => new Set());
+  const [doneSectionOpenSignal, setDoneSectionOpenSignal] = React.useState(0);
+  const [doneLandingId, setDoneLandingId] = React.useState<string | null>(null);
+  const doneTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  React.useEffect(
+    () => () => {
+      for (const t of doneTimers.current.values()) clearTimeout(t);
+      doneTimers.current.clear();
+    },
+    [],
+  );
 
   const focusId = params.get("focus");
   const composeFocus = params.get("compose") === "1";
@@ -511,25 +521,50 @@ export function NotesView({
     patchNote(id, { priority });
   }
 
+  function clearDoneAnimation(id: string) {
+    setRecentlyDone((s) => {
+      const next = new Set(s);
+      next.delete(id);
+      return next;
+    });
+    const timer = doneTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    doneTimers.current.delete(id);
+  }
+
   function toggleDone(note: NoteT) {
     const nextDone = note.doneOn == null;
-    if (nextDone) {
-      setRecentlyDone((s) => new Set(s).add(note.id));
-      setTimeout(() => {
-        setRecentlyDone((s) => {
-          const next = new Set(s);
-          next.delete(note.id);
-          return next;
-        });
-      }, 1500);
-    } else {
+    if (!nextDone) {
+      clearDoneAnimation(note.id);
+      patchNote(note.id, { doneOn: null });
+      return;
+    }
+
+    const existing = doneTimers.current.get(note.id);
+    if (existing) clearTimeout(existing);
+    setRecentlyDone((s) => new Set(s).add(note.id));
+    toast({
+      title: "Marked done",
+      description: "Moving to Done…",
+      variant: "success",
+      actionLabel: "Undo",
+      onAction: () => {
+        clearDoneAnimation(note.id);
+        setDoneLandingId((id) => (id === note.id ? null : id));
+      },
+    });
+    const timer = setTimeout(() => {
+      doneTimers.current.delete(note.id);
       setRecentlyDone((s) => {
         const next = new Set(s);
         next.delete(note.id);
         return next;
       });
-    }
-    patchNote(note.id, { doneOn: nextDone ? schedule.todayYmd : null });
+      setDoneSectionOpenSignal((n) => n + 1);
+      setDoneLandingId(note.id);
+      patchNote(note.id, { doneOn: schedule.todayYmd });
+    }, 1250);
+    doneTimers.current.set(note.id, timer);
   }
 
   function archive(id: string) {
@@ -708,7 +743,7 @@ export function NotesView({
   }
 
   // ── derived ────────────────────────────────────────────────────────────────
-  const q = query.trim().toLowerCase();
+  const q = "";
   const allNotes = Object.values(notesById);
   const sorted = allNotes
     .filter((n) => n.status === "sorted" && (!q || n.body.toLowerCase().includes(q)))
@@ -722,7 +757,6 @@ export function NotesView({
     .filter(
       (n) =>
         n.doneOn != null &&
-        n.doneOn < schedule.todayYmd &&
         n.status !== "archived" &&
         n.status !== "sorted" &&
         (!q || n.body.toLowerCase().includes(q)),
@@ -912,19 +946,6 @@ export function NotesView({
         )}
       </div>
 
-      {/* Search */}
-      {allNotes.length > 4 && (
-        <div className="relative mt-3">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search notes…"
-            className="h-9 w-full rounded-lg border border-border bg-surface pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-      )}
-
       <DndContext
         id="kanbai-notes"
         sensors={sensors}
@@ -1002,16 +1023,25 @@ export function NotesView({
         />
       )}
       {totalActive === 0 && done.length === 0 && q && (
-        <p className="px-1 py-6 text-center text-sm text-fg-subtle">No notes match “{query}”.</p>
+        <p className="px-1 py-6 text-center text-sm text-fg-subtle">No notes match.</p>
       )}
 
       {/* Done */}
-      {done.length > 0 && <DoneSection notes={done} onRestore={(id) => patchNote(id, { doneOn: null })} onDelete={del} />}
-
-      {/* Filed (sorted into tickets) */}
-      {sorted.length > 0 && (
-        <FiledSection notes={sorted} initialCount={recentSorted.length ? recentSorted.length : Math.min(sorted.length, 5)} boards={boards} />
+      {done.length > 0 && (
+        <DoneSection
+          notes={done}
+          openSignal={doneSectionOpenSignal}
+          landingId={doneLandingId}
+          onRestore={(id) => {
+            setDoneLandingId((cur) => (cur === id ? null : cur));
+            patchNote(id, { doneOn: null });
+          }}
+          onDelete={del}
+        />
       )}
+
+      {/* Recent actions (notes filed into tickets) */}
+      {recentActions.length > 0 && <RecentActionsSection actions={recentActions} />}
 
       {/* Archived */}
       {archived.length > 0 && (
@@ -1064,38 +1094,48 @@ export function NotesView({
   );
 }
 
-// ── filed section ─────────────────────────────────────────────────────────────
+// ── recent actions section ────────────────────────────────────────────────────
 
-function FiledSection({ notes, initialCount, boards }: { notes: NoteT[]; initialCount: number; boards: BoardLite[] }) {
-  const [showOlder, setShowOlder] = React.useState(false);
-  const visible = showOlder ? notes : notes.slice(0, initialCount);
-  const olderCount = Math.max(0, notes.length - initialCount);
-  const compact = "truncate";
+function RecentActionsSection({ actions }: { actions: RecentActionT[] }) {
+  const [open, setOpen] = React.useState(false);
+  const visible = open ? actions : [];
   return (
-    <section className="mt-7">
-      <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Filed into tickets</h2>
-      <div className="space-y-2">
-        {visible.map((n) => (
-          <div key={n.id} className="flex animate-scale-in items-center gap-3 rounded-xl border border-border bg-surface-2/40 px-3 py-2.5">
-            <Avatar name={n.assignedAgent?.name ?? "Agent"} color={n.assignedAgent?.color} isAgent size={24} />
-            <p className={cn("min-w-0 flex-1 text-sm text-fg-subtle/75 line-through decoration-fg-muted decoration-[3px]", compact)}>
-              {n.body}
-            </p>
-            {n.ticket && (
-              <Link
-                href={ticketHref(n.ticket, boards, { from: "notes" })}
-                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-surface px-2 py-1 text-xs font-medium text-primary hover:bg-primary-soft"
-              >
-                View ticket <ArrowUpRight className="h-3.5 w-3.5" />
-              </Link>
-            )}
-          </div>
-        ))}
-      </div>
-      {olderCount > 0 && !showOlder && (
-        <button className="mt-2 px-1 text-xs font-medium text-primary hover:underline cursor-pointer" onClick={() => setShowOlder(true)}>
-          Show more ({olderCount} older)
-        </button>
+    <section className="mt-7 rounded-2xl border border-border/70 bg-surface/35 px-3 py-2.5">
+      <button
+        onClick={() => setOpen((s) => !s)}
+        className="group flex w-full items-center gap-2 text-left text-xs font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg-muted cursor-pointer"
+      >
+        <ChevronDown className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")} />
+        <Sparkles className="h-3.5 w-3.5" />
+        Recent Actions
+        <span className="text-fg-subtle/70">30 days · {actions.length}</span>
+      </button>
+      {open && (
+        <div className="mt-2 divide-y divide-border/50">
+          {visible.slice(0, 30).map((a) => (
+            <div key={a.id} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2 text-xs sm:grid-cols-[7rem_minmax(0,1fr)_auto]">
+              <div className="min-w-0 text-fg-muted">
+                <div className="overflow-hidden text-ellipsis whitespace-nowrap font-medium text-fg-subtle">{a.actorName}</div>
+                <div className="text-[0.6875rem] capitalize text-fg-subtle/65">{a.actorType}</div>
+              </div>
+              <div className="min-w-0">
+                <p className="overflow-hidden text-ellipsis whitespace-nowrap text-fg-muted">Filed “{a.noteBody}”</p>
+                <time className="text-[0.6875rem] text-fg-subtle/65">
+                  {new Date(a.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                </time>
+              </div>
+              {a.resourceHref && (
+                <Link
+                  href={a.resourceHref}
+                  className="col-start-2 inline-flex w-fit items-center gap-1 rounded-md bg-surface px-2 py-1 text-[0.6875rem] font-medium text-primary hover:bg-primary-soft sm:col-start-auto"
+                >
+                  {a.resourceLabel ?? "Ticket"}
+                  <ArrowUpRight className="h-3 w-3" />
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </section>
   );
@@ -1106,14 +1146,21 @@ function FiledSection({ notes, initialCount, boards }: { notes: NoteT[]; initial
 function DoneSection({
   notes,
   onRestore,
+  openSignal,
+  landingId,
   onDelete,
 }: {
   notes: NoteT[];
+  openSignal: number;
+  landingId: string | null;
   onRestore: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
   const [open, setOpen] = React.useState(false);
   const [shown, setShown] = React.useState(5);
+  React.useEffect(() => {
+    if (openSignal > 0) setOpen(true);
+  }, [openSignal]);
   const visible = open ? notes.slice(0, shown) : [];
 
   return (
@@ -1131,7 +1178,7 @@ function DoneSection({
       {open && (
         <div className="mt-2 space-y-1.5">
           {visible.map((n) => (
-            <div key={n.id} className="group flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-surface-2/50">
+            <div key={n.id} className={cn("group flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-surface-2/50", landingId === n.id && "animate-slide-down-fade bg-success-soft/25")}>
               <button
                 onClick={() => onRestore(n.id)}
                 title="Mark not done"
@@ -1139,7 +1186,7 @@ function DoneSection({
               >
                 <Check className="h-3 w-3" strokeWidth={3} />
               </button>
-              <p className="min-w-0 flex-1 truncate text-sm text-fg-subtle/70 line-through decoration-fg-muted decoration-[3px]">
+              <p className="min-w-0 flex-1 truncate text-sm text-fg-subtle/45 line-through decoration-fg-subtle/60 decoration-1">
                 {n.body}
               </p>
               <span className="shrink-0 text-[0.6875rem] text-fg-subtle">
@@ -1671,7 +1718,7 @@ function NoteRow({
         isDragging && "opacity-40",
         queued && "bg-primary-soft/40",
         handoff && "animate-ai-handoff",
-        justDone && "animate-done-bump",
+        justDone && "animate-done-slide",
         highlight && "ring-2 ring-primary",
       )}
     >
@@ -1715,7 +1762,7 @@ function NoteRow({
       {moreMenu}
 
       {/* body — dir="auto" so RTL (e.g. Hebrew/Arabic) lines display right-aligned */}
-      <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-subtle/70 line-through decoration-fg-muted decoration-[3px]")} dir="auto">
+      <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-subtle/45 line-through decoration-fg-subtle/60 decoration-1 [&_.md]:text-fg-subtle/45 [&_.md]:line-through [&_.md]:decoration-fg-subtle/60 [&_.md]:decoration-1")} dir="auto">
         {locked ? (
           <div className={cn(isLong && !showFull && "max-h-[3.2rem] overflow-hidden")}>
             <Markdown content={note.body} />
@@ -1735,7 +1782,7 @@ function NoteRow({
         ) : (
           <div className="cursor-pointer" onClick={onBodyClick}>
             <div className={cn(isLong && !showFull && "max-h-[3.2rem] overflow-hidden")}>
-              <Markdown content={note.body} onToggleCheckbox={done ? undefined : onToggleCheckbox} />
+              <Markdown content={note.body} className={done ? "text-fg-subtle/45 line-through decoration-fg-subtle/60 decoration-1" : undefined} onToggleCheckbox={done ? undefined : onToggleCheckbox} />
             </div>
           </div>
         )}

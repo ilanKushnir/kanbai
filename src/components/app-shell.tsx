@@ -64,7 +64,7 @@ export function AppShell({
   }, [paletteOpen]);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* ── Desktop sidebar ───────────────────────────── */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-surface/60 backdrop-blur-sm">
         <div className="px-4 h-16 flex items-center">
@@ -150,7 +150,7 @@ export function AppShell({
       </aside>
 
       {/* ── Main column ───────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex min-h-0 flex-col min-w-0">
         {/* Mobile top bar */}
         <header className="md:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface/80 backdrop-blur-md px-4">
           <Logo markClassName="h-7 w-7" />
@@ -166,7 +166,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 min-w-0 pb-20 md:pb-0">{children}</main>
+        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y pb-20 md:pb-0">{children}</main>
       </div>
 
       {/* ── Mobile bottom nav ───────────────────────────── */}

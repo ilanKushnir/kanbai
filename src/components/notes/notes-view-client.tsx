@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { NoteT, AgentLite, BoardLite, TicketReflectionT } from "@/lib/types";
+import type { NoteT, AgentLite, BoardLite, TicketReflectionT, RecentActionT } from "@/lib/types";
 
 /**
  * Notes is highly interactive (dnd-kit reordering across buckets) and owns its
@@ -18,6 +18,7 @@ export function NotesViewClient(props: {
   agents: AgentLite[];
   boards: BoardLite[];
   reflections: TicketReflectionT[];
+  recentActions: RecentActionT[];
   weekStartsOn: number;
   handedness: "right" | "left";
   dictationLanguage: string;

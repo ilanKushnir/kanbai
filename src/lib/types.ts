@@ -68,6 +68,17 @@ export type TicketReflectionT = {
   done: boolean; // ticket sits in an "is done" column
 };
 
+export type RecentActionT = {
+  id: string;
+  actorName: string;
+  actorType: string;
+  action: string;
+  noteBody: string;
+  resourceHref: string | null;
+  resourceLabel: string | null;
+  createdAt: string;
+};
+
 export type NoteT = {
   id: string;
   body: string;
