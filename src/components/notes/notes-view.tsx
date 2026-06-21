@@ -542,12 +542,16 @@ export function NotesView({
     setRecentlyDone((s) => new Set(s).add(note.id));
     toast({
       title: "Marked done",
-      description: "Moving to Done…",
+      description: "Settling at the bottom of this section…",
       variant: "success",
       actionLabel: "Undo",
       onAction: () => {
         clearDoneAnimation(note.id);
         setDoneLandingId((id) => (id === note.id ? null : id));
+        // Undo must work both before and after the delayed completion fires. If the
+        // timer is still pending this is a harmless optimistic no-op; if completion
+        // already landed it clears the done state on the server and locally.
+        patchNote(note.id, { doneOn: null });
       },
     });
     const timer = setTimeout(() => {

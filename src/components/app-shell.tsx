@@ -19,6 +19,7 @@ const NAV = [
   { href: "/boards", label: "Boards", icon: Columns3, key: "boards" },
   { href: "/agents", label: "Agents", icon: Bot, key: "agents" },
 ];
+const MOBILE_NAV = [...NAV, { href: "/search", label: "Search", icon: Search, key: "search" }];
 
 export function AppShell({
   children,
@@ -171,8 +172,8 @@ export function AppShell({
 
       {/* ── Mobile bottom nav ───────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-surface/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-4">
-          {NAV.map((item) => {
+        <div className="grid grid-cols-5">
+          {MOBILE_NAV.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
@@ -180,12 +181,12 @@ export function AppShell({
                 key={item.key}
                 href={item.href}
                 className={cn(
-                  "relative flex flex-col items-center gap-1 py-2.5 text-[0.6875rem] font-medium transition-colors",
+                  "relative flex flex-col items-center gap-0.5 py-2 text-[0.625rem] font-medium transition-colors",
                   active ? "text-primary" : "text-fg-subtle",
                 )}
               >
                 <span className="relative">
-                  <Icon className="h-5.5 w-5.5" />
+                  <Icon className="h-5 w-5" />
                   {item.key === "notes" && inboxCount > 0 && (
                     <span className="absolute -right-2 -top-1 rounded-full bg-primary px-1 text-[0.5625rem] font-semibold text-primary-fg leading-tight">
                       {inboxCount}
