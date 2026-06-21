@@ -49,9 +49,10 @@ import {
   CornerDownLeft,
   Maximize2,
   Minimize2,
+  Ticket,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { Badge, tone as toneOf } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown, toggleTask } from "@/components/ui/markdown";
 import { Menu, MenuItem } from "@/components/ui/menu";
@@ -65,12 +66,15 @@ import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
 import {
   buildSchedule,
   coarseBucket,
+  compareSectionNotes,
   dueFromDay,
   dayFromBucket,
+  reflectionSectionKey,
   type Schedule,
   type NoteSection,
 } from "@/lib/notes-schedule";
-import type { NoteT, AgentLite, BoardLite } from "@/lib/types";
+import { dueMeta } from "@/lib/display";
+import type { NoteT, AgentLite, BoardLite, TicketReflectionT } from "@/lib/types";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -87,10 +91,28 @@ function groupNotes(notes: NoteT[], schedule: Schedule): Record<string, string[]
   const active = notes
     .filter((n) => inPlay(n, schedule.todayYmd))
     .slice()
-    .sort((a, b) => a.position - b.position || +new Date(a.createdAt) - +new Date(b.createdAt));
+    .sort(compareSectionNotes);
   for (const n of active) {
     const key = schedule.classify(n.scheduledDay ?? null);
     (map[key] ??= []).push(n.id);
+  }
+  return map;
+}
+
+/** Bucket due-ticket reflections into section keys, sorted: open before done, then by due date. */
+function groupReflections(
+  reflections: TicketReflectionT[],
+  schedule: Schedule,
+): Record<string, TicketReflectionT[]> {
+  const map: Record<string, TicketReflectionT[]> = {};
+  for (const r of reflections) {
+    const key = reflectionSectionKey(schedule, r.dueDate);
+    (map[key] ??= []).push(r);
+  }
+  for (const key of Object.keys(map)) {
+    map[key].sort(
+      (a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || +new Date(a.dueDate) - +new Date(b.dueDate),
+    );
   }
   return map;
 }
@@ -209,12 +231,14 @@ export function NotesView({
   notes: initial,
   agents,
   boards,
+  reflections = [],
   weekStartsOn,
   handedness = "right",
 }: {
   notes: NoteT[];
   agents: AgentLite[];
   boards: BoardLite[];
+  reflections?: TicketReflectionT[];
   weekStartsOn: number;
   handedness?: "right" | "left";
 }) {
@@ -300,6 +324,12 @@ export function NotesView({
     () => groupNotes(Object.values(notesById), schedule),
     [notesById, schedule],
   );
+  // Read-through reflections of due board tickets, bucketed by section. These are
+  // not notes and never enter the drag/sortable lists — they render beneath them.
+  const reflectionsBySection = React.useMemo(
+    () => groupReflections(reflections, schedule),
+    [reflections, schedule],
+  );
 
   // Drag override: a transient container map active only while dragging.
   const [dragMap, setDragMap] = React.useState<Record<string, string[]> | null>(null);
@@ -328,11 +358,13 @@ export function NotesView({
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => {
     const s0 = buildSchedule(new Date(), weekStartsOn);
     const cont = groupNotes(initial, s0);
+    const refs = groupReflections(reflections, s0);
+    const filled = (key: string) => (cont[key]?.length ?? 0) + (refs[key]?.length ?? 0);
     const init = new Set<string>();
-    for (const key of ["next_week", "next_month"]) if ((cont[key]?.length ?? 0) === 0) init.add(key);
+    for (const key of ["next_week", "next_month"]) if (filled(key) === 0) init.add(key);
     const weekCount = s0.sections
       .filter((s) => s.kind === "day")
-      .reduce((sum, s) => sum + (cont[s.key]?.length ?? 0), 0);
+      .reduce((sum, s) => sum + filled(s.key), 0);
     if (weekCount === 0) init.add("this_week");
     return init;
   });
@@ -649,7 +681,10 @@ export function NotesView({
         (!q || n.body.toLowerCase().includes(q)),
     )
     .sort((a, b) => (a.doneOn! < b.doneOn! ? 1 : a.doneOn! > b.doneOn! ? -1 : +new Date(b.updatedAt) - +new Date(a.updatedAt)));
-  const totalActive = schedule.sections.reduce((sum, s) => sum + (containers[s.key]?.length ?? 0), 0);
+  const totalActive = schedule.sections.reduce(
+    (sum, s) => sum + (containers[s.key]?.length ?? 0) + (reflectionsBySection[s.key]?.length ?? 0),
+    0,
+  );
 
   const dragging = !!activeId;
   function isOpen(key: string, count: number) {
@@ -670,8 +705,20 @@ export function NotesView({
     if (!q) return true;
     return (notesById[id]?.body ?? "").toLowerCase().includes(q);
   };
+  const refsFor = (key: string): TicketReflectionT[] => {
+    const list = reflectionsBySection[key] ?? [];
+    if (!q) return list;
+    return list.filter((r) => r.title.toLowerCase().includes(q) || r.boardName.toLowerCase().includes(q));
+  };
+  // A section's total item count includes its reflected tickets, so day slots
+  // that hold only a due ticket still render and stay open.
+  const sectionCount = (key: string) =>
+    (containers[key]?.length ?? 0) + (reflectionsBySection[key]?.length ?? 0);
 
-  const weekCount = daySections.reduce((sum, s) => sum + (containers[s.key]?.filter(matchId).length ?? 0), 0);
+  const weekCount = daySections.reduce(
+    (sum, s) => sum + (containers[s.key]?.filter(matchId).length ?? 0) + refsFor(s.key).length,
+    0,
+  );
   const weekOpen = isOpen("this_week", weekCount);
   const activeNote = activeId ? notesById[activeId] : null;
 
@@ -699,12 +746,15 @@ export function NotesView({
 
   function block(section: NoteSection, extra?: { card?: boolean; variant?: "unsorted" | "today" | "plain"; icon?: React.ComponentType<{ className?: string }> }) {
     const ids = (containers[section.key] ?? []).filter(matchId);
+    const refs = refsFor(section.key);
     return (
       <NoteSectionBlock
         section={section}
-        open={isOpen(section.key, ids.length)}
-        count={containers[section.key]?.length ?? 0}
+        open={isOpen(section.key, ids.length + refs.length)}
+        count={sectionCount(section.key)}
         ids={ids}
+        reflections={refs}
+        boards={boards}
         dragging={dragging}
         onToggle={() => toggleSection(section.key)}
         onAdd={(text) => addNote(text, section.day)}
@@ -824,8 +874,10 @@ export function NotesView({
                         section={s}
                         sub
                         open
-                        count={containers[s.key]?.length ?? 0}
+                        count={sectionCount(s.key)}
                         ids={ids}
+                        reflections={refsFor(s.key)}
+                        boards={boards}
                         dragging={dragging}
                         onToggle={() => {}}
                         onAdd={(text) => addNote(text, s.day)}
@@ -1042,6 +1094,8 @@ function NoteSectionBlock({
   open,
   count,
   ids,
+  reflections = [],
+  boards,
   sub,
   card,
   variant = "plain",
@@ -1068,6 +1122,8 @@ function NoteSectionBlock({
   open: boolean;
   count: number;
   ids: string[];
+  reflections?: TicketReflectionT[];
+  boards: BoardLite[];
   sub?: boolean;
   card?: boolean;
   variant?: "unsorted" | "today" | "plain";
@@ -1183,6 +1239,14 @@ function NoteSectionBlock({
             </div>
           </SortableContext>
 
+          {reflections.length > 0 && (
+            <div className="mt-0.5 space-y-0.5">
+              {reflections.map((r) => (
+                <ReflectionRow key={r.id} reflection={r} boards={boards} handedness={handedness} />
+              ))}
+            </div>
+          )}
+
           {adding ? (
             <div className="flex items-start gap-2 rounded-lg px-2 py-1.5">
               <CornerDownLeft className="mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle" />
@@ -1212,6 +1276,60 @@ function NoteSectionBlock({
         </div>
       )}
     </div>
+  );
+}
+
+// ── a reflected board ticket (read-through, not a note) ─────────────────────────
+
+function ReflectionRow({
+  reflection: r,
+  boards,
+  handedness,
+}: {
+  reflection: TicketReflectionT;
+  boards: BoardLite[];
+  handedness: "right" | "left";
+}) {
+  const due = dueMeta(r.dueDate);
+  const board = toneOf(r.boardColor);
+  return (
+    <Link
+      href={ticketHref(r, boards)}
+      title={`Open ${r.boardName} ticket${r.number != null ? ` #${r.number}` : ""} on its board`}
+      className={cn(
+        "group/reflection relative flex items-start gap-2 rounded-lg border border-dashed border-border bg-surface-2/30 py-1.5 pr-2 transition-colors hover:border-primary/40 hover:bg-surface-2/60",
+        handedness === "left" ? "pl-2" : "pl-2.5",
+      )}
+      style={{ borderLeftWidth: 3, borderLeftColor: board.dot }}
+    >
+      <Ticket className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-2">
+          <span
+            className={cn(
+              "min-w-0 flex-1 text-sm leading-snug",
+              r.done ? "text-fg-muted line-through decoration-fg-subtle/50" : "text-fg",
+            )}
+            dir="auto"
+          >
+            {r.title}
+          </span>
+          <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle transition-colors group-hover/reflection:text-primary" />
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Badge tone={r.boardColor} dot>
+            {r.boardName}
+            {r.number != null && <span className="opacity-70">#{r.number}</span>}
+          </Badge>
+          {due && (
+            <Badge tone={due.tone}>
+              <CalendarClock className="h-3 w-3" /> {due.label}
+            </Badge>
+          )}
+          <span className="text-[0.6875rem] text-fg-subtle">· ticket</span>
+        </div>
+      </div>
+    </Link>
   );
 }
 

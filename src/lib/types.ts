@@ -49,6 +49,25 @@ export type AgentFull = {
   deliveries: DeliveryT[];
 };
 
+/**
+ * A read-through reflection of a real board ticket that carries a due date.
+ * Surfaced inside the Notes time-sections (Today / This week / …) so a due ticket
+ * shows up next to the notes for that day. It is NOT a note — it never converts
+ * into one; the board ticket stays the source of truth.
+ */
+export type TicketReflectionT = {
+  id: string;
+  boardId: string;
+  boardName: string;
+  boardColor: string;
+  boardSlug: string;
+  number: number | null;
+  title: string;
+  priority: string;
+  dueDate: string; // ISO instant
+  done: boolean; // ticket sits in an "is done" column
+};
+
 export type NoteT = {
   id: string;
   body: string;

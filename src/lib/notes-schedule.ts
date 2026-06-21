@@ -126,6 +126,27 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
   return { todayYmd, sections, classify };
 }
 
+/**
+ * Order notes within a single time-section. Notes are kept in their chronological
+ * add order (`position`, with `createdAt` as a stable tiebreaker), except notes
+ * marked done sink to the bottom of the section until the next-day sweep moves
+ * them to the Done archive.
+ */
+export function compareSectionNotes(
+  a: { doneOn: string | null; position: number; createdAt: string },
+  b: { doneOn: string | null; position: number; createdAt: string },
+): number {
+  const aDone = a.doneOn != null ? 1 : 0;
+  const bDone = b.doneOn != null ? 1 : 0;
+  if (aDone !== bDone) return aDone - bDone; // done notes drop to the bottom
+  return a.position - b.position || +new Date(a.createdAt) - +new Date(b.createdAt);
+}
+
+/** The section key a board ticket due at `dueIso` reflects into (its local day). */
+export function reflectionSectionKey(schedule: Schedule, dueIso: string): string {
+  return schedule.classify(ymd(new Date(dueIso)));
+}
+
 // ── server-facing coarse bucket (legacy agent hint) ──────────────────────────
 
 /** Map a scheduledDay to the coarse agent bucket vocabulary. */
