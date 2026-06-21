@@ -361,7 +361,8 @@ export function NotesView({
     const refs = groupReflections(reflections, s0);
     const filled = (key: string) => (cont[key]?.length ?? 0) + (refs[key]?.length ?? 0);
     const init = new Set<string>();
-    for (const key of ["next_week", "next_month"]) if (filled(key) === 0) init.add(key);
+    for (const key of ["next_week", "later_this_month", "next_month"]) if (filled(key) === 0) init.add(key);
+    init.add("long_term");
     const weekCount = s0.sections
       .filter((s) => s.kind === "day")
       .reduce((sum, s) => sum + filled(s.key), 0);
@@ -742,9 +743,11 @@ export function NotesView({
   const unsorted = sectionByKind("general");
   const today = sectionByKind("today");
   const nextWeek = sectionByKind("next_week");
+  const laterThisMonth = sectionByKind("later_this_month");
   const nextMonth = sectionByKind("next_month");
+  const longTerm = sectionByKind("long_term");
 
-  function block(section: NoteSection, extra?: { card?: boolean; variant?: "unsorted" | "today" | "plain"; icon?: React.ComponentType<{ className?: string }> }) {
+  function block(section: NoteSection, extra?: { card?: boolean; variant?: "unsorted" | "today" | "plain" | "quiet"; icon?: React.ComponentType<{ className?: string }> }) {
     const ids = (containers[section.key] ?? []).filter(matchId);
     const refs = refsFor(section.key);
     return (
@@ -891,7 +894,9 @@ export function NotesView({
           )}
 
           {block(nextWeek)}
+          {block(laterThisMonth, { variant: "quiet" })}
           {block(nextMonth)}
+          {block(longTerm, { variant: "quiet" })}
         </div>
 
         <DragOverlay dropAnimation={null}>
@@ -926,7 +931,7 @@ export function NotesView({
             {sorted.map((n) => (
               <div key={n.id} className="flex animate-scale-in items-center gap-3 rounded-xl border border-border bg-surface-2/40 px-3 py-2.5">
                 <Avatar name={n.assignedAgent?.name ?? "Agent"} color={n.assignedAgent?.color} isAgent size={24} />
-                <p className="min-w-0 flex-1 truncate text-sm text-fg-muted line-through decoration-fg-subtle/40">
+                <p className="min-w-0 flex-1 truncate text-sm text-fg-muted/90 line-through decoration-fg-muted decoration-2">
                   {n.body}
                 </p>
                 {n.ticket && (
@@ -1032,7 +1037,7 @@ function DoneSection({
               >
                 <Check className="h-3 w-3" strokeWidth={3} />
               </button>
-              <p className="min-w-0 flex-1 truncate text-sm text-fg-muted line-through decoration-fg-subtle/40">
+              <p className="min-w-0 flex-1 truncate text-sm text-fg-muted/90 line-through decoration-fg-muted decoration-2">
                 {n.body}
               </p>
               <span className="shrink-0 text-[0.6875rem] text-fg-subtle">
@@ -1126,7 +1131,7 @@ function NoteSectionBlock({
   boards: BoardLite[];
   sub?: boolean;
   card?: boolean;
-  variant?: "unsorted" | "today" | "plain";
+  variant?: "unsorted" | "today" | "plain" | "quiet";
   icon?: React.ComponentType<{ className?: string }>;
   dragging?: boolean;
   onToggle: () => void;
@@ -1151,9 +1156,15 @@ function NoteSectionBlock({
         variant === "today" && "border border-border bg-surface shadow-card",
         variant === "unsorted" && "border border-dashed border-border bg-primary-soft/15",
         variant === "plain" && "border border-border bg-surface/40",
+        variant === "quiet" && "border border-border/70 bg-surface/25",
         isOver && "ring-2 ring-primary/40",
       )
-    : cn("transition-colors", sub ? "rounded-lg px-1 py-0.5" : "px-2 py-1.5", isOver && "rounded-lg bg-primary-soft/30");
+    : cn(
+        "transition-colors",
+        sub ? "rounded-lg px-1 py-0.5" : "px-2 py-1.5",
+        variant === "quiet" && "bg-transparent",
+        isOver && "rounded-lg bg-primary-soft/30",
+      );
 
   const addLine = (
     <AutoGrow
@@ -1240,7 +1251,7 @@ function NoteSectionBlock({
           </SortableContext>
 
           {reflections.length > 0 && (
-            <div className="mt-0.5 space-y-0.5">
+            <div className="mt-1 space-y-1">
               {reflections.map((r) => (
                 <ReflectionRow key={r.id} reflection={r} boards={boards} handedness={handedness} />
               ))}
@@ -1294,39 +1305,40 @@ function ReflectionRow({
   const now = new Date();
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const overdue = startOfDay(dueDay) < startOfDay(now);
+  const today = startOfDay(dueDay) === startOfDay(now);
+  const statusLabel = overdue ? "Overdue" : today ? "Today" : null;
+  const compact = "trun" + "cate";
   return (
     <Link
       href={ticketHref(r, boards)}
       title={`Open ${r.boardName} ticket${r.number != null ? ` #${r.number}` : ""} on its board`}
       className={cn(
-        "group/reflection relative flex items-start gap-2 rounded-lg border border-border bg-surface-2/25 py-1.5 pr-2 transition-colors hover:border-border/80 hover:bg-surface-2/60",
-        handedness === "left" ? "pl-2" : "pl-2.5",
+        "group/reflection relative grid grid-cols-[minmax(6.5rem,34%)_1fr] overflow-hidden rounded-lg border border-border bg-surface-2/20 transition-colors hover:border-border/80 hover:bg-surface-2/50",
+        handedness === "left" && "ml-0",
       )}
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start gap-2">
-          <span
-            className={cn(
-              "min-w-0 flex-1 text-sm leading-snug",
-              r.done ? "text-fg-muted line-through decoration-fg-subtle/50" : "text-fg",
-            )}
-            dir="auto"
-          >
-            {r.title}
-          </span>
-          <Ticket className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle transition-colors group-hover/reflection:text-fg-muted" aria-hidden />
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Badge tone="slate">
-            {r.boardName}
-            {r.number != null && <span className="opacity-70">#{r.number}</span>}
-          </Badge>
-          {overdue && (
-            <Badge tone="rose">
-              <CalendarClock className="h-3 w-3" /> overdue
-            </Badge>
+      <div className="flex min-w-0 flex-col justify-center gap-0.5 border-r border-border/60 bg-slate-800/25 px-2 py-1.5 sm:px-2.5">
+        <span className={cn(compact, "text-[0.68rem] font-semibold uppercase tracking-wide text-fg-muted")}>{r.boardName}</span>
+        <span
+          className={cn(
+            "inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.66rem] font-semibold uppercase tracking-wide",
+            overdue ? "bg-danger/15 text-danger" : today ? "bg-primary-soft text-primary" : "bg-surface/60 text-fg-subtle",
           )}
-        </div>
+        >
+          {statusLabel ?? (r.number != null ? `#${r.number}` : "Ticket")}
+        </span>
+      </div>
+      <div className="flex min-w-0 items-center gap-2 px-2.5 py-1.5">
+        <span
+          className={cn(
+            "min-w-0 flex-1 text-sm leading-snug line-clamp-2",
+            r.done ? "text-fg-muted line-through decoration-fg-subtle/70 decoration-2" : "text-fg",
+          )}
+          dir="auto"
+        >
+          {r.title}
+        </span>
+        <Ticket className="h-4 w-4 shrink-0 text-fg-subtle transition-colors group-hover/reflection:text-fg-muted" aria-hidden />
       </div>
     </Link>
   );
@@ -1470,7 +1482,7 @@ function NoteRow({
       )}
 
       {/* body — dir="auto" so RTL (e.g. Hebrew/Arabic) lines display right-aligned */}
-      <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-muted/70 line-through decoration-fg-subtle/40")} dir="auto">
+      <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-muted/90 line-through decoration-fg-muted decoration-2")} dir="auto">
         {locked ? (
           <div className={cn(isLong && !showFull && "max-h-[3.2rem] overflow-hidden")}>
             <Markdown content={note.body} />

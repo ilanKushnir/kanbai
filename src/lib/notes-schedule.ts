@@ -9,7 +9,7 @@
 // tomorrow arrives, with no cron and no timezone drift. This file is the single
 // source of truth and is safe to import on both the client and the server.
 
-export type SectionKind = "today" | "day" | "next_week" | "next_month" | "general";
+export type SectionKind = "today" | "day" | "next_week" | "later_this_month" | "next_month" | "long_term" | "general";
 
 export type NoteSection = {
   /** Stable container id for drag-and-drop (e.g. "today", "day:2026-06-20", "general"). */
@@ -100,7 +100,7 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
     const d = addDays(today, i);
     sections.push({
       key: `day:${ymd(d)}`,
-      label: d.toLocaleDateString(undefined, { weekday: "long" }),
+      label: i === 1 ? "Tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" }),
       sublabel: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
       day: ymd(d),
       kind: "day",
@@ -108,21 +108,33 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
   }
 
   const startNextWeek = addDays(today, daySlotCount + 1);
-  const startBeyond = addDays(startNextWeek, 7); // first day past "next week"
+  const firstPastNextWeek = addDays(startNextWeek, 7);
   const firstOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const firstPastNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 1);
 
   sections.push({ key: "next_week", label: "Next week", day: ymd(startNextWeek), kind: "next_week" });
+  sections.push({
+    key: "later_this_month",
+    label: "Later this month",
+    day: ymd(firstPastNextWeek),
+    kind: "later_this_month",
+  });
   sections.push({ key: "next_month", label: "Next month", day: ymd(firstOfNextMonth), kind: "next_month" });
+  sections.push({ key: "long_term", label: "Long term", day: ymd(firstPastNextMonth), kind: "long_term" });
 
   const endThisWeekYmd = ymd(addDays(today, daySlotCount));
-  const startBeyondYmd = ymd(startBeyond);
+  const firstPastNextWeekYmd = ymd(firstPastNextWeek);
+  const firstOfNextMonthYmd = ymd(firstOfNextMonth);
+  const firstPastNextMonthYmd = ymd(firstPastNextMonth);
 
   const classify = (day: string | null): string => {
     if (day == null) return "general";
     if (day <= todayYmd) return "today"; // today + anything overdue
     if (day <= endThisWeekYmd) return `day:${day}`;
-    if (day < startBeyondYmd) return "next_week";
-    return "next_month";
+    if (day < firstPastNextWeekYmd) return "next_week";
+    if (day < firstOfNextMonthYmd) return "later_this_month";
+    if (day < firstPastNextMonthYmd) return "next_month";
+    return "long_term";
   };
 
   return { todayYmd, sections, classify };

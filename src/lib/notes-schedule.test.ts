@@ -69,8 +69,12 @@ test("reflectionSectionKey buckets a due ticket into the right Notes section", (
   assert.equal(reflectionSectionKey(schedule, at(2026, 5, 16)), "today");
   // a later day this week → that day's slot
   assert.equal(reflectionSectionKey(schedule, at(2026, 5, 19)), "day:2026-06-19");
-  // well into next month → "next_month"
-  assert.equal(reflectionSectionKey(schedule, at(2026, 7, 5)), "next_month");
+  // after next week but before next month → "later_this_month"
+  assert.equal(reflectionSectionKey(schedule, at(2026, 5, 29)), "later_this_month");
+  // first day of next month → "next_month"
+  assert.equal(reflectionSectionKey(schedule, at(2026, 6, 1)), "next_month");
+  // beyond next month → "long_term"
+  assert.equal(reflectionSectionKey(schedule, at(2026, 7, 5)), "long_term");
 });
 
 test("reflectionSectionKey uses the ticket's local calendar day", () => {
@@ -102,4 +106,28 @@ test("noteSectionKey rolls coarse future buckets back to Unsorted on their bound
 
   const firstOfMonth = buildSchedule(new Date(2026, 6, 1, 0, 1, 0), 0);
   assert.equal(noteSectionKey(firstOfMonth, { scheduledDay: "2026-07-01", bucket: "next_month" }), "general");
+});
+
+
+test("notes and due-ticket reflections cover every future schedule boundary", () => {
+  const schedule = buildSchedule(new Date(2026, 5, 17, 10, 0, 0), 0);
+  const at = (day: string) => dueFromDay(day)!;
+
+  const cases: Array<[string, string]> = [
+    ["2026-06-29", "later_this_month"],
+    ["2026-07-01", "next_month"],
+    ["2026-08-01", "long_term"],
+  ];
+
+  for (const [day, section] of cases) {
+    assert.equal(noteSectionKey(schedule, { scheduledDay: day, bucket: "next_month" }), section);
+    assert.equal(reflectionSectionKey(schedule, at(day)), section);
+  }
+});
+
+test("later future section labels are present and quiet sections are addressable", () => {
+  const schedule = buildSchedule(new Date(2026, 5, 17, 10, 0, 0), 0);
+  assert.ok(schedule.sections.some((s) => s.key === "later_this_month" && s.label === "Later this month"));
+  assert.ok(schedule.sections.some((s) => s.key === "long_term" && s.label === "Long term"));
+  assert.equal(schedule.sections.find((s) => s.day === "2026-06-18")?.label, "Tomorrow");
 });
