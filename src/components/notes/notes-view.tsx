@@ -42,7 +42,6 @@ import {
   Check,
   Pencil,
   Plus,
-  RotateCcw,
   CalendarClock,
   CalendarRange,
   CornerDownLeft,
@@ -66,8 +65,10 @@ import {
   buildSchedule,
   coarseBucket,
   compareSectionNotes,
+  defaultCollapsedKeys,
   dueFromDay,
   dayFromBucket,
+  isSectionVisibleNote,
   noteSectionKey,
   reflectionSectionKey,
   type Schedule,
@@ -77,10 +78,13 @@ import type { NoteT, AgentLite, BoardLite, TicketReflectionT, RecentActionT } fr
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-/** Notes that occupy a time-section: active inbox/queued notes only. */
-function inPlay(n: NoteT, _todayYmd: string): boolean {
-  if (n.status !== "inbox" && n.status !== "queued") return false;
-  return n.doneOn == null;
+/**
+ * Notes that occupy a time-section: active inbox/queued notes, plus notes done
+ * *today* (which stay sunk to the bottom of their section for the day). Notes
+ * done on an earlier day have been swept out by next-day archival.
+ */
+function inPlay(n: NoteT, todayYmd: string): boolean {
+  return isSectionVisibleNote(n, todayYmd);
 }
 
 /** Group notes into ordered id-lists keyed by section, ordered by position. */
@@ -372,23 +376,16 @@ export function NotesView({
   }, dictationLanguage);
   const [sortNote, setSortNote] = React.useState<NoteT | null>(null);
   const [showArchived, setShowArchived] = React.useState(false);
-  const [collapsed, setCollapsed] = React.useState<Set<string>>(() => {
-    const s0 = buildSchedule(new Date(), weekStartsOn);
-    const cont = groupNotes(initial, s0);
-    const refs = groupReflections(reflections, s0);
-    const filled = (key: string) => (cont[key]?.length ?? 0) + (refs[key]?.length ?? 0);
-    const init = new Set<string>(["general"]);
-    for (const key of ["next_week", "later_this_month", "next_month"]) if (filled(key) === 0) init.add(key);
-    init.add("long_term");
-    const weekCount = s0.sections
-      .filter((s) => s.kind === "day")
-      .reduce((sum, s) => sum + filled(s.key), 0);
-    if (weekCount === 0) init.add("this_week");
-    return init;
-  });
+  // Fresh load: only Today is open. Every other schedule section (Unsorted, the
+  // "This week" group, and all future buckets) starts collapsed until the user
+  // opens it — or adds a note to it — within the session.
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(() =>
+    defaultCollapsedKeys(buildSchedule(new Date(), weekStartsOn)),
+  );
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [recentlyDone, setRecentlyDone] = React.useState<Set<string>>(() => new Set());
-  const [doneSectionOpenSignal, setDoneSectionOpenSignal] = React.useState(0);
+  // The note id that just settled into the bottom of its section after the
+  // done-delay elapsed — gets a one-shot landing animation in place.
   const [doneLandingId, setDoneLandingId] = React.useState<string | null>(null);
   const doneTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   React.useEffect(
@@ -560,7 +557,9 @@ export function NotesView({
         next.delete(note.id);
         return next;
       });
-      setDoneSectionOpenSignal((n) => n + 1);
+      // Mark done: the note sinks to the bottom of its own section (Today done at
+      // the bottom of Today, future done within its future section) and plays a
+      // landing animation there. No global Done bucket.
       setDoneLandingId(note.id);
       patchNote(note.id, { doneOn: schedule.todayYmd });
     }, 1250);
@@ -753,15 +752,10 @@ export function NotesView({
     return Number.isFinite(t) && +now - t < 48 * 60 * 60 * 1000;
   });
   const archived = allNotes.filter((n) => n.status === "archived");
-  const done = allNotes
-    .filter(
-      (n) =>
-        n.doneOn != null &&
-        n.status !== "archived" &&
-        n.status !== "sorted" &&
-        (!q || n.body.toLowerCase().includes(q)),
-    )
-    .sort((a, b) => (a.doneOn! < b.doneOn! ? 1 : a.doneOn! > b.doneOn! ? -1 : +new Date(b.updatedAt) - +new Date(a.updatedAt)));
+  // Completed notes are no longer pooled into a global Done bucket — they live at
+  // the bottom of their own schedule section (see compareSectionNotes) until
+  // next-day archival sweeps them out. So totalActive already counts done-today
+  // notes through `containers`.
   const totalActive = schedule.sections.reduce(
     (sum, s) => sum + (containers[s.key]?.length ?? 0) + (reflectionsBySection[s.key]?.length ?? 0),
     0,
@@ -835,6 +829,7 @@ export function NotesView({
     handedness,
     ingestingId,
     recentlyDone,
+    doneLandingId,
     dragDisabled: !!q,
     onSaveBody: saveBody,
     onToggleCheckbox: toggleCheckbox,
@@ -1014,7 +1009,7 @@ export function NotesView({
         </DragOverlay>
       </DndContext>
 
-      {totalActive === 0 && sorted.length === 0 && archived.length === 0 && done.length === 0 && !q && (
+      {totalActive === 0 && sorted.length === 0 && archived.length === 0 && !q && (
         <EmptyState
           icon={NotebookPen}
           title="Nothing captured yet"
@@ -1022,22 +1017,8 @@ export function NotesView({
           className="mt-6"
         />
       )}
-      {totalActive === 0 && done.length === 0 && q && (
+      {totalActive === 0 && q && (
         <p className="px-1 py-6 text-center text-sm text-fg-subtle">No notes match.</p>
-      )}
-
-      {/* Done */}
-      {done.length > 0 && (
-        <DoneSection
-          notes={done}
-          openSignal={doneSectionOpenSignal}
-          landingId={doneLandingId}
-          onRestore={(id) => {
-            setDoneLandingId((cur) => (cur === id ? null : cur));
-            patchNote(id, { doneOn: null });
-          }}
-          onDelete={del}
-        />
       )}
 
       {/* Recent actions (notes filed into tickets) */}
@@ -1100,10 +1081,10 @@ function RecentActionsSection({ actions }: { actions: RecentActionT[] }) {
   const [open, setOpen] = React.useState(false);
   const visible = open ? actions : [];
   return (
-    <section className="mt-7 rounded-2xl border border-border/70 bg-surface/35 px-3 py-2.5">
+    <section className="mt-7">
       <button
         onClick={() => setOpen((s) => !s)}
-        className="group flex w-full items-center gap-2 text-left text-xs font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg-muted cursor-pointer"
+        className="group flex w-full items-center gap-2 px-1 text-left text-xs font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg-muted cursor-pointer"
       >
         <ChevronDown className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")} />
         <Sparkles className="h-3.5 w-3.5" />
@@ -1111,7 +1092,7 @@ function RecentActionsSection({ actions }: { actions: RecentActionT[] }) {
         <span className="text-fg-subtle/70">30 days · {actions.length}</span>
       </button>
       {open && (
-        <div className="mt-2 divide-y divide-border/50">
+        <div className="mt-2 divide-y divide-border/50 px-1">
           {visible.slice(0, 30).map((a) => (
             <div key={a.id} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2 text-xs sm:grid-cols-[7rem_minmax(0,1fr)_auto]">
               <div className="min-w-0 text-fg-muted">
@@ -1141,89 +1122,6 @@ function RecentActionsSection({ actions }: { actions: RecentActionT[] }) {
   );
 }
 
-// ── done section ──────────────────────────────────────────────────────────────
-
-function DoneSection({
-  notes,
-  onRestore,
-  openSignal,
-  landingId,
-  onDelete,
-}: {
-  notes: NoteT[];
-  openSignal: number;
-  landingId: string | null;
-  onRestore: (id: string) => void;
-  onDelete: (id: string) => void;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const [shown, setShown] = React.useState(5);
-  React.useEffect(() => {
-    if (openSignal > 0) setOpen(true);
-  }, [openSignal]);
-  const visible = open ? notes.slice(0, shown) : [];
-
-  return (
-    <section className="mt-7">
-      <button
-        onClick={() => setOpen((s) => !s)}
-        className="group flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg-muted cursor-pointer"
-      >
-        <ChevronDown className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")} />
-        <Check className="h-3.5 w-3.5" />
-        Done
-        <span className="text-fg-subtle/70">{notes.length}</span>
-      </button>
-
-      {open && (
-        <div className="mt-2 space-y-1.5">
-          {visible.map((n) => (
-            <div key={n.id} className={cn("group flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-surface-2/50", landingId === n.id && "animate-slide-down-fade bg-success-soft/25")}>
-              <button
-                onClick={() => onRestore(n.id)}
-                title="Mark not done"
-                className="grid h-[1.05rem] w-[1.05rem] shrink-0 place-items-center rounded-full border border-success bg-success text-white cursor-pointer"
-              >
-                <Check className="h-3 w-3" strokeWidth={3} />
-              </button>
-              <p className="min-w-0 flex-1 truncate text-sm text-fg-subtle/45 line-through decoration-fg-subtle/60 decoration-1">
-                {n.body}
-              </p>
-              <span className="shrink-0 text-[0.6875rem] text-fg-subtle">
-                {new Date(n.doneOn + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-              </span>
-              <button
-                onClick={() => onRestore(n.id)}
-                title="Restore"
-                className="shrink-0 text-fg-subtle opacity-0 transition-opacity hover:text-fg group-hover:opacity-100 cursor-pointer"
-                aria-label="Restore"
-              >
-                <RotateCcw className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => onDelete(n.id)}
-                title="Delete"
-                className="shrink-0 text-fg-subtle opacity-0 transition-opacity hover:text-danger group-hover:opacity-100 cursor-pointer"
-                aria-label="Delete"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-          {notes.length > shown && (
-            <button
-              onClick={() => setShown((s) => s + 10)}
-              className="px-2 py-1 text-xs font-medium text-primary hover:underline cursor-pointer"
-            >
-              Show more ({notes.length - shown})
-            </button>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
 // ── section block (a droppable list of note rows + inline add) ────────────────
 
 type RowHandlers = {
@@ -1232,6 +1130,7 @@ type RowHandlers = {
   handedness: "right" | "left";
   ingestingId: string | null;
   recentlyDone: Set<string>;
+  doneLandingId: string | null;
   dragDisabled?: boolean;
   onSaveBody: (id: string, body: string) => void;
   onToggleCheckbox: (note: NoteT, index: number) => void;
@@ -1263,6 +1162,7 @@ function NoteSectionBlock({
   handedness,
   ingestingId,
   recentlyDone,
+  doneLandingId,
   dragDisabled,
   onSaveBody,
   onToggleCheckbox,
@@ -1388,6 +1288,7 @@ function NoteSectionBlock({
                     handedness={handedness}
                     handoff={ingestingId === id}
                     justDone={recentlyDone.has(id)}
+                    landing={doneLandingId === id}
                     dragDisabled={dragDisabled}
                     onSaveBody={(body) => onSaveBody(id, body)}
                     onToggleCheckbox={(i) => onToggleCheckbox(n, i)}
@@ -1518,6 +1419,7 @@ function NoteRow({
   handedness,
   handoff,
   justDone,
+  landing,
   dragDisabled,
   onSaveBody,
   onToggleCheckbox,
@@ -1534,6 +1436,7 @@ function NoteRow({
   handedness: "right" | "left";
   handoff?: boolean;
   justDone?: boolean;
+  landing?: boolean;
   dragDisabled?: boolean;
   onSaveBody: (body: string) => void;
   onToggleCheckbox: (index: number) => void;
@@ -1719,6 +1622,7 @@ function NoteRow({
         queued && "bg-primary-soft/40",
         handoff && "animate-ai-handoff",
         justDone && "animate-done-slide",
+        landing && "animate-slide-down-fade bg-success-soft/25",
         highlight && "ring-2 ring-primary",
       )}
     >

@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   buildSchedule,
   compareSectionNotes,
+  defaultCollapsedKeys,
+  isSectionVisibleNote,
   noteSectionKey,
   reflectionSectionKey,
   dueFromDay,
@@ -130,4 +132,66 @@ test("later future section labels are present and quiet sections are addressable
   assert.ok(schedule.sections.some((s) => s.key === "later_this_month" && s.label === "Later this month"));
   assert.ok(schedule.sections.some((s) => s.key === "long_term" && s.label === "Long term"));
   assert.equal(schedule.sections.find((s) => s.day === "2026-06-18")?.label, "Tomorrow");
+});
+
+test("isSectionVisibleNote keeps active notes and notes done today, sweeps the rest", () => {
+  const today = "2026-06-21";
+  // Active notes always occupy their section.
+  assert.equal(isSectionVisibleNote({ status: "inbox", doneOn: null }, today), true);
+  assert.equal(isSectionVisibleNote({ status: "queued", doneOn: null }, today), true);
+  // Done *today* stays in its section (sunk to the bottom).
+  assert.equal(isSectionVisibleNote({ status: "inbox", doneOn: today }, today), true);
+  // Done on an earlier day is swept out by next-day archival.
+  assert.equal(isSectionVisibleNote({ status: "inbox", doneOn: "2026-06-20" }, today), false);
+  // Notes that left the inbox (sorted into a ticket, archived) never reappear.
+  assert.equal(isSectionVisibleNote({ status: "sorted", doneOn: null }, today), false);
+  assert.equal(isSectionVisibleNote({ status: "archived", doneOn: today }, today), false);
+});
+
+test("a note done today sinks to the bottom of its own section but stays visible", () => {
+  const today = "2026-06-21";
+  const schedule = buildSchedule(new Date(2026, 5, 21, 10, 0, 0), 0);
+  const make = (over: Partial<{ status: string; doneOn: string | null; scheduledDay: string | null; position: number; createdAt: string }>) => ({
+    status: "inbox",
+    doneOn: null,
+    scheduledDay: today,
+    position: 0,
+    createdAt: "2026-06-21T08:00:00.000Z",
+    ...over,
+  });
+  const active = make({ position: 1 });
+  const doneToday = make({ position: 0, doneOn: today });
+
+  // Both classify into Today...
+  assert.equal(noteSectionKey(schedule, active), "today");
+  assert.equal(noteSectionKey(schedule, doneToday), "today");
+  // ...both are still in play today...
+  assert.equal(isSectionVisibleNote(active, today), true);
+  assert.equal(isSectionVisibleNote(doneToday, today), true);
+  // ...and the done one sorts after the active one despite its lower position.
+  assert.deepEqual(
+    [active, doneToday].sort(compareSectionNotes).map((n) => n.doneOn != null),
+    [false, true],
+  );
+});
+
+test("a future note done today stays within its future section", () => {
+  const today = "2026-06-21";
+  const schedule = buildSchedule(new Date(2026, 5, 21, 10, 0, 0), 0);
+  const futureDone = { status: "inbox", doneOn: today, scheduledDay: "2026-07-15", bucket: "next_month" };
+  assert.equal(isSectionVisibleNote(futureDone, today), true);
+  assert.equal(noteSectionKey(schedule, futureDone), "next_month");
+});
+
+test("defaultCollapsedKeys opens only Today on a fresh load", () => {
+  const schedule = buildSchedule(new Date(2026, 5, 17, 10, 0, 0), 0);
+  const collapsed = defaultCollapsedKeys(schedule);
+
+  // Today is the one section open by default.
+  assert.equal(collapsed.has("today"), false);
+  // Everything else — Unsorted, the synthetic week group, and every future
+  // bucket — starts collapsed.
+  for (const key of ["general", "this_week", "next_week", "later_this_month", "next_month", "long_term"]) {
+    assert.equal(collapsed.has(key), true, `${key} should start collapsed`);
+  }
 });

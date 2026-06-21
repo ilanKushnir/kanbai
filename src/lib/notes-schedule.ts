@@ -66,6 +66,7 @@ export type Schedule = {
 };
 
 export type ScheduledNoteLike = { scheduledDay: string | null; bucket?: string | null };
+export type SectionVisibleNoteLike = { status: string; doneOn: string | null };
 
 /**
  * Build the ordered time-sections for a given moment and week-start preference.
@@ -141,6 +142,17 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
 }
 
 /**
+ * Section keys collapsed on a fresh page load. Only Today is open by default;
+ * Unsorted, the "This week" group, and every future bucket start collapsed until
+ * the user opens one (or adds a note to it) within the session.
+ */
+export function defaultCollapsedKeys(schedule: Schedule): Set<string> {
+  const keys = new Set<string>(["this_week"]); // synthetic week-group container
+  for (const s of schedule.sections) if (s.kind !== "today") keys.add(s.key);
+  return keys;
+}
+
+/**
  * Section placement for notes, including coarse-bucket rollover semantics.
  *
  * Concrete days (Today/Tomorrow/This week) roll forward naturally: tomorrow
@@ -156,10 +168,21 @@ export function noteSectionKey(schedule: Schedule, note: ScheduledNoteLike): str
 }
 
 /**
+ * Whether a note still occupies a time-section. Active inbox/queued notes always
+ * do. A note marked done stays in its section — sunk to the bottom — only for the
+ * day it was completed; once the day rolls over it is swept out of the active
+ * schedule (next-day archival), so finished work never piles up indefinitely.
+ */
+export function isSectionVisibleNote(note: SectionVisibleNoteLike, todayYmd: string): boolean {
+  if (note.status !== "inbox" && note.status !== "queued") return false;
+  return note.doneOn == null || note.doneOn === todayYmd;
+}
+
+/**
  * Order notes within a single time-section. Notes are kept in their chronological
  * add order (`position`, with `createdAt` as a stable tiebreaker), except notes
- * marked done sink to the bottom of the section until the next-day sweep moves
- * them to the Done archive.
+ * marked done sink to the bottom of the section (where they live out the day
+ * before next-day archival removes them via {@link isSectionVisibleNote}).
  */
 export function compareSectionNotes(
   a: { doneOn: string | null; position: number; createdAt: string },
