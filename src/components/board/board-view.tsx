@@ -443,9 +443,13 @@ export function BoardView({
     }
     if (liveRef.current) liveRef.current.textContent = `Marked ${ticketsById[ticketId]?.title ?? "card"} done`;
     if (returnTo === "notes") {
+      // Close the modal first so the moved card's success state can flash on the
+      // board before navigating back to the Notes due section.
       setSelectedId(null);
-      router.push("/notes");
-      router.refresh();
+      window.setTimeout(() => {
+        router.push("/notes");
+        router.refresh();
+      }, 650);
     }
     return ticket;
   }
