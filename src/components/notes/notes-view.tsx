@@ -1083,7 +1083,7 @@ function FiledSection({ notes, initialCount, boards }: { notes: NoteT[]; initial
             </p>
             {n.ticket && (
               <Link
-                href={ticketHref(n.ticket, boards)}
+                href={ticketHref(n.ticket, boards, { from: "notes" })}
                 className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-surface px-2 py-1 text-xs font-medium text-primary hover:bg-primary-soft"
               >
                 View ticket <ArrowUpRight className="h-3.5 w-3.5" />
@@ -1417,22 +1417,34 @@ function ReflectionRow({
   const compact = "trun" + "cate";
   return (
     <Link
-      href={ticketHref(r, boards)}
+      href={ticketHref(r, boards, { from: "notes" })}
       title={`Open ${r.boardName} ticket${r.number != null ? ` #${r.number}` : ""} on its board`}
       className={cn(
-        "group/reflection relative grid grid-cols-[minmax(6.5rem,34%)_1fr] overflow-hidden rounded-lg border border-border bg-surface-2/20 transition-colors hover:border-border/80 hover:bg-surface-2/50",
+        "group/reflection relative grid grid-cols-[minmax(6.5rem,34%)_1fr] overflow-hidden rounded-lg border bg-surface-2/20 transition-colors hover:border-border/80 hover:bg-surface-2/50",
+        r.done ? "border-success/35" : "border-border",
         handedness === "left" && "ml-0",
       )}
     >
-      <div className="flex min-w-0 flex-col justify-center gap-0.5 border-r border-border/60 bg-slate-800/25 px-2 py-1.5 sm:px-2.5">
+      <div
+        className={cn(
+          "flex min-w-0 flex-col justify-center gap-0.5 border-r px-2 py-1.5 sm:px-2.5",
+          r.done ? "border-success/30 bg-success-soft/35" : "border-border/60 bg-slate-800/25",
+        )}
+      >
         <span className={cn(compact, "text-[0.68rem] font-semibold uppercase tracking-wide text-fg-muted")}>{r.boardName}</span>
         <span
           className={cn(
             "inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.66rem] font-semibold uppercase tracking-wide",
-            overdue ? "bg-danger/15 text-danger" : today ? "bg-primary-soft text-primary" : "bg-surface/60 text-fg-subtle",
+            r.done
+              ? "bg-success text-white"
+              : overdue
+                ? "bg-danger/15 text-danger"
+                : today
+                  ? "bg-primary-soft text-primary"
+                  : "bg-surface/60 text-fg-subtle",
           )}
         >
-          {statusLabel ?? (r.number != null ? `#${r.number}` : "Ticket")}
+          {r.done ? "Done" : statusLabel ?? (r.number != null ? `#${r.number}` : "Ticket")}
         </span>
       </div>
       <div className="flex min-w-0 items-center gap-2 px-2.5 py-1.5">

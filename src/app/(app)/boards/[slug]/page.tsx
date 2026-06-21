@@ -30,10 +30,10 @@ export default async function BoardPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ ticket?: string }>;
+  searchParams: Promise<{ ticket?: string; from?: string }>;
 }) {
   const { slug } = await params;
-  const { ticket: initialTicketId } = await searchParams;
+  const { ticket: initialTicketId, from } = await searchParams;
   const ctx = await getContext();
 
   let board;
@@ -88,6 +88,7 @@ export default async function BoardPage({
           agents={agents}
           currentUser={{ id: ctx.user.id, name: ctx.user.name }}
           initialTicketId={initialTicketId}
+          returnTo={from === "notes" ? "notes" : undefined}
         />
       </div>
     </div>

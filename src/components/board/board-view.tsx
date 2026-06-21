@@ -69,11 +69,13 @@ export function BoardView({
   agents: agentsProp,
   currentUser,
   initialTicketId,
+  returnTo,
 }: {
   board: BoardData;
   agents: AgentLite[];
   currentUser?: { id: string; name: string } | null;
   initialTicketId?: string;
+  returnTo?: "notes";
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -418,6 +420,36 @@ export function BoardView({
     toast({ title: "Ticket deleted", variant: "default" });
   }
 
+  async function moveTicketToDone(ticketId: string): Promise<SerializedTicket> {
+    const doneColumn = cols.find((c) => c.isDone);
+    if (!doneColumn) throw new Error("No done column is configured for this board.");
+    const prev = containersRef.current;
+    const from = keyOf(prev, ticketId);
+    const position = doneColumn.id === from
+      ? Math.max(0, prev[doneColumn.id]?.indexOf(ticketId) ?? 0)
+      : (prev[doneColumn.id]?.length ?? 0);
+    const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}/move`, {
+      body: { columnId: doneColumn.id, position, subState: null },
+    });
+
+    setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
+    if (from && from !== doneColumn.id) {
+      const next = { ...containersRef.current };
+      next[from] = next[from].filter((id) => id !== ticketId);
+      next[doneColumn.id] = [...(next[doneColumn.id] ?? []), ticketId];
+      setCont(next);
+      setCelebrateId(ticketId);
+      setTimeout(() => setCelebrateId((id) => (id === ticketId ? null : id)), 1100);
+    }
+    if (liveRef.current) liveRef.current.textContent = `Marked ${ticketsById[ticketId]?.title ?? "card"} done`;
+    if (returnTo === "notes") {
+      setSelectedId(null);
+      router.push("/notes");
+      router.refresh();
+    }
+    return ticket;
+  }
+
   // Keyboard navigation across cards (arrows move, Enter opens). Skips when
   // a modal/palette is open or the user is typing.
   React.useEffect(() => {
@@ -544,6 +576,7 @@ export function BoardView({
           onClose={() => setSelectedId(null)}
           onUpdated={handleTicketUpdated}
           onDeleted={handleTicketDeleted}
+          onMoveToDone={() => moveTicketToDone(selectedTicket.id)}
         />
       )}
     </div>

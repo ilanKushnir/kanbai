@@ -23,3 +23,9 @@ test("ticketHref resolves the slug from the ticket's boardId, not order", () => 
 test("ticketHref falls back to the boards index when the board is out of scope", () => {
   assert.equal(ticketHref({ id: "t1", boardId: "missing" }, boards), "/boards");
 });
+
+
+test("ticketHref can mark a ticket as opened from notes", () => {
+  const href = ticketHref({ id: "t9", boardId: "b2" }, boards, { from: "notes" });
+  assert.equal(href, "/boards/beta?ticket=t9&from=notes");
+});

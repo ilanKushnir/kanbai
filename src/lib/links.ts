@@ -6,7 +6,11 @@
 export function ticketHref(
   ticket: { id: string; boardId: string },
   boards: { id: string; slug: string }[],
+  options?: { from?: "notes" },
 ): string {
   const slug = boards.find((b) => b.id === ticket.boardId)?.slug;
-  return slug ? `/boards/${slug}?ticket=${ticket.id}` : "/boards";
+  if (!slug) return "/boards";
+  const params = new URLSearchParams({ ticket: ticket.id });
+  if (options?.from) params.set("from", options.from);
+  return `/boards/${slug}?${params.toString()}`;
 }

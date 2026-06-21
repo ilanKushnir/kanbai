@@ -11,6 +11,7 @@ import {
   X,
   NotebookPen,
   Check,
+  CircleCheck,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ export function TicketModal({
   onClose,
   onUpdated,
   onDeleted,
+  onMoveToDone,
 }: {
   ticket: SerializedTicket;
   columns: ColumnMeta[];
@@ -48,6 +50,7 @@ export function TicketModal({
   onClose: () => void;
   onUpdated: (t: SerializedTicket) => void;
   onDeleted: (id: string) => void;
+  onMoveToDone?: () => Promise<SerializedTicket>;
 }) {
   const { toast } = useToast();
   const [t, setT] = React.useState(ticket);
@@ -106,7 +109,22 @@ export function TicketModal({
     patch({ dueDate: d.toISOString() });
   }
 
+  async function moveToDone() {
+    if (!onMoveToDone || !doneColumn || isDone) return;
+    setSaving(true);
+    try {
+      const next = await onMoveToDone();
+      apply(next);
+    } catch (e) {
+      toast({ title: "Couldn't mark done", description: e instanceof Error ? e.message : undefined, variant: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const column = columns.find((c) => c.id === t.columnId);
+  const doneColumn = columns.find((c) => c.isDone);
+  const isDone = Boolean(column?.isDone);
   const pr = priorityMeta(t.priority);
   const due = dueMeta(t.dueDate);
   const dueValue = t.dueDate ? t.dueDate.slice(0, 10) : "";
@@ -121,7 +139,7 @@ export function TicketModal({
   return (
     <Modal open onClose={onClose} size="lg" hideClose>
       <div className="flex items-center justify-between gap-2 pb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
         <Menu
           trigger={
             <button className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-medium text-fg-muted hover:bg-surface-3 cursor-pointer">
@@ -168,6 +186,24 @@ export function TicketModal({
             </div>
           )}
         </Menu>
+          {onMoveToDone && (
+            <button
+              onClick={moveToDone}
+              disabled={!doneColumn || isDone || saving}
+              title={!doneColumn ? "No done column configured" : isDone ? "Already in the done column" : `Move to ${doneColumn.name}`}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors",
+                isDone
+                  ? "bg-success-soft text-success cursor-default"
+                  : doneColumn
+                    ? "bg-success text-white shadow-sm hover:bg-success/90 cursor-pointer"
+                    : "bg-surface-2 text-fg-subtle cursor-not-allowed opacity-60",
+              )}
+            >
+              <CircleCheck className="h-3.5 w-3.5" />
+              {isDone ? "Done" : "Done"}
+            </button>
+          )}
           {t.number != null && (
             <span className="text-xs font-medium text-fg-subtle">#{t.number}</span>
           )}
