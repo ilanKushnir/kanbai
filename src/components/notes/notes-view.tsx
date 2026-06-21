@@ -1432,6 +1432,113 @@ function NoteRow({
     </button>
   );
 
+  const moreMenu = !locked ? (
+    <Menu
+      align="start"
+      trigger={
+        <button
+          title="More"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-fg-subtle opacity-100 transition-opacity hover:bg-surface-2 hover:text-fg cursor-pointer md:opacity-0 md:group-hover:opacity-100"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      }
+    >
+      {(close) => (
+        <>
+          <MenuItem
+            onClick={() => {
+              onToggleDone();
+              close();
+            }}
+          >
+            <Check className="h-4 w-4" /> {done ? "Mark not done" : "Mark done"}
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setEditing(true);
+              close();
+            }}
+          >
+            <Pencil className="h-4 w-4" /> Edit
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              onIngest(true);
+              close();
+            }}
+          >
+            <Sparkles className="h-4 w-4" /> Send to an agent to file
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              onFile();
+              close();
+            }}
+          >
+            <Inbox className="h-4 w-4" /> File into a ticket…
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              onPin();
+              close();
+            }}
+          >
+            <Pin className={cn("h-4 w-4", note.pinned && "fill-current")} /> {note.pinned ? "Unpin" : "Pin"}
+          </MenuItem>
+          <div className="my-1 border-t border-border" />
+          <div className="px-2.5 py-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle">
+            Priority
+          </div>
+          <div className="flex items-center gap-1 px-2 pb-1.5">
+            {PRIORITIES.map((p) => {
+              const m = PRIORITY_META[p];
+              const active = note.priority === p;
+              return (
+                <button
+                  key={p}
+                  title={m.label}
+                  onClick={() => {
+                    onSetPriority(p);
+                    close();
+                  }}
+                  className={cn(
+                    "grid h-7 w-7 place-items-center rounded-md hover:bg-surface-2 cursor-pointer",
+                    active && "bg-surface-2 ring-1 ring-border",
+                  )}
+                >
+                  {p === "none" ? (
+                    <span className="h-2.5 w-2.5 rounded-full border border-fg-subtle" />
+                  ) : (
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: m.color }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="my-1 border-t border-border" />
+          <MenuItem
+            onClick={() => {
+              onArchive();
+              close();
+            }}
+          >
+            <Archive className="h-4 w-4" /> Archive
+          </MenuItem>
+          <MenuItem
+            className="text-danger hover:bg-danger/10"
+            onClick={() => {
+              onDelete();
+              close();
+            }}
+          >
+            <Trash2 className="h-4 w-4" /> Delete
+          </MenuItem>
+        </>
+      )}
+    </Menu>
+  ) : null;
+
   return (
     <div
       ref={setNodeRef}
@@ -1480,6 +1587,9 @@ function NoteRow({
           </span>
         </button>
       )}
+
+      {/* actions menu — left of content; edit remains inside this menu */}
+      {moreMenu}
 
       {/* body — dir="auto" so RTL (e.g. Hebrew/Arabic) lines display right-aligned */}
       <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-muted/90 line-through decoration-fg-muted decoration-2")} dir="auto">
@@ -1550,20 +1660,9 @@ function NoteRow({
         )}
       </div>
 
-      {/* trailing controls */}
-      <div className="flex shrink-0 items-center gap-0.5">
-        {!locked && !editing && (
-          <button
-            onClick={() => setEditing(true)}
-            title="Edit"
-            aria-label="Edit note"
-            className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle opacity-100 transition-opacity hover:bg-surface-2 hover:text-fg cursor-pointer md:opacity-0 md:group-hover:opacity-100"
-          >
-            <Pencil className="h-4 w-4" />
-          </button>
-        )}
-
-        {queued && (
+      {/* trailing queued control; drag handle remains in its handedness-controlled position */}
+      {queued && (
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
             onClick={() => onIngest(false)}
             title="Unmark"
@@ -1571,115 +1670,8 @@ function NoteRow({
           >
             <X className="h-4 w-4" />
           </button>
-        )}
-
-        {!locked && (
-          <Menu
-            align="end"
-            trigger={
-              <button
-                title="More"
-                className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle opacity-100 transition-opacity hover:bg-surface-2 hover:text-fg cursor-pointer md:opacity-0 md:group-hover:opacity-100"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
-            }
-          >
-            {(close) => (
-              <>
-                <MenuItem
-                  onClick={() => {
-                    onToggleDone();
-                    close();
-                  }}
-                >
-                  <Check className="h-4 w-4" /> {done ? "Mark not done" : "Mark done"}
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setEditing(true);
-                    close();
-                  }}
-                >
-                  <Pencil className="h-4 w-4" /> Edit
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    onIngest(true);
-                    close();
-                  }}
-                >
-                  <Sparkles className="h-4 w-4" /> Send to an agent to file
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    onFile();
-                    close();
-                  }}
-                >
-                  <Inbox className="h-4 w-4" /> File into a ticket…
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    onPin();
-                    close();
-                  }}
-                >
-                  <Pin className={cn("h-4 w-4", note.pinned && "fill-current")} /> {note.pinned ? "Unpin" : "Pin"}
-                </MenuItem>
-                <div className="my-1 border-t border-border" />
-                <div className="px-2.5 py-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle">
-                  Priority
-                </div>
-                <div className="flex items-center gap-1 px-2 pb-1.5">
-                  {PRIORITIES.map((p) => {
-                    const m = PRIORITY_META[p];
-                    const active = note.priority === p;
-                    return (
-                      <button
-                        key={p}
-                        title={m.label}
-                        onClick={() => {
-                          onSetPriority(p);
-                          close();
-                        }}
-                        className={cn(
-                          "grid h-7 w-7 place-items-center rounded-md hover:bg-surface-2 cursor-pointer",
-                          active && "bg-surface-2 ring-1 ring-border",
-                        )}
-                      >
-                        {p === "none" ? (
-                          <span className="h-2.5 w-2.5 rounded-full border border-fg-subtle" />
-                        ) : (
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: m.color }} />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="my-1 border-t border-border" />
-                <MenuItem
-                  onClick={() => {
-                    onArchive();
-                    close();
-                  }}
-                >
-                  <Archive className="h-4 w-4" /> Archive
-                </MenuItem>
-                <MenuItem
-                  className="text-danger hover:bg-danger/10"
-                  onClick={() => {
-                    onDelete();
-                    close();
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" /> Delete
-                </MenuItem>
-              </>
-            )}
-          </Menu>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* right-handed: drag handle trails (thumb side on a phone) */}
       {handedness === "right" && dragHandle}
