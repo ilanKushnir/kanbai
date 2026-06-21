@@ -65,6 +65,8 @@ export type Schedule = {
   classify: (day: string | null) => string;
 };
 
+export type ScheduledNoteLike = { scheduledDay: string | null; bucket?: string | null };
+
 /**
  * Build the ordered time-sections for a given moment and week-start preference.
  * `weekStartsOn`: 0 = Sunday … 6 = Saturday.
@@ -124,6 +126,21 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
   };
 
   return { todayYmd, sections, classify };
+}
+
+/**
+ * Section placement for notes, including coarse-bucket rollover semantics.
+ *
+ * Concrete days (Today/Tomorrow/This week) roll forward naturally: tomorrow
+ * becomes Today at midnight, and unfinished Today notes stay in Today. Coarse
+ * planning buckets are different: when a Next Week/Next Month note reaches its
+ * boundary date, it returns to Unsorted so the user can intentionally place it.
+ */
+export function noteSectionKey(schedule: Schedule, note: ScheduledNoteLike): string {
+  if (note.scheduledDay != null && note.scheduledDay <= schedule.todayYmd) {
+    if (note.bucket === "next_week" || note.bucket === "next_month") return "general";
+  }
+  return schedule.classify(note.scheduledDay ?? null);
 }
 
 /**

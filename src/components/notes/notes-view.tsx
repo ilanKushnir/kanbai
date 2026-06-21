@@ -52,7 +52,7 @@ import {
   Ticket,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { Badge, tone as toneOf } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown, toggleTask } from "@/components/ui/markdown";
 import { Menu, MenuItem } from "@/components/ui/menu";
@@ -69,11 +69,11 @@ import {
   compareSectionNotes,
   dueFromDay,
   dayFromBucket,
+  noteSectionKey,
   reflectionSectionKey,
   type Schedule,
   type NoteSection,
 } from "@/lib/notes-schedule";
-import { dueMeta } from "@/lib/display";
 import type { NoteT, AgentLite, BoardLite, TicketReflectionT } from "@/lib/types";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ function groupNotes(notes: NoteT[], schedule: Schedule): Record<string, string[]
     .slice()
     .sort(compareSectionNotes);
   for (const n of active) {
-    const key = schedule.classify(n.scheduledDay ?? null);
+    const key = noteSectionKey(schedule, n);
     (map[key] ??= []).push(n.id);
   }
   return map;
@@ -1290,19 +1290,19 @@ function ReflectionRow({
   boards: BoardLite[];
   handedness: "right" | "left";
 }) {
-  const due = dueMeta(r.dueDate);
-  const board = toneOf(r.boardColor);
+  const dueDay = new Date(r.dueDate);
+  const now = new Date();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const overdue = startOfDay(dueDay) < startOfDay(now);
   return (
     <Link
       href={ticketHref(r, boards)}
       title={`Open ${r.boardName} ticket${r.number != null ? ` #${r.number}` : ""} on its board`}
       className={cn(
-        "group/reflection relative flex items-start gap-2 rounded-lg border border-dashed border-border bg-surface-2/30 py-1.5 pr-2 transition-colors hover:border-primary/40 hover:bg-surface-2/60",
+        "group/reflection relative flex items-start gap-2 rounded-lg border border-border bg-surface-2/25 py-1.5 pr-2 transition-colors hover:border-border/80 hover:bg-surface-2/60",
         handedness === "left" ? "pl-2" : "pl-2.5",
       )}
-      style={{ borderLeftWidth: 3, borderLeftColor: board.dot }}
     >
-      <Ticket className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle" aria-hidden />
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           <span
@@ -1314,19 +1314,18 @@ function ReflectionRow({
           >
             {r.title}
           </span>
-          <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle transition-colors group-hover/reflection:text-primary" />
+          <Ticket className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle transition-colors group-hover/reflection:text-fg-muted" aria-hidden />
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Badge tone={r.boardColor} dot>
+          <Badge tone="slate">
             {r.boardName}
             {r.number != null && <span className="opacity-70">#{r.number}</span>}
           </Badge>
-          {due && (
-            <Badge tone={due.tone}>
-              <CalendarClock className="h-3 w-3" /> {due.label}
+          {overdue && (
+            <Badge tone="rose">
+              <CalendarClock className="h-3 w-3" /> overdue
             </Badge>
           )}
-          <span className="text-[0.6875rem] text-fg-subtle">· ticket</span>
         </div>
       </div>
     </Link>
@@ -1471,7 +1470,7 @@ function NoteRow({
       )}
 
       {/* body — dir="auto" so RTL (e.g. Hebrew/Arabic) lines display right-aligned */}
-      <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-muted line-through decoration-fg-subtle/50")} dir="auto">
+      <div className={cn("min-w-0 flex-1 pt-0.5", done && "text-fg-muted/70 line-through decoration-fg-subtle/40")} dir="auto">
         {locked ? (
           <div className={cn(isLong && !showFull && "max-h-[3.2rem] overflow-hidden")}>
             <Markdown content={note.body} />

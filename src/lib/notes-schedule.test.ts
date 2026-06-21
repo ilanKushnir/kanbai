@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildSchedule,
   compareSectionNotes,
+  noteSectionKey,
   reflectionSectionKey,
   dueFromDay,
   ymd,
@@ -79,4 +80,26 @@ test("reflectionSectionKey uses the ticket's local calendar day", () => {
   const iso = dueFromDay("2026-06-19")!;
   assert.equal(ymd(new Date(iso)), "2026-06-19");
   assert.equal(reflectionSectionKey(schedule, iso), "day:2026-06-19");
+});
+
+
+test("noteSectionKey rolls concrete days forward at midnight", () => {
+  const before = buildSchedule(new Date(2026, 5, 20, 23, 59, 0), 0);
+  const after = buildSchedule(new Date(2026, 5, 21, 0, 1, 0), 0);
+
+  const tomorrowNote = { scheduledDay: "2026-06-21", bucket: "tomorrow" };
+  assert.equal(noteSectionKey(before, tomorrowNote), "day:2026-06-21");
+  assert.equal(noteSectionKey(after, tomorrowNote), "today");
+
+  const todayNote = { scheduledDay: "2026-06-20", bucket: "today" };
+  assert.equal(noteSectionKey(before, todayNote), "today");
+  assert.equal(noteSectionKey(after, todayNote), "today");
+});
+
+test("noteSectionKey rolls coarse future buckets back to Unsorted on their boundary", () => {
+  const sunday = buildSchedule(new Date(2026, 5, 21, 0, 1, 0), 0);
+  assert.equal(noteSectionKey(sunday, { scheduledDay: "2026-06-21", bucket: "next_week" }), "general");
+
+  const firstOfMonth = buildSchedule(new Date(2026, 6, 1, 0, 1, 0), 0);
+  assert.equal(noteSectionKey(firstOfMonth, { scheduledDay: "2026-07-01", bucket: "next_month" }), "general");
 });

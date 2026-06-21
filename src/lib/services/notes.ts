@@ -22,14 +22,15 @@ async function loadNote(id: string) {
 }
 
 export function serializeNote(n: NoteWithRelations) {
-  // `scheduledDay` (a local calendar day) is the source of truth; the coarse
-  // `bucket` and `suggestedDueDate` are derived hints for agents.
+  // `scheduledDay` (a local calendar day) drives concrete day placement. The
+  // persisted coarse `bucket` preserves broad planning intent (notably Next
+  // Week/Next Month rollover back to Unsorted).
   return {
     id: n.id,
     body: n.body,
     status: n.status,
     pinned: n.pinned,
-    bucket: coarseBucket(n.scheduledDay),
+    bucket: n.bucket,
     scheduledDay: n.scheduledDay,
     doneOn: n.doneOn,
     position: n.position,
