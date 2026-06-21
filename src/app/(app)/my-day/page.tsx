@@ -1,9 +1,15 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
-import { ArrowUpRight, CalendarClock, CheckCircle2, CircleDashed, NotebookPen, Sparkles, Target } from "lucide-react";
+import { ArrowUpRight, CalendarClock, Check, CheckCircle2, CircleDashed, NotebookPen, Sparkles, Target } from "lucide-react";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
+import { updateNote } from "@/lib/services/notes";
+import { moveTicketToDone } from "@/lib/services/tickets";
+import { ymd } from "@/lib/notes-schedule";
+import { HttpError } from "@/lib/api";
+import { assertTicketAccess } from "@/lib/authz";
 import { dueMeta, priorityMeta } from "@/lib/display";
 import { buildMyDayFocusItems, countMyDayUnsortedNotes, getMyDayTicketBuckets, type MyDayNote } from "@/lib/my-day";
 import { Badge, tone } from "@/components/ui/badge";
@@ -12,10 +18,37 @@ import { Avatar } from "@/components/ui/avatar";
 export const metadata: Metadata = { title: "My Day" };
 export const dynamic = "force-dynamic";
 
+async function markMyDayNoteDone(formData: FormData) {
+  "use server";
+  const ctx = await getContext();
+  const noteId = String(formData.get("noteId") ?? "");
+  if (!noteId) return;
+  const note = await db.note.findUnique({ where: { id: noteId }, select: { userId: true } });
+  if (!note || note.userId !== ctx.user.id) throw new HttpError(404, "Note not found");
+  await updateNote(noteId, { doneOn: ymd(new Date()) });
+  revalidatePath("/my-day");
+  revalidatePath("/notes");
+}
+
+async function markMyDayTicketDone(formData: FormData) {
+  "use server";
+  const ctx = await getContext();
+  const ticketId = String(formData.get("ticketId") ?? "");
+  if (!ticketId) return;
+  try {
+    await assertTicketAccess(ctx, ticketId, true);
+    await moveTicketToDone(ticketId, { type: "user", id: ctx.user.id, name: ctx.user.name });
+  } catch (error) {
+    if (!(error instanceof HttpError && error.status === 422 && error.message.includes("No done column"))) throw error;
+  }
+  revalidatePath("/my-day");
+}
+
 type Row = ReturnType<typeof serializeTicket> & {
   boardSlug: string;
   boardName: string;
   boardColor: string;
+  doneColumnId: string | null;
 };
 
 export default async function MyDayPage() {
@@ -33,7 +66,7 @@ export default async function MyDayPage() {
   const [tickets, notes] = await Promise.all([
     db.ticket.findMany({
       where: { board: boardScope, column: { isDone: false }, deletedAt: null },
-      include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true } } },
+      include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true, columns: { where: { isDone: true }, orderBy: { position: "asc" }, select: { id: true } } } } },
       orderBy: { dueDate: "asc" },
     }),
     db.note.findMany({
@@ -57,6 +90,7 @@ export default async function MyDayPage() {
     boardSlug: t.board.slug,
     boardName: t.board.name,
     boardColor: t.board.color,
+    doneColumnId: t.board.columns[0]?.id ?? null,
   }));
   const todayNotes: MyDayNote[] = notes.map((n) => ({
     ...n,
@@ -166,24 +200,23 @@ function FocusCard({ row, index, urgent }: { row: Row; index: number; urgent?: b
   const pr = priorityMeta(row.priority);
   const d = dueMeta(row.dueDate);
   return (
-    <Link
-      href={`/boards/${row.boardSlug}?ticket=${row.id}`}
-      className="group flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"
-    >
-      <span className={urgent ? "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger-soft text-danger" : "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary"}>
-        {index}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-base font-semibold leading-snug">{row.title}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
-          <span className="inline-flex items-center gap-1">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(row.boardColor).dot }} />
-            {row.boardName}
-          </span>
-          <span>{row.column}</span>
-          {row.priority !== "none" && <span style={{ color: pr.color }}>{pr.label}</span>}
+    <div className="group flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
+      <Link href={`/boards/${row.boardSlug}?ticket=${row.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+        <span className={urgent ? "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger-soft text-danger" : "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary"}>
+          {index}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-semibold leading-snug">{row.title}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(row.boardColor).dot }} />
+              {row.boardName}
+            </span>
+            <span>{row.column}</span>
+            {row.priority !== "none" && <span style={{ color: pr.color }}>{pr.label}</span>}
+          </div>
         </div>
-      </div>
+      </Link>
       {d && (
         <Badge tone={d.tone}>
           <CalendarClock className="h-3 w-3" />
@@ -191,30 +224,50 @@ function FocusCard({ row, index, urgent }: { row: Row; index: number; urgent?: b
         </Badge>
       )}
       {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.type === "agent" ? row.assignee.color : undefined} isAgent={row.assignee.type === "agent"} size={26} />}
-    </Link>
+      <form action={markMyDayTicketDone}>
+        <input type="hidden" name="ticketId" value={row.id} />
+        <button
+          type="submit"
+          disabled={!row.doneColumnId}
+          title={row.doneColumnId ? "Mark ticket done" : "No done column configured"}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-success px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-fg-subtle disabled:shadow-none"
+        >
+          <Check className="h-3.5 w-3.5" /> Done
+        </button>
+      </form>
+    </div>
   );
 }
 
 function FocusNoteCard({ note, index }: { note: MyDayNote; index: number }) {
   return (
-    <Link
-      href="/notes"
-      className="group flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary-soft/20 px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"
-    >
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface text-primary">
-        {index}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="line-clamp-2 text-base font-semibold leading-snug">{note.body}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
-          <span className="inline-flex items-center gap-1 text-primary">
-            <NotebookPen className="h-3.5 w-3.5" />
-            Today note
-          </span>
+    <div className="group flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary-soft/20 px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
+      <Link href="/notes" className="flex min-w-0 flex-1 items-center gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface text-primary">
+          {index}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="line-clamp-2 text-base font-semibold leading-snug">{note.body}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
+            <span className="inline-flex items-center gap-1 text-primary">
+              <NotebookPen className="h-3.5 w-3.5" />
+              Today note
+            </span>
+          </div>
         </div>
-      </div>
+      </Link>
       <Badge tone="primary">Note</Badge>
-    </Link>
+      <form action={markMyDayNoteDone}>
+        <input type="hidden" name="noteId" value={note.id} />
+        <button
+          type="submit"
+          title="Mark note done"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-success px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-success/90"
+        >
+          <Check className="h-3.5 w-3.5" /> Done
+        </button>
+      </form>
+    </div>
   );
 }
 

@@ -321,6 +321,22 @@ export async function moveTicket(
   return serialized;
 }
 
+export async function moveTicketToDone(ticketId: string, actor: Actor) {
+  const ticket = await loadTicket(ticketId);
+  const doneColumn = await db.column.findFirst({
+    where: { boardId: ticket.boardId, isDone: true },
+    orderBy: { position: "asc" },
+    select: { id: true },
+  });
+  if (!doneColumn) throw new HttpError(422, "No done column is configured for this board.");
+  const last = await db.ticket.findFirst({
+    where: { columnId: doneColumn.id, deletedAt: null, id: { not: ticketId } },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
+  return moveTicket(ticketId, doneColumn.id, (last?.position ?? -1) + 1, actor, null);
+}
+
 export async function addComment(ticketId: string, body: string, actor: Actor) {
   const ticket = await loadTicket(ticketId);
   const board = await boardCtx(ticket.boardId);

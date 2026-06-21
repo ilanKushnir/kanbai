@@ -1459,7 +1459,7 @@ function NoteRow({
   const style = { transform: CSS.Translate.toString(transform), transition };
   const queued = note.status === "queued";
   const locked = queued || !!note.pending;
-  const done = note.doneOn != null;
+  const done = note.doneOn != null || justDone;
   const [editing, setEditing] = React.useState(false);
   const [body, setBody] = React.useState(note.body);
   const [showFull, setShowFull] = React.useState(false);
