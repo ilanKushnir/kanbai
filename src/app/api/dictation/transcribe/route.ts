@@ -37,10 +37,17 @@ export const POST = handler(async (req: Request) => {
   const meta = languageMeta(form.get("language"));
   const filename = audio instanceof File && audio.name ? audio.name : "dictation.webm";
   const upstream = new FormData();
-  upstream.set("file", audio, filename);
-  upstream.set("model", meta.model);
-  if (meta.whisperLanguage) upstream.set("language", meta.whisperLanguage);
-  upstream.set("response_format", "json");
+  const url = new URL(endpoint);
+  const chirpCompatible = url.pathname.endsWith("/transcribe");
+  if (chirpCompatible) {
+    upstream.set("audio", audio, filename);
+    if (meta.value === "he") upstream.set("prompt", "תמלול עברית");
+  } else {
+    upstream.set("file", audio, filename);
+    upstream.set("model", meta.model);
+    if (meta.whisperLanguage) upstream.set("language", meta.whisperLanguage);
+    upstream.set("response_format", "json");
+  }
 
   const headers: Record<string, string> = {};
   if (process.env.KANBAI_WHISPER_API_KEY) headers.Authorization = `Bearer ${process.env.KANBAI_WHISPER_API_KEY}`;
@@ -49,8 +56,9 @@ export const POST = handler(async (req: Request) => {
   if (!res.ok) {
     throw new HttpError(502, `Whisper backend returned ${res.status}`, "whisper_backend_error");
   }
-  const data = (await res.json()) as { text?: unknown; language?: unknown; duration?: unknown };
-  const text = typeof data.text === "string" ? data.text.trim() : "";
+  const data = (await res.json()) as { text?: unknown; transcript?: unknown; language?: unknown; duration?: unknown };
+  const rawText = typeof data.text === "string" ? data.text : typeof data.transcript === "string" ? data.transcript : "";
+  const text = rawText.trim();
   if (!text) throw new HttpError(422, "No speech was recognized", "empty_transcript");
   return ok({ text, language: data.language ?? meta.value, model: meta.model });
 });
