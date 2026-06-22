@@ -115,7 +115,7 @@ export default async function MyDayPage() {
   const doneToday = doneArchive.groups.find((group) => group.key === ymd(now))?.items.length ?? 0;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 md:py-8">
+    <div className="mx-auto w-full max-w-5xl px-4 pb-24 pt-6 md:px-6 md:pb-8 md:pt-8">
       <header className="relative overflow-hidden rounded-[2rem] border border-border bg-[radial-gradient(circle_at_top_left,var(--color-primary-soft),transparent_34%),linear-gradient(135deg,var(--color-surface),var(--color-surface-2))] p-5 shadow-card md:p-7">
         <div className="absolute right-6 top-6 h-28 w-28 rounded-full bg-primary/10 blur-3xl" />
         <div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
@@ -210,13 +210,13 @@ function FocusCard({ row, index, urgent }: { row: Row; index: number; urgent?: b
   const pr = priorityMeta(row.priority);
   const d = dueMeta(row.dueDate);
   return (
-    <div className="group flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
-      <Link href={`/boards/${row.boardSlug}?ticket=${row.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+    <div className="group rounded-2xl border border-border bg-surface px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
+      <Link href={`/boards/${row.boardSlug}?ticket=${row.id}`} className="flex min-w-0 items-start gap-3">
         <span className={urgent ? "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger-soft text-danger" : "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary"}>
           {index}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-base font-semibold leading-snug">{row.title}</div>
+        <div className="min-w-0 flex-1 text-start" dir="auto">
+          <div className="text-base font-semibold leading-snug break-words">{row.title}</div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
             <span className="inline-flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(row.boardColor).dot }} />
@@ -227,7 +227,7 @@ function FocusCard({ row, index, urgent }: { row: Row; index: number; urgent?: b
           </div>
         </div>
       </Link>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2 pl-12">
         {d && (
           <Badge tone={d.tone}>
             <CalendarClock className="h-3 w-3" />
@@ -236,7 +236,7 @@ function FocusCard({ row, index, urgent }: { row: Row; index: number; urgent?: b
         )}
         <Badge tone="default">Ticket</Badge>
         {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.type === "agent" ? row.assignee.color : undefined} isAgent={row.assignee.type === "agent"} size={26} />}
-        <form action={markMyDayTicketDone}>
+        <form action={markMyDayTicketDone} className="ml-auto">
           <input type="hidden" name="ticketId" value={row.id} />
           <DoneControl disabled={!row.doneColumnId} title={row.doneColumnId ? "Mark ticket done" : "No done column configured"} />
           <span className="sr-only">Done</span>
@@ -248,13 +248,13 @@ function FocusCard({ row, index, urgent }: { row: Row; index: number; urgent?: b
 
 function FocusNoteCard({ note, index }: { note: MyDayNote; index: number }) {
   return (
-    <div className="group flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary-soft/20 px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
-      <Link href="/notes" className="flex min-w-0 flex-1 items-center gap-3">
+    <div className="group rounded-2xl border border-primary/20 bg-primary-soft/20 px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
+      <Link href="/notes" className="flex min-w-0 items-start gap-3">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface text-primary">
           {index}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="line-clamp-2 text-base font-semibold leading-snug">{note.body}</div>
+        <div className="min-w-0 flex-1 text-start" dir="auto">
+          <div className="line-clamp-3 text-base font-semibold leading-snug break-words">{note.body}</div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
             <span className="inline-flex items-center gap-1 text-primary">
               <NotebookPen className="h-3.5 w-3.5" />
@@ -263,9 +263,9 @@ function FocusNoteCard({ note, index }: { note: MyDayNote; index: number }) {
           </div>
         </div>
       </Link>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2 pl-12">
         <Badge tone="primary">Note</Badge>
-        <form action={markMyDayNoteDone}>
+        <form action={markMyDayNoteDone} className="ml-auto">
           <input type="hidden" name="noteId" value={note.id} />
           <DoneControl title="Mark note done" />
         </form>
