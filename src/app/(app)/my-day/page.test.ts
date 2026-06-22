@@ -20,3 +20,12 @@ test("My Day focus ticket cards expose a Done action backed by the ticket done s
   assert.match(ticketCard, /name="ticketId"/);
   assert.match(ticketCard, />\s*Done\s*</);
 });
+
+
+test("My Day done controls are outline-first and completed items render a collapsed Done archive", () => {
+  assert.match(myDayPage, /function DoneControl/);
+  assert.match(myDayPage, /border-success/);
+  assert.match(myDayPage, /bg-success text-white/);
+  assert.match(myDayPage, /<details[^>]*>/);
+  assert.match(myDayPage, /<summary[^>]*>[^]*Done archive/);
+});

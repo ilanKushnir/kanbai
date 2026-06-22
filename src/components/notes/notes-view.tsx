@@ -58,6 +58,7 @@ import { useToast } from "@/components/ui/toast";
 import { ProcessSheet } from "./process-sheet";
 import { useDictation } from "./use-dictation";
 import { api } from "@/lib/client-api";
+import { enqueueOfflineMutation, getOfflineMutations, setOfflineMutations } from "@/lib/offline-queue";
 import { ticketHref } from "@/lib/links";
 import { cn } from "@/lib/utils";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
@@ -451,7 +452,7 @@ export function NotesView({
   const flushingRef = React.useRef(false);
   const flush = React.useCallback(() => {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-    if (flushingRef.current || readQueue().length === 0) return; // single-flight: no concurrent replays
+    if (flushingRef.current || (readQueue().length === 0 && getOfflineMutations().length === 0)) return; // single-flight: no concurrent replays
     flushingRef.current = true;
     (async () => {
       try {
@@ -464,6 +465,17 @@ export function NotesView({
             });
             replaceTemp(item.tempId, note);
             writeQueue(readQueue().filter((x) => x.tempId !== item.tempId));
+          } catch {
+            break; // stay queued; retry next reconnect
+          }
+        }
+        for (const item of getOfflineMutations()) {
+          try {
+            if (item.kind === "note.patch") {
+              const { note } = await api<{ note: NoteT }>(`/api/notes/${item.id}`, { method: "PATCH", body: item.body });
+              upsertNote(note);
+            }
+            setOfflineMutations(getOfflineMutations().filter((x) => x.enqueuedAt !== item.enqueuedAt));
           } catch {
             break; // stay queued; retry next reconnect
           }
@@ -501,8 +513,13 @@ export function NotesView({
       upsertNote(note);
       if (refresh) router.refresh();
     } catch (e) {
-      toast({ title: "Something went wrong", description: e instanceof Error ? e.message : undefined, variant: "error" });
-      router.refresh();
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        enqueueOfflineMutation({ kind: "note.patch", id, body: partial });
+        toast({ title: "Saved offline", description: "It'll sync when you're back online.", variant: "info" });
+      } else {
+        toast({ title: "Something went wrong", description: e instanceof Error ? e.message : undefined, variant: "error" });
+        router.refresh();
+      }
     } finally {
       busyIds.current.delete(id);
     }

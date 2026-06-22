@@ -11,7 +11,7 @@ import { ymd } from "@/lib/notes-schedule";
 import { HttpError } from "@/lib/api";
 import { assertTicketAccess } from "@/lib/authz";
 import { dueMeta, priorityMeta } from "@/lib/display";
-import { buildMyDayFocusItems, countMyDayUnsortedNotes, getMyDayTicketBuckets, type MyDayNote } from "@/lib/my-day";
+import { buildMyDayDoneArchive, buildMyDayFocusItems, countMyDayUnsortedNotes, getMyDayTicketBuckets, type MyDayDoneArchiveGroup, type MyDayNote } from "@/lib/my-day";
 import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 
@@ -63,11 +63,17 @@ export default async function MyDayPage() {
     ? { workspaceId: ctx.workspace.id, archived: false }
     : { workspaceId: ctx.workspace.id, archived: false, access: { some: { userId: ctx.user.id } } };
 
-  const [tickets, notes] = await Promise.all([
+  const [tickets, doneTickets, notes] = await Promise.all([
     db.ticket.findMany({
       where: { board: boardScope, column: { isDone: false }, deletedAt: null },
       include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true, columns: { where: { isDone: true }, orderBy: { position: "asc" }, select: { id: true } } } } },
       orderBy: { dueDate: "asc" },
+    }),
+    db.ticket.findMany({
+      where: { board: boardScope, column: { isDone: true }, deletedAt: null },
+      include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true, columns: { where: { isDone: true }, orderBy: { position: "asc" }, select: { id: true } } } } },
+      orderBy: { updatedAt: "desc" },
+      take: 60,
     }),
     db.note.findMany({
       where: { userId: ctx.user.id, deletedAt: null },
@@ -85,13 +91,15 @@ export default async function MyDayPage() {
     }),
   ]);
 
-  const rows: Row[] = tickets.map((t) => ({
+  const toRow = (t: typeof tickets[number]): Row => ({
     ...serializeTicket(t, usersById),
     boardSlug: t.board.slug,
     boardName: t.board.name,
     boardColor: t.board.color,
     doneColumnId: t.board.columns[0]?.id ?? null,
-  }));
+  });
+  const rows: Row[] = tickets.map(toRow);
+  const doneRows: Row[] = doneTickets.map((t) => ({ ...toRow(t), completedOn: ymd(t.updatedAt) }));
   const todayNotes: MyDayNote[] = notes.map((n) => ({
     ...n,
     createdAt: n.createdAt.toISOString(),
@@ -103,7 +111,8 @@ export default async function MyDayPage() {
   const inboxCount = countMyDayUnsortedNotes({ now, notes: todayNotes });
   const onDeck = week.slice(0, 6);
   const dateLabel = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  const doneToday = 0;
+  const doneArchive = buildMyDayDoneArchive({ now, tickets: doneRows, notes: todayNotes, limit: 12 });
+  const doneToday = doneArchive.groups.find((group) => group.key === ymd(now))?.items.length ?? 0;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 md:py-8">
@@ -175,6 +184,7 @@ export default async function MyDayPage() {
               {onDeck.length ? onDeck.map((r) => <DeckRow key={r.id} row={r} />) : <p className="text-sm text-fg-subtle">No dated tickets later this week.</p>}
             </div>
           </section>
+          <DoneArchive archive={doneArchive} />
           <section className="rounded-2xl border border-border bg-surface/40 p-4 text-sm text-fg-muted">
             <div className="mb-2 flex items-center gap-2 font-medium text-fg">
               <CheckCircle2 className="h-4 w-4 text-success" /> Focus rule
@@ -217,24 +227,21 @@ function FocusCard({ row, index, urgent }: { row: Row; index: number; urgent?: b
           </div>
         </div>
       </Link>
-      {d && (
-        <Badge tone={d.tone}>
-          <CalendarClock className="h-3 w-3" />
-          {d.label}
-        </Badge>
-      )}
-      {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.type === "agent" ? row.assignee.color : undefined} isAgent={row.assignee.type === "agent"} size={26} />}
-      <form action={markMyDayTicketDone}>
-        <input type="hidden" name="ticketId" value={row.id} />
-        <button
-          type="submit"
-          disabled={!row.doneColumnId}
-          title={row.doneColumnId ? "Mark ticket done" : "No done column configured"}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-success px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-fg-subtle disabled:shadow-none"
-        >
-          <Check className="h-3.5 w-3.5" /> Done
-        </button>
-      </form>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {d && (
+          <Badge tone={d.tone}>
+            <CalendarClock className="h-3 w-3" />
+            {d.label}
+          </Badge>
+        )}
+        <Badge tone="default">Ticket</Badge>
+        {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.type === "agent" ? row.assignee.color : undefined} isAgent={row.assignee.type === "agent"} size={26} />}
+        <form action={markMyDayTicketDone}>
+          <input type="hidden" name="ticketId" value={row.id} />
+          <DoneControl disabled={!row.doneColumnId} title={row.doneColumnId ? "Mark ticket done" : "No done column configured"} />
+          <span className="sr-only">Done</span>
+        </form>
+      </div>
     </div>
   );
 }
@@ -256,18 +263,59 @@ function FocusNoteCard({ note, index }: { note: MyDayNote; index: number }) {
           </div>
         </div>
       </Link>
-      <Badge tone="primary">Note</Badge>
-      <form action={markMyDayNoteDone}>
-        <input type="hidden" name="noteId" value={note.id} />
-        <button
-          type="submit"
-          title="Mark note done"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-success px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-success/90"
-        >
-          <Check className="h-3.5 w-3.5" /> Done
-        </button>
-      </form>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <Badge tone="primary">Note</Badge>
+        <form action={markMyDayNoteDone}>
+          <input type="hidden" name="noteId" value={note.id} />
+          <DoneControl title="Mark note done" />
+        </form>
+      </div>
     </div>
+  );
+}
+
+
+function DoneControl({ disabled, title }: { disabled?: boolean; title: string }) {
+  return (
+    <button
+      type="submit"
+      disabled={disabled}
+      title={title}
+      data-filled-class="bg-success text-white"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-success bg-transparent px-2.5 py-1.5 text-xs font-semibold text-success shadow-sm transition-colors hover:bg-success hover:text-white focus:bg-success focus:text-white active:bg-success active:text-white disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-2 disabled:text-fg-subtle disabled:shadow-none"
+    >
+      <Check className="h-3.5 w-3.5" /> Done
+    </button>
+  );
+}
+
+function DoneArchive({ archive }: { archive: { total: number; hasMore: boolean; groups: MyDayDoneArchiveGroup<Row, MyDayNote>[] } }) {
+  return (
+    <details className="rounded-2xl border border-border bg-surface/55 p-4">
+      <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+        Done archive · {archive.total}
+      </summary>
+      <div className="mt-3 space-y-3">
+        {archive.groups.length === 0 ? (
+          <p className="text-sm text-fg-subtle">Nothing completed yet.</p>
+        ) : (
+          archive.groups.map((group) => (
+            <div key={group.key}>
+              <div className="mb-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-fg-subtle">{group.label}</div>
+              <div className="space-y-1.5">
+                {group.items.map((item) => (
+                  <div key={`${item.kind}-${item.id}`} className="rounded-xl border border-success/20 bg-success-soft/35 px-3 py-2 text-sm">
+                    <div className="line-clamp-2 font-medium text-fg">{item.kind === "ticket" ? item.ticket.title : item.note.body}</div>
+                    <div className="mt-1 text-xs text-success">{item.kind === "ticket" ? "Ticket" : "Note"} · done</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+        )}
+        {archive.hasMore && <div className="text-xs font-medium text-primary">Show more in future archive view</div>}
+      </div>
+    </details>
   );
 }
 

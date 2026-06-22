@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildMyDayDoneArchive,
   buildMyDayFocusItems,
   countMyDayUnsortedNotes,
   type MyDayNote,
@@ -60,4 +61,51 @@ test("My Day unsorted count matches Notes general section and excludes undated t
   const tickets: MyDayTicket[] = [ticket({ id: "undated-ticket", dueDate: null })];
 
   assert.equal(countMyDayUnsortedNotes({ now: todayNoon, notes, tickets }), 2);
+});
+
+
+test("My Day excludes items completed before today from the active focus lane", () => {
+  const yesterday = "2026-06-20";
+  const items = buildMyDayFocusItems({
+    now: todayNoon,
+    notes: [
+      note({ id: "done-yesterday", doneOn: yesterday }),
+      note({ id: "done-today", doneOn: today }),
+    ],
+    tickets: [
+      ticket({ id: "open-ticket" }),
+    ],
+    userId: "user-1",
+  });
+
+  assert.deepEqual(
+    items.map((item) => `${item.kind}:${item.id}`),
+    ["ticket:open-ticket", "note:done-today"],
+  );
+});
+
+test("My Day groups completed tickets and notes by completion day, collapsed and initially limited", () => {
+  const archive = buildMyDayDoneArchive({
+    now: todayNoon,
+    limit: 2,
+    notes: [
+      note({ id: "note-today", doneOn: today }),
+      note({ id: "note-yesterday", doneOn: "2026-06-20" }),
+      note({ id: "note-old", doneOn: "2026-06-01" }),
+    ],
+    tickets: [
+      { ...ticket({ id: "ticket-yesterday" }), completedOn: "2026-06-20" },
+      { ...ticket({ id: "ticket-old" }), completedOn: "2026-06-01" },
+    ],
+  });
+
+  assert.equal(archive.collapsedByDefault, true);
+  assert.equal(archive.total, 5);
+  assert.equal(archive.hasMore, true);
+  assert.deepEqual(archive.groups.map((group) => group.key), ["2026-06-21", "2026-06-20"]);
+  assert.deepEqual(archive.groups.flatMap((group) => group.items.map((item) => `${item.kind}:${item.id}`)), [
+    "note:note-today",
+    "ticket:ticket-yesterday",
+    "note:note-yesterday",
+  ]);
 });

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { NotebookPen, Columns3, Bot, Plus, Search, CalendarDays } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { CommandPalette } from "@/components/command-palette";
@@ -42,8 +42,16 @@ export function AppShell({
 }) {
   const userMenuProps = { userName, userEmail, isManager, isSystemAdmin, workspaces };
   const pathname = usePathname();
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const router = useRouter();
+  const [optimisticPath, setOptimisticPath] = React.useState<string | null>(null);
+  const activePath = optimisticPath && optimisticPath !== pathname ? optimisticPath : pathname;
+  const isActive = (href: string) => activePath === href || activePath.startsWith(href + "/");
   const [paletteOpen, setPaletteOpen] = React.useState(false);
+
+
+  React.useEffect(() => {
+    for (const item of MOBILE_NAV) router.prefetch(item.href);
+  }, [router]);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -65,7 +73,7 @@ export function AppShell({
   }, [paletteOpen]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh min-h-dvh overflow-hidden">
       {/* ── Desktop sidebar ───────────────────────────── */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-surface/60 backdrop-blur-sm">
         <div className="px-4 h-16 flex items-center">
@@ -167,7 +175,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y pb-20 md:pb-0">{children}</main>
+        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y pb-[calc(5rem+env(safe-area-inset-bottom))] scroll-pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0 md:scroll-pb-0">{children}</main>
       </div>
 
       {/* ── Mobile bottom nav ───────────────────────────── */}
@@ -184,6 +192,7 @@ export function AppShell({
                   "relative flex flex-col items-center gap-0.5 py-2 text-[0.625rem] font-medium transition-colors",
                   active ? "text-primary" : "text-fg-subtle",
                 )}
+                onClick={() => setOptimisticPath(item.href)}
               >
                 <span className="relative">
                   <Icon className="h-5 w-5" />

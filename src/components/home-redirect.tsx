@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { KanbaiMark } from "@/components/brand/Logo";
 
-/** Signed-in landing: a chosen page if set, else My Day on desktop / Notes on mobile. */
+/** Signed-in landing: a chosen page if set, else My Day. */
 export function HomeRedirect({ preferred }: { preferred?: string | null }) {
   const router = useRouter();
   useEffect(() => {
@@ -12,8 +12,7 @@ export function HomeRedirect({ preferred }: { preferred?: string | null }) {
       router.replace(`/${preferred}`);
       return;
     }
-    const mobile = window.matchMedia("(max-width: 767px)").matches;
-    router.replace(mobile ? "/notes" : "/my-day");
+    router.replace("/my-day");
   }, [router, preferred]);
 
   return (
