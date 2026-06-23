@@ -547,9 +547,22 @@ export function NotesView({
   }
 
   function toggleDone(note: NoteT) {
-    const nextDone = note.doneOn == null;
-    if (!nextDone) {
+    // A note counts as "done" if it's persisted done OR mid-completion (the delayed
+    // landing timer is still pending). Either way a second click must UNDO it —
+    // otherwise clicking an already-struck note during the ~1.25s settle window
+    // just re-armed completion instead of reverting.
+    const pending = doneTimers.current.has(note.id);
+    if (note.doneOn != null || pending) {
       clearDoneAnimation(note.id);
+      setDoneLandingId((id) => (id === note.id ? null : id));
+      setRecentlyDone((s) => {
+        if (!s.has(note.id)) return s;
+        const next = new Set(s);
+        next.delete(note.id);
+        return next;
+      });
+      // Always clear on the server too: works whether completion is still pending
+      // (harmless no-op) or already landed (actually un-dones it).
       patchNote(note.id, { doneOn: null });
       return;
     }
