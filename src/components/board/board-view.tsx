@@ -527,7 +527,7 @@ export function BoardView({
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
       >
-        <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto px-4 pb-4 md:px-6 lg:px-8">
+        <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden px-4 pb-4 md:px-6 lg:px-8">
           {grid.map(({ col, allIds, visibleIds }, i) => (
             <Column
               key={col.id}
@@ -776,7 +776,7 @@ function Column({
   const hiddenCount = visibleIds.length - shownIds.length;
 
   return (
-    <div className="group/col flex w-[19rem] shrink-0 flex-col">
+    <div className="group/col flex w-[19rem] min-h-0 shrink-0 flex-col">
       <div className="mb-2 flex items-center gap-2 px-1">
         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: dot }} />
         {renaming ? (
@@ -894,7 +894,11 @@ function Column({
       <div
         ref={setNodeRef}
         className={cn(
-          "group/col flex min-h-24 flex-1 flex-col gap-2 rounded-2xl border p-2 transition-colors",
+          // min-h-0 + overflow-y-auto lets each column scroll its OWN cards and fill
+          // the board height, so every column — even an empty one — is a full-height
+          // drop target, instead of a tall column overflowing and stranding the
+          // shorter/empty columns above the fold.
+          "group/col flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-2xl border p-2 transition-colors",
           "border-transparent bg-surface-2/50",
           isOver && "border-primary/40 bg-primary-soft/40",
           overLimit && "ring-1 ring-danger/30",
