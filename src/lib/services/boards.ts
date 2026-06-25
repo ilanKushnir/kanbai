@@ -5,7 +5,7 @@ import { shortToken } from "@/lib/password";
 import { ticketInclude, serializeTicket, serializePublicTicket, type UserLite } from "@/lib/serialize";
 import { parseSubStates, stringifySubStates } from "@/lib/substates";
 import { onMutation } from "@/lib/snapshots";
-import type { Actor } from "./tickets";
+import { reconcileColumnSubStates, type Actor } from "./tickets";
 
 async function uniqueBoardSlug(workspaceId: string, name: string) {
   const base = slugify(name);
@@ -192,6 +192,8 @@ export async function updateBoardColumn(
   if (input.subStates !== undefined) data.subStates = stringifySubStates(input.subStates);
 
   const column = await db.column.update({ where: { id: columnId }, data });
+  // Changing the band list can orphan tickets' sub-states — snap them back valid.
+  if (input.subStates !== undefined) await reconcileColumnSubStates(columnId);
   await logActivity({
     actor,
     action: "column.updated",

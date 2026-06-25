@@ -11,7 +11,12 @@ import {
   useSensor,
   useSensors,
   useDroppable,
-  closestCorners,
+  pointerWithin,
+  rectIntersection,
+  closestCenter,
+  getFirstCollision,
+  type Announcements,
+  type CollisionDetection,
   type DragStartEvent,
   type DragOverEvent,
   type DragEndEvent,
@@ -53,9 +58,36 @@ import type { SerializedTicket } from "@/lib/serialize";
 
 type AgentLite = { id: string; name: string; color: string; kind: string };
 type ColumnMeta = { id: string; name: string; isDone: boolean; wipLimit: number | null; subStates: string[] };
+type SectionData = { key: string; sub: string | null; allIds: string[]; visibleIds: string[] };
 
 /** Collapse a column's older cards behind a "show older" toggle past this count. */
 const COLUMN_VISIBLE_LIMIT = 12;
+
+// A "section" is a drop container: a plain column is one section (key = columnId);
+// a column with sub-states is one section per sub-state (key = columnId\0subState).
+// The NUL separator can't appear in a cuid columnId or a user-typed sub-state.
+const SECTION_SEP = "\u0000";
+
+function sectionKey(colId: string, sub: string | null): string {
+  return sub == null ? colId : `${colId}${SECTION_SEP}${sub}`;
+}
+function parseSection(key: string): { colId: string; sub: string | null } {
+  const i = key.indexOf(SECTION_SEP);
+  return i === -1 ? { colId: key, sub: null } : { colId: key.slice(0, i), sub: key.slice(i + 1) };
+}
+function columnSectionKeys(col: { id: string; subStates: string[] }): string[] {
+  return col.subStates.length ? col.subStates.map((s) => sectionKey(col.id, s)) : [col.id];
+}
+/** Flattened column order (sections concatenated in sub-state order) — matches the
+ *  server's column-wide `position` numbering, so an index here is a valid position. */
+function columnFlat(map: Record<string, string[]>, col: { id: string; subStates: string[] }): string[] {
+  return columnSectionKeys(col).flatMap((k) => map[k] ?? []);
+}
+/** A ticket's effective sub-state: keep a valid choice, else the first (mirrors the server). */
+function effectiveSub(subStates: string[], sub: string | null | undefined): string | null {
+  if (!subStates.length) return null;
+  return sub && subStates.includes(sub) ? sub : subStates[0];
+}
 
 type Filters = {
   q: string;
@@ -112,16 +144,24 @@ export function BoardView({
   const [cols, setCols] = React.useState<ColumnMeta[]>(() =>
     board.columns.map((c) => ({ id: c.id, name: c.name, isDone: c.isDone, wipLimit: c.wipLimit, subStates: c.subStates ?? [] })),
   );
-  // The card whose sub-state chooser is open (set on drop into a sub-stated column).
-  const [chooserId, setChooserId] = React.useState<string | null>(null);
   const [ticketsById, setTicketsById] = React.useState<Record<string, SerializedTicket>>(() => {
     const m: Record<string, SerializedTicket> = {};
     board.columns.forEach((c) => c.tickets.forEach((t) => (m[t.id] = t)));
     return m;
   });
+  // containers maps a section key → ordered ticket ids. Empty sections still get a
+  // key so they register as drop targets and can receive cards.
   const [containers, setContainers] = React.useState<Record<string, string[]>>(() => {
     const m: Record<string, string[]> = {};
-    board.columns.forEach((c) => (m[c.id] = c.tickets.map((t) => t.id)));
+    board.columns.forEach((c) => {
+      const subs = c.subStates ?? [];
+      if (subs.length) {
+        subs.forEach((s) => (m[sectionKey(c.id, s)] = []));
+        c.tickets.forEach((t) => m[sectionKey(c.id, effectiveSub(subs, t.subState)!)].push(t.id));
+      } else {
+        m[c.id] = c.tickets.map((t) => t.id);
+      }
+    });
     return m;
   });
   const containersRef = React.useRef(containers);
@@ -131,6 +171,9 @@ export function BoardView({
   };
 
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  // Snapshot of containers at drag start, so a cancel (Escape) or a release onto
+  // nothing reverts the optimistic cross-container moves made during onDragOver.
+  const dragSnapshot = React.useRef<Record<string, string[]>>({});
   const [selectedId, setSelectedId] = React.useState<string | null>(initialTicketId ?? null);
   const [celebrateId, setCelebrateId] = React.useState<string | null>(null);
   const [focusedId, setFocusedId] = React.useState<string | null>(null);
@@ -167,13 +210,48 @@ export function BoardView({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  // Pointer-first collision detection (the canonical dnd-kit multi-container
+  // strategy). Whatever is under the cursor wins — so empty columns AND empty
+  // sub-state bands are real drop targets — and within a filled container we fall
+  // back to the closest card for smooth insertion.
+  const collisionDetection = React.useCallback<CollisionDetection>((args) => {
+    const pointer = pointerWithin(args);
+    const intersections = pointer.length ? pointer : rectIntersection(args);
+    let overId = getFirstCollision(intersections, "id");
+    // Dead space (between columns, below the bands of a sub-stated column): fall
+    // back to the nearest droppable so a release never silently lands on nothing.
+    if (overId == null) overId = getFirstCollision(closestCenter(args), "id");
+    if (overId != null) {
+      const cont = containersRef.current;
+      const key = String(overId);
+      if (key in cont && cont[key].length > 0) {
+        const closest = closestCenter({
+          ...args,
+          droppableContainers: args.droppableContainers.filter(
+            (c) => c.id !== overId && cont[key].includes(String(c.id)),
+          ),
+        });
+        const inner = getFirstCollision(closest, "id");
+        if (inner != null) overId = inner;
+      }
+      return [{ id: overId }];
+    }
+    return [];
+  }, []);
+
   function keyOf(map: Record<string, string[]>, id: string): string | null {
     if (id in map) return id;
     return Object.keys(map).find((k) => map[k].includes(id)) ?? null;
   }
 
   function onDragStart(e: DragStartEvent) {
+    dragSnapshot.current = containersRef.current;
     setActiveId(String(e.active.id));
+  }
+
+  function onDragCancel() {
+    setActiveId(null);
+    setCont(dragSnapshot.current);
   }
 
   function onDragOver(e: DragOverEvent) {
@@ -199,7 +277,11 @@ export function BoardView({
   function onDragEnd(e: DragEndEvent) {
     setActiveId(null);
     const { active, over } = e;
-    if (!over) return;
+    if (!over) {
+      // Released onto nothing — undo the optimistic onDragOver reshuffle.
+      setCont(dragSnapshot.current);
+      return;
+    }
     const activeId = String(active.id);
     const overId = String(over.id);
     const prev = containersRef.current;
@@ -220,29 +302,28 @@ export function BoardView({
 
     const finalContainer = keyOf(result, activeId);
     if (!finalContainer) return;
-    const finalIndex = result[finalContainer].indexOf(activeId);
+    const { colId, sub } = parseSection(finalContainer);
+    const col = cols.find((c) => c.id === colId);
+    const position = col ? columnFlat(result, col).indexOf(activeId) : result[finalContainer].indexOf(activeId);
 
-    const col = cols.find((c) => c.id === finalContainer);
-    if (liveRef.current) liveRef.current.textContent = `Moved ${ticketsById[activeId]?.title ?? "card"} to ${col?.name ?? ""}`;
+    // Drag moves are announced via DndContext's accessibility.announcements.
     if (col?.isDone) {
       setCelebrateId(activeId);
       setTimeout(() => setCelebrateId((id) => (id === activeId ? null : id)), 1100);
     }
 
-    // Resolve the sub-state for the destination column (Jira-like): keep a valid
-    // choice, else default to the first; surface the chooser so it can be changed.
+    // The destination band already encodes the sub-state — no chooser needed.
     let subState: string | null | undefined;
     if (col?.subStates.length) {
-      const cur = ticketsById[activeId]?.subState;
-      subState = cur && col.subStates.includes(cur) ? cur : col.subStates[0];
-      setTicketsById((m) => ({ ...m, [activeId]: { ...m[activeId], subState: subState! } }));
-      setChooserId(activeId);
+      subState = sub && col.subStates.includes(sub) ? sub : col.subStates[0];
+      if ((ticketsById[activeId]?.subState ?? null) !== subState)
+        setTicketsById((m) => ({ ...m, [activeId]: { ...m[activeId], subState: subState! } }));
     } else if (ticketsById[activeId]?.subState) {
       subState = null; // moved to a column without sub-states → clear it
       setTicketsById((m) => ({ ...m, [activeId]: { ...m[activeId], subState: null } }));
     }
 
-    void persistMove(activeId, finalContainer, finalIndex, subState);
+    void persistMove(activeId, colId, position, subState);
   }
 
   async function persistMove(ticketId: string, columnId: string, position: number, subState?: string | null) {
@@ -257,23 +338,38 @@ export function BoardView({
     }
   }
 
-  async function setSubState(ticketId: string, sub: string) {
-    setTicketsById((m) => ({ ...m, [ticketId]: { ...m[ticketId], subState: sub } }));
-    setChooserId((c) => (c === ticketId ? null : c));
-    try {
-      const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}`, {
-        method: "PATCH",
-        body: { subState: sub },
-      });
-      setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
-    } catch {
-      toast({ title: "Couldn't set state", variant: "error" });
-      router.refresh();
-    }
-  }
-
   async function setColumnSubStates(columnId: string, subStates: string[]) {
+    const col = cols.find((c) => c.id === columnId);
+    // Re-key this column's sections, preserving each card's valid sub-state choice
+    // and defaulting the rest to the first band.
+    const prev = containersRef.current;
+    const oldKeys = col ? columnSectionKeys(col) : [columnId];
+    const ids = oldKeys.flatMap((k) => prev[k] ?? []);
+    const next = { ...prev };
+    oldKeys.forEach((k) => delete next[k]);
+    if (subStates.length) {
+      subStates.forEach((s) => (next[sectionKey(columnId, s)] = []));
+      ids.forEach((id) => next[sectionKey(columnId, effectiveSub(subStates, ticketsById[id]?.subState)!)].push(id));
+    } else {
+      next[columnId] = ids;
+    }
+    setCont(next);
     setCols((cs) => cs.map((c) => (c.id === columnId ? { ...c, subStates } : c)));
+    // Snap each card's own sub-state onto a valid value too, so the modal and the
+    // "Move" menu don't show an orphaned/stale choice (the server does the same).
+    setTicketsById((m) => {
+      let changed = false;
+      const mm = { ...m };
+      ids.forEach((id) => {
+        if (!mm[id]) return;
+        const resolved = subStates.length ? effectiveSub(subStates, mm[id].subState) : null;
+        if ((mm[id].subState ?? null) !== (resolved ?? null)) {
+          mm[id] = { ...mm[id], subState: resolved };
+          changed = true;
+        }
+      });
+      return changed ? mm : m;
+    });
     try {
       await api(`/api/columns/${columnId}`, { method: "PATCH", body: { subStates } });
     } catch {
@@ -283,43 +379,29 @@ export function BoardView({
 
   /** Move via the "Move to" menu (no drag): mirrors onDragEnd's optimistic update. */
   function moveTicketTo(ticketId: string, columnId: string, subState?: string) {
+    const col = cols.find((c) => c.id === columnId);
+    const targetSub = effectiveSub(col?.subStates ?? [], subState);
+    const targetKey = sectionKey(columnId, targetSub);
     const prev = containersRef.current;
     const from = keyOf(prev, ticketId);
-    const sameCol = from === columnId;
-    let position: number;
-    if (sameCol) {
-      position = prev[columnId].indexOf(ticketId);
-    } else {
+    const sameCol = from ? parseSection(from).colId === columnId : false;
+    if (from !== targetKey) {
       const next = { ...prev };
       if (from) next[from] = next[from].filter((x) => x !== ticketId);
-      next[columnId] = [...(next[columnId] ?? []), ticketId];
+      next[targetKey] = [...(next[targetKey] ?? []), ticketId];
       setCont(next);
-      position = next[columnId].length - 1;
     }
-
-    const col = cols.find((c) => c.id === columnId);
-    let resolved: string | null;
-    if (col?.subStates.length) {
-      if (subState && col.subStates.includes(subState)) {
-        resolved = subState;
-      } else {
-        resolved = col.subStates[0];
-        if (!sameCol) setChooserId(ticketId); // moved in without choosing → surface the chooser
-      }
-      setTicketsById((m) => ({ ...m, [ticketId]: { ...m[ticketId], subState: resolved } }));
-    } else {
-      resolved = null;
-      if (ticketsById[ticketId]?.subState) {
-        setTicketsById((m) => ({ ...m, [ticketId]: { ...m[ticketId], subState: null } }));
-      }
+    if ((ticketsById[ticketId]?.subState ?? null) !== targetSub) {
+      setTicketsById((m) => ({ ...m, [ticketId]: { ...m[ticketId], subState: targetSub } }));
     }
-
     if (col?.isDone && !sameCol) {
       setCelebrateId(ticketId);
       setTimeout(() => setCelebrateId((id) => (id === ticketId ? null : id)), 1100);
     }
-    if (liveRef.current) liveRef.current.textContent = `Moved ${ticketsById[ticketId]?.title ?? "card"} to ${col?.name ?? ""}`;
-    void persistMove(ticketId, columnId, position, resolved);
+    if (liveRef.current)
+      liveRef.current.textContent = `Moved ${ticketsById[ticketId]?.title ?? "card"} to ${col?.name ?? ""}${targetSub ? " · " + targetSub : ""}`;
+    const flat = col ? columnFlat(containersRef.current, col) : containersRef.current[targetKey] ?? [];
+    void persistMove(ticketId, columnId, flat.indexOf(ticketId), targetSub);
   }
 
   async function handleCreate(columnId: string, title: string) {
@@ -327,8 +409,11 @@ export function BoardView({
       const { ticket } = await api<{ ticket: SerializedTicket }>("/api/tickets", {
         body: { boardId: board.id, columnId, title },
       });
-      setTicketsById((m) => ({ ...m, [ticket.id]: ticket }));
-      setCont({ ...containersRef.current, [columnId]: [...containersRef.current[columnId], ticket.id] });
+      const col = cols.find((c) => c.id === columnId);
+      const sub = col?.subStates.length ? col.subStates[0] : null;
+      const key = sectionKey(columnId, sub);
+      setTicketsById((m) => ({ ...m, [ticket.id]: { ...ticket, subState: sub } }));
+      setCont({ ...containersRef.current, [key]: [...(containersRef.current[key] ?? []), ticket.id] });
     } catch {
       toast({ title: "Couldn't add card", variant: "error" });
       router.refresh();
@@ -394,7 +479,9 @@ export function BoardView({
       await api(`/api/columns/${columnId}`, { method: "DELETE" });
       setCols((cs) => cs.filter((c) => c.id !== columnId));
       const next = { ...containersRef.current };
-      delete next[columnId];
+      Object.keys(next).forEach((k) => {
+        if (parseSection(k).colId === columnId) delete next[k];
+      });
       setCont(next);
       toast({ title: "Column deleted", variant: "default" });
     } catch (e) {
@@ -404,11 +491,13 @@ export function BoardView({
 
   function handleTicketUpdated(t: SerializedTicket) {
     setTicketsById((m) => ({ ...m, [t.id]: t }));
+    const col = cols.find((c) => c.id === t.columnId);
+    const targetKey = sectionKey(t.columnId, effectiveSub(col?.subStates ?? [], t.subState));
     const cur = keyOf(containersRef.current, t.id);
-    if (cur && cur !== t.columnId) {
+    if (cur !== targetKey) {
       const next = { ...containersRef.current };
-      next[cur] = next[cur].filter((id) => id !== t.id);
-      next[t.columnId] = [...(next[t.columnId] ?? []), t.id];
+      if (cur) next[cur] = next[cur].filter((id) => id !== t.id);
+      next[targetKey] = [...(next[targetKey] ?? []), t.id];
       setCont(next);
     }
   }
@@ -423,20 +512,22 @@ export function BoardView({
   async function moveTicketToDone(ticketId: string): Promise<SerializedTicket> {
     const doneColumn = cols.find((c) => c.isDone);
     if (!doneColumn) throw new Error("No done column is configured for this board.");
+    const sub = doneColumn.subStates.length ? doneColumn.subStates[0] : null;
+    const targetKey = sectionKey(doneColumn.id, sub);
     const prev = containersRef.current;
     const from = keyOf(prev, ticketId);
-    const position = doneColumn.id === from
-      ? Math.max(0, prev[doneColumn.id]?.indexOf(ticketId) ?? 0)
-      : (prev[doneColumn.id]?.length ?? 0);
+    const sameCol = from ? parseSection(from).colId === doneColumn.id : false;
+    const flat = columnFlat(prev, doneColumn);
+    const position = sameCol ? Math.max(0, flat.indexOf(ticketId)) : flat.length;
     const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}/move`, {
-      body: { columnId: doneColumn.id, position, subState: null },
+      body: { columnId: doneColumn.id, position, subState: sub },
     });
 
     setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
-    if (from && from !== doneColumn.id) {
+    if (!sameCol) {
       const next = { ...containersRef.current };
-      next[from] = next[from].filter((id) => id !== ticketId);
-      next[doneColumn.id] = [...(next[doneColumn.id] ?? []), ticketId];
+      if (from) next[from] = next[from].filter((id) => id !== ticketId);
+      next[targetKey] = [...(next[targetKey] ?? []), ticketId];
       setCont(next);
       setCelebrateId(ticketId);
       setTimeout(() => setCelebrateId((id) => (id === ticketId ? null : id)), 1100);
@@ -500,14 +591,41 @@ export function BoardView({
   }, [focusedId]);
 
   const grid = cols.map((col) => {
-    const ids = containers[col.id] ?? [];
-    const visibleIds = activeFilterCount ? ids.filter((id) => ticketsById[id] && matches(ticketsById[id])) : ids;
-    return { col, allIds: ids, visibleIds };
+    const sections: SectionData[] = columnSectionKeys(col).map((key, i) => {
+      const ids = containers[key] ?? [];
+      const visibleIds = activeFilterCount ? ids.filter((id) => ticketsById[id] && matches(ticketsById[id])) : ids;
+      return { key, sub: col.subStates.length ? col.subStates[i] : null, allIds: ids, visibleIds };
+    });
+    return {
+      col,
+      sections,
+      allIds: sections.flatMap((s) => s.allIds),
+      visibleIds: sections.flatMap((s) => s.visibleIds),
+    };
   });
   gridRef.current = grid.map((g) => ({ colId: g.col.id, ids: g.visibleIds }));
 
   const activeTicket = activeId ? ticketsById[activeId] : null;
   const selectedTicket = selectedId ? ticketsById[selectedId] : null;
+
+  // Human-readable screen-reader announcements (the droppable ids embed a NUL
+  // separator + sub-state, which would otherwise be read verbatim).
+  const describeOver = (id: string) => {
+    const { colId, sub } = parseSection(keyOf(containersRef.current, id) ?? id);
+    const col = cols.find((c) => c.id === colId);
+    return `${col?.name ?? "column"}${sub ? " · " + sub : ""}`;
+  };
+  const cardTitle = (id: string) => ticketsById[id]?.title ?? "card";
+  const announcements: Announcements = {
+    onDragStart: ({ active }) => `Picked up ${cardTitle(String(active.id))}.`,
+    onDragOver: ({ active, over }) =>
+      over ? `${cardTitle(String(active.id))} over ${describeOver(String(over.id))}.` : undefined,
+    onDragEnd: ({ active, over }) =>
+      over
+        ? `Dropped ${cardTitle(String(active.id))} in ${describeOver(String(over.id))}.`
+        : `Dropped ${cardTitle(String(active.id))}.`,
+    onDragCancel: ({ active }) => `Cancelled moving ${cardTitle(String(active.id))}.`,
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -522,25 +640,26 @@ export function BoardView({
       <DndContext
         id="kanbai-board"
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={collisionDetection}
+        accessibility={{ announcements }}
         onDragStart={onDragStart}
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
+        onDragCancel={onDragCancel}
       >
         <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden px-4 pb-4 md:px-6 lg:px-8">
-          {grid.map(({ col, allIds, visibleIds }, i) => (
+          {grid.map(({ col, sections, allIds }, i) => (
             <Column
               key={col.id}
               col={col}
               index={i}
               total={cols.length}
               totalCount={allIds.length}
-              visibleIds={visibleIds}
-              allIds={allIds}
+              sections={sections}
               ticketsById={ticketsById}
               celebrateId={celebrateId}
               focusedId={focusedId}
-              chooserId={chooserId}
+              dragging={activeId != null}
               allColumns={cols}
               onMoveTo={moveTicketTo}
               onCardClick={(id) => setSelectedId(id)}
@@ -549,8 +668,6 @@ export function BoardView({
               onSetWip={(n) => setWip(col.id, n)}
               onToggleDone={(d) => toggleDone(col.id, d)}
               onSetSubStates={(s) => setColumnSubStates(col.id, s)}
-              onSetCardSubState={setSubState}
-              onToggleChooser={(id) => setChooserId((c) => (c === id ? null : id))}
               onMove={(dir) => moveColumn(col.id, dir)}
               onDelete={() => deleteColumn(col.id)}
             />
@@ -722,12 +839,11 @@ function Column({
   index,
   total,
   totalCount,
-  visibleIds,
-  allIds,
+  sections,
   ticketsById,
   celebrateId,
   focusedId,
-  chooserId,
+  dragging,
   allColumns,
   onMoveTo,
   onCardClick,
@@ -736,8 +852,6 @@ function Column({
   onSetWip,
   onToggleDone,
   onSetSubStates,
-  onSetCardSubState,
-  onToggleChooser,
   onMove,
   onDelete,
 }: {
@@ -745,12 +859,11 @@ function Column({
   index: number;
   total: number;
   totalCount: number;
-  visibleIds: string[];
-  allIds: string[];
+  sections: SectionData[];
   ticketsById: Record<string, SerializedTicket>;
   celebrateId: string | null;
   focusedId: string | null;
-  chooserId: string | null;
+  dragging: boolean;
   allColumns: ColumnMeta[];
   onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
   onCardClick: (id: string) => void;
@@ -759,21 +872,28 @@ function Column({
   onSetWip: (n: number | null) => void;
   onToggleDone: (isDone: boolean) => void;
   onSetSubStates: (subStates: string[]) => void;
-  onSetCardSubState: (ticketId: string, sub: string) => void;
-  onToggleChooser: (ticketId: string) => void;
   onMove: (dir: "left" | "right") => void;
   onDelete: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: col.id });
   const dot = col.isDone ? tone("emerald").dot : tone("slate").dot;
   const overLimit = col.wipLimit != null && totalCount > col.wipLimit;
   const atLimit = col.wipLimit != null && totalCount === col.wipLimit;
   const [renaming, setRenaming] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState(col.name);
-  const [showAll, setShowAll] = React.useState(false);
+  const subStated = col.subStates.length > 0;
 
-  const shownIds = showAll ? visibleIds : visibleIds.slice(0, COLUMN_VISIBLE_LIMIT);
-  const hiddenCount = visibleIds.length - shownIds.length;
+  const sectionProps = (s: SectionData) => ({
+    id: s.key,
+    ids: s.visibleIds,
+    allCount: s.allIds.length,
+    dragging,
+    ticketsById,
+    celebrateId,
+    focusedId,
+    allColumns,
+    onMoveTo,
+    onCardClick,
+  });
 
   return (
     <div className="group/col flex w-[19rem] min-h-0 shrink-0 flex-col">
@@ -891,64 +1011,141 @@ function Column({
         </Menu>
       </div>
 
-      <div
-        ref={setNodeRef}
-        className={cn(
-          // min-h-0 + overflow-y-auto lets each column scroll its OWN cards and fill
-          // the board height, so every column — even an empty one — is a full-height
-          // drop target, instead of a tall column overflowing and stranding the
-          // shorter/empty columns above the fold.
-          "group/col flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-2xl border p-2 transition-colors",
-          "border-transparent bg-surface-2/50",
-          isOver && "border-primary/40 bg-primary-soft/40",
-          overLimit && "ring-1 ring-danger/30",
-        )}
-      >
-        <SortableContext items={shownIds} strategy={verticalListSortingStrategy}>
-          {shownIds.map((id) => {
-            const t = ticketsById[id];
-            if (!t) return null;
-            return (
-              <SortableTicket
-                key={id}
-                ticket={t}
-                celebrate={celebrateId === id}
-                focused={focusedId === id}
-                subStates={col.subStates}
-                chooserOpen={chooserId === id}
-                allColumns={allColumns}
-                onMoveTo={onMoveTo}
-                onToggleChooser={() => onToggleChooser(id)}
-                onSetSubState={onSetCardSubState}
-                onClick={() => onCardClick(id)}
-              />
-            );
-          })}
-        </SortableContext>
+      {subStated ? (
+        <div className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-1", overLimit && "rounded-2xl p-0.5 ring-1 ring-danger/30")}>
+          {sections.map((s) => (
+            <Section key={s.key} {...sectionProps(s)} label={s.sub ?? undefined} count={s.allIds.length} />
+          ))}
+          {sections.reduce((n, s) => n + s.visibleIds.length, 0) === 0 && totalCount > 0 && (
+            <p className="px-1 py-1.5 text-xs text-fg-subtle">No cards match the filter.</p>
+          )}
+          <AddCard onCreate={onCreate} />
+        </div>
+      ) : (
+        <Section {...sectionProps(sections[0])} fill overLimit={overLimit} footer={<AddCard onCreate={onCreate} />} />
+      )}
+    </div>
+  );
+}
 
-        {hiddenCount > 0 && (
-          <button
-            onClick={() => setShowAll(true)}
-            className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
-          >
-            Show {hiddenCount} older
-          </button>
-        )}
-        {showAll && visibleIds.length > COLUMN_VISIBLE_LIMIT && (
-          <button
-            onClick={() => setShowAll(false)}
-            className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
-          >
-            Show fewer
-          </button>
-        )}
+/** One drop container: a whole plain column (fill) or a single sub-state band. */
+function Section({
+  id,
+  label,
+  count,
+  fill,
+  dragging,
+  overLimit,
+  ids,
+  allCount,
+  ticketsById,
+  celebrateId,
+  focusedId,
+  allColumns,
+  onMoveTo,
+  onCardClick,
+  footer,
+}: {
+  id: string;
+  label?: string;
+  count?: number;
+  fill?: boolean;
+  dragging: boolean;
+  overLimit?: boolean;
+  ids: string[];
+  allCount: number;
+  ticketsById: Record<string, SerializedTicket>;
+  celebrateId: string | null;
+  focusedId: string | null;
+  allColumns: ColumnMeta[];
+  onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
+  onCardClick: (id: string) => void;
+  footer?: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  const [showAll, setShowAll] = React.useState(false);
+  const shown = showAll ? ids : ids.slice(0, COLUMN_VISIBLE_LIMIT);
+  const hidden = ids.length - shown.length;
+  const empty = ids.length === 0;
 
-        {visibleIds.length === 0 && allIds.length > 0 && (
-          <p className="px-1 py-2 text-xs text-fg-subtle">No cards match the filter.</p>
-        )}
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex flex-col gap-2 rounded-2xl border transition-colors",
+        fill
+          ? "group/col min-h-0 flex-1 overflow-y-auto border-transparent bg-surface-2/50 p-2"
+          : "border-border/50 bg-surface-2/40 p-2",
+        isOver && "border-primary/50 bg-primary-soft/40 ring-1 ring-primary/30",
+        fill && overLimit && "ring-1 ring-danger/30",
+      )}
+    >
+      {label && (
+        <div className="flex items-center gap-1.5 px-1 pt-0.5 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">
+          <span className="h-1 w-1 rounded-full bg-fg-subtle/60" />
+          <span className="truncate">{label}</span>
+          <span className="ml-auto tabular-nums">{count}</span>
+        </div>
+      )}
 
-        <AddCard onCreate={onCreate} />
-      </div>
+      <SortableContext items={shown} strategy={verticalListSortingStrategy}>
+        {shown.map((tid) => {
+          const t = ticketsById[tid];
+          if (!t) return null;
+          return (
+            <SortableTicket
+              key={tid}
+              ticket={t}
+              celebrate={celebrateId === tid}
+              focused={focusedId === tid}
+              allColumns={allColumns}
+              onMoveTo={onMoveTo}
+              onClick={() => onCardClick(tid)}
+            />
+          );
+        })}
+      </SortableContext>
+
+      {hidden > 0 && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
+        >
+          Show {hidden} older
+        </button>
+      )}
+      {showAll && ids.length > COLUMN_VISIBLE_LIMIT && (
+        <button
+          onClick={() => setShowAll(false)}
+          className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
+        >
+          Show fewer
+        </button>
+      )}
+
+      {/* Plain columns show their own filter-empty message; sub-stated columns show
+          one column-level message instead of repeating it per band. */}
+      {empty && allCount > 0 && fill && <p className="px-1 py-1.5 text-xs text-fg-subtle">No cards match the filter.</p>}
+      {empty && allCount === 0 && (
+        // A plain column's zone fills its height (so it stays a full-height drop
+        // target, invisible at rest); a sub-state band shows a faint bounded slot
+        // at rest so it's discoverable, and both light up during a drag.
+        <div
+          className={cn(
+            "flex items-center justify-center rounded-xl border border-dashed text-[0.6875rem] font-medium transition-all",
+            fill ? "min-h-[3rem] flex-1" : dragging ? "min-h-[2.5rem]" : "min-h-[1.5rem]",
+            dragging
+              ? "border-primary/40 bg-primary-soft/20 text-primary/70"
+              : fill
+                ? "border-transparent text-transparent"
+                : "border-border/40 text-transparent",
+          )}
+        >
+          {dragging ? "Drop here" : null}
+        </div>
+      )}
+
+      {footer}
     </div>
   );
 }
@@ -1007,7 +1204,7 @@ function SubStatesEditor({ value, onChange }: { value: string[]; onChange: (v: s
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
-      <p className="mt-1 text-[0.625rem] text-fg-subtle">Dropping a card here lets you pick one of these.</p>
+      <p className="mt-1 text-[0.625rem] text-fg-subtle">Each sub-state becomes its own drop zone in this column.</p>
     </div>
   );
 }
@@ -1016,23 +1213,15 @@ function SortableTicket({
   ticket,
   celebrate,
   focused,
-  subStates,
-  chooserOpen,
   allColumns,
   onMoveTo,
-  onToggleChooser,
-  onSetSubState,
   onClick,
 }: {
   ticket: SerializedTicket;
   celebrate: boolean;
   focused: boolean;
-  subStates: string[];
-  chooserOpen: boolean;
   allColumns: ColumnMeta[];
   onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
-  onToggleChooser: () => void;
-  onSetSubState: (ticketId: string, sub: string) => void;
   onClick: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
@@ -1052,31 +1241,12 @@ function SortableTicket({
         dragging={isDragging}
         className={focused ? "ring-2 ring-primary ring-offset-2 ring-offset-surface-2" : undefined}
       />
-      <div
-        className={cn(
-          "mt-1 flex flex-wrap items-center gap-1.5 px-0.5",
-          // On tablet/desktop a column is changed by dragging the card, so the
-          // Move control is hidden there. With no sub-state bar to keep, collapse
-          // the whole row at ≥ md so the card doesn't carry an empty gap.
-          subStates.length === 0 && "md:hidden",
-        )}
-      >
-        {subStates.length > 0 && (
-          <SubStateBar
-            subStates={subStates}
-            current={ticket.subState ?? null}
-            open={chooserOpen}
-            onToggle={onToggleChooser}
-            onPick={(s) => onSetSubState(ticket.id, s)}
-          />
-        )}
-
-        {/* "Move to" — a no-drag way to change column on touch devices, where
-            drag-and-drop is fiddly. Phones/small screens only; hidden ≥ md.
-            ml-auto tucks it to the card's trailing edge for a cleaner corner. */}
+      {/* "Move to" — a no-drag way to change column/sub-state on touch devices,
+          where drag-and-drop is fiddly. Phones/small screens only; hidden ≥ md. */}
+      <div className="mt-1 flex items-center px-0.5 md:hidden">
         <Menu
           align="end"
-          className="ml-auto md:hidden"
+          className="ml-auto"
           trigger={
             <button
               onPointerDown={stop}
@@ -1088,9 +1258,7 @@ function SortableTicket({
             </button>
           }
         >
-          {(close) => (
-            <MoveMenu columns={allColumns} ticket={ticket} onMoveTo={onMoveTo} close={close} />
-          )}
+          {(close) => <MoveMenu columns={allColumns} ticket={ticket} onMoveTo={onMoveTo} close={close} />}
         </Menu>
       </div>
       {celebrate && (
@@ -1150,52 +1318,6 @@ function MoveMenu({
             ))}
           </div>
         ),
-      )}
-    </div>
-  );
-}
-
-/** A compact chip on the card showing its sub-state; tap to pick another. */
-function SubStateBar({
-  subStates,
-  current,
-  open,
-  onToggle,
-  onPick,
-}: {
-  subStates: string[];
-  current: string | null;
-  open: boolean;
-  onToggle: () => void;
-  onPick: (s: string) => void;
-}) {
-  // Stop pointer-down from starting a drag and clicks from opening the card.
-  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  return (
-    <div className="mt-1 px-0.5" onPointerDown={stop} onClick={stop}>
-      {open ? (
-        <div className="flex flex-wrap gap-1">
-          {subStates.map((s) => (
-            <button
-              key={s}
-              onClick={() => onPick(s)}
-              className={cn(
-                "rounded-md border px-2 py-0.5 text-[0.6875rem] font-medium cursor-pointer",
-                current === s ? "border-primary bg-primary-soft text-primary-soft-fg" : "border-border bg-surface hover:bg-surface-2",
-              )}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <button
-          onClick={onToggle}
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-0.5 text-[0.6875rem] font-medium text-fg-muted hover:bg-surface-2 cursor-pointer"
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-fg-subtle" />
-          {current || "Set state"}
-        </button>
       )}
     </div>
   );

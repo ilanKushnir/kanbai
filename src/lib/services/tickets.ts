@@ -243,6 +243,27 @@ export async function updateTicket(
   return serialized;
 }
 
+/**
+ * After a column's sub-state list changes, snap each ticket whose sub-state is no
+ * longer valid onto the first remaining sub-state (or null if the column cleared
+ * them), so stored data matches what the board renders — cards are bucketed by
+ * their effective sub-state. Safe to call when nothing needs fixing (no-op).
+ */
+export async function reconcileColumnSubStates(columnId: string) {
+  const column = await db.column.findUnique({ where: { id: columnId }, select: { subStates: true } });
+  if (!column) return;
+  const subStates = parseSubStates(column.subStates);
+  const resolve = (s: string | null) => (subStates.length ? (s && subStates.includes(s) ? s : subStates[0]) : null);
+  const tickets = await db.ticket.findMany({
+    where: { columnId, deletedAt: null },
+    select: { id: true, subState: true },
+  });
+  const fixes = tickets.filter((t) => (resolve(t.subState) ?? null) !== (t.subState ?? null));
+  if (fixes.length) {
+    await db.$transaction(fixes.map((t) => db.ticket.update({ where: { id: t.id }, data: { subState: resolve(t.subState) } })));
+  }
+}
+
 export async function moveTicket(
   ticketId: string,
   toColumnId: string,
@@ -270,15 +291,25 @@ export async function moveTicket(
     : null;
 
   // Rebuild ordering of the target column with the ticket inserted at `position`.
+  // Keep the column GROUPED by sub-state band (stable within a band) so a
+  // column-wide `position` computed from the grouped board view stays valid and
+  // the stored order can never silently diverge from what the client renders.
+  const bandIndex = (sub: string | null) => {
+    if (!subStates.length) return 0;
+    const i = sub ? subStates.indexOf(sub) : -1;
+    return i === -1 ? 0 : i;
+  };
   const targetIds = (
     await db.ticket.findMany({
       where: { columnId: toColumnId, deletedAt: null },
       orderBy: { position: "asc" },
-      select: { id: true },
+      select: { id: true, subState: true },
     })
   )
-    .map((t) => t.id)
-    .filter((id) => id !== ticketId);
+    .filter((t) => t.id !== ticketId)
+    .map((t, i) => ({ id: t.id, band: bandIndex(t.subState), ord: i }))
+    .sort((a, b) => a.band - b.band || a.ord - b.ord)
+    .map((t) => t.id);
   const clamped = Math.max(0, Math.min(position, targetIds.length));
   targetIds.splice(clamped, 0, ticketId);
 

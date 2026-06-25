@@ -5,6 +5,7 @@ import { parse, readJson } from "@/lib/parse";
 import { updateColumnSchema } from "@/lib/validation";
 import { markManualAction } from "@/lib/snapshots";
 import { parseSubStates, stringifySubStates } from "@/lib/substates";
+import { reconcileColumnSubStates } from "@/lib/services/tickets";
 import { db } from "@/lib/db";
 
 export const PATCH = handler(
@@ -20,6 +21,8 @@ export const PATCH = handler(
     if (input.isDone !== undefined) data.isDone = input.isDone;
     if (input.subStates !== undefined) data.subStates = stringifySubStates(input.subStates);
     const column = await db.column.update({ where: { id: columnId }, data });
+    // Changing the band list can orphan tickets' sub-states — snap them back valid.
+    if (input.subStates !== undefined) await reconcileColumnSubStates(columnId);
     return ok({
       column: {
         id: column.id,
