@@ -3,7 +3,7 @@ import { requireAgent, requireScope } from "@/lib/agent-auth";
 import { assertTicketInWorkspace } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { updateTicketSchema } from "@/lib/validation";
-import { updateTicket } from "@/lib/services/tickets";
+import { updateTicket, deleteTicket } from "@/lib/services/tickets";
 import { db } from "@/lib/db";
 import { ticketInclude, serializeTicket } from "@/lib/serialize";
 import { HttpError } from "@/lib/api";
@@ -31,5 +31,18 @@ export const PATCH = handler(
     const input = parse(updateTicketSchema, await readJson(req));
     const ticket = await updateTicket(ticketId, input, { type: "agent", id: agent.id, name: agent.name });
     return ok({ ticket });
+  },
+);
+
+/** Soft-delete: the ticket moves to the trash and is restorable for 30 days
+ *  (POST /api/v1/trash with { action: "restore", type: "ticket", id }). */
+export const DELETE = handler(
+  async (req: Request, { params }: { params: Promise<{ ticketId: string }> }) => {
+    const agent = await requireAgent(req);
+    requireScope(agent, "tickets:write");
+    const { ticketId } = await params;
+    await assertTicketInWorkspace(ticketId, agent.workspaceId);
+    await deleteTicket(ticketId, { type: "agent", id: agent.id, name: agent.name });
+    return ok({ ok: true, restorableFor: "30 days" });
   },
 );

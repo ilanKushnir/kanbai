@@ -143,11 +143,13 @@ workspace or the column doesn't belong to that board.
 ### Tickets
 
 ```
-POST  /tickets                # create a ticket                    scope: tickets:write
-GET   /tickets/{id}           # fetch a ticket                     scope: tickets:read
-PATCH /tickets/{id}           # update fields                      scope: tickets:write
-POST  /tickets/{id}/move      # move to column + position          scope: tickets:write
-POST  /tickets/{id}/comments  # add a comment (as the agent)       scope: comments:write
+POST   /tickets                # create a ticket                    scope: tickets:write
+GET    /tickets/{id}           # fetch a ticket                     scope: tickets:read
+PATCH  /tickets/{id}           # update fields / status / sub-state scope: tickets:write
+POST   /tickets/{id}/move      # move to column + position          scope: tickets:write
+POST   /tickets/{id}/done      # close: move to the done column     scope: tickets:write
+DELETE /tickets/{id}           # soft-delete → 30-day trash         scope: tickets:write
+POST   /tickets/{id}/comments  # add a comment (as the agent)       scope: comments:write
 ```
 
 **Create a ticket**
@@ -196,6 +198,36 @@ curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/move \
   -H "Authorization: Bearer $KANBAI_KEY" \
   -H "content-type: application/json" \
   -d '{ "columnId": "col_done", "position": 0 }'
+```
+
+**Progress statuses (columns & sub-states).** A ticket's status is its column;
+columns can define sub-states (e.g. `In progress` / `Blocked`). Set either via
+`PATCH` — a `columnId` change renumbers both columns properly, and `subState`
+is validated against the target column's list (invalid values resolve to the
+column's first sub-state):
+
+```bash
+curl -X PATCH https://your-kanbai.app/api/v1/tickets/tkt_123 \
+  -H "Authorization: Bearer $KANBAI_KEY" \
+  -H "content-type: application/json" \
+  -d '{ "columnId": "col_inprogress", "subState": "Blocked" }'
+```
+
+**Close a ticket** — one call, no need to look up the done column
+(`422 no done column` if the board doesn't have one):
+
+```bash
+curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/done \
+  -H "Authorization: Bearer $KANBAI_KEY"
+```
+
+**Delete a ticket** — a soft-delete into the workspace trash, restorable for
+30 days (see [Trash](#trash-30-day-restore)):
+
+```bash
+curl -X DELETE https://your-kanbai.app/api/v1/tickets/tkt_123 \
+  -H "Authorization: Bearer $KANBAI_KEY"
+# → { ok: true, restorableFor: "30 days" }
 ```
 
 ### Inbox (the "sort" queue)
@@ -250,8 +282,8 @@ workspace member; an agent only ever sees notes whose owner is in its workspace.
 GET    /notes                  # list workspace notes (filterable)        scope: notes:read
 POST   /notes                  # create a note (for a workspace user)      scope: notes:write
 GET    /notes/{noteId}         # fetch one note                           scope: notes:read
-PATCH  /notes/{noteId}         # edit body/pinned/status/bucket/priority   scope: notes:write
-DELETE /notes/{noteId}         # delete a note                            scope: notes:write
+PATCH  /notes/{noteId}         # edit body/pinned/status/schedule/done/priority  scope: notes:write
+DELETE /notes/{noteId}         # soft-delete → 30-day trash               scope: notes:write
 POST   /notes/{noteId}/move    # move to a bucket + position              scope: notes:write
 POST   /notes/{noteId}/queue   # queue the note to an agent to sort       scope: notes:write
 POST   /notes/{noteId}/attachments  # attach audio/image/file (data URL)  scope: notes:write
@@ -284,7 +316,12 @@ curl -X POST https://your-kanbai.app/api/v1/notes \
 # → { note: { id, body, bucket, priority, ... } }
 ```
 
-**Edit / move / queue / attach**
+**Edit / complete / sort / move / queue / attach**
+
+`PATCH` accepts any subset of: `body`, `pinned`, `priority`, `status`
+(`inbox` | `archived`), `scheduledDay` (`"YYYY-MM-DD"` sorts the note into that
+day's section; `null` returns it to Unsorted), and `doneOn` (`"YYYY-MM-DD"`
+marks it done as of that local day; `null` un-does it).
 
 ```bash
 # Edit fields (any subset)
@@ -292,6 +329,24 @@ curl -X PATCH https://your-kanbai.app/api/v1/notes/note_123 \
   -H "Authorization: Bearer <TOKEN>" \
   -H "content-type: application/json" \
   -d '{ "priority":"urgent", "pinned":true }'
+
+# Mark a note done (today) / un-done
+curl -X PATCH https://your-kanbai.app/api/v1/notes/note_123 \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{ "doneOn":"2026-07-14" }'          # { "doneOn": null } to undo
+
+# Sort a note into a day (or back to Unsorted with null)
+curl -X PATCH https://your-kanbai.app/api/v1/notes/note_123 \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{ "scheduledDay":"2026-07-20" }'
+
+# Archive a note (reversible; distinct from delete)
+curl -X PATCH https://your-kanbai.app/api/v1/notes/note_123 \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{ "status":"archived" }'
 
 # Reorder within a bucket
 curl -X POST https://your-kanbai.app/api/v1/notes/note_123/move \
@@ -308,6 +363,36 @@ curl -X POST https://your-kanbai.app/api/v1/notes/note_123/queue \
 
 A note queued this way fires the same `note.queued` webhook to the target agent,
 which then files it with `POST /inbox/{noteId}/sort` exactly as above.
+
+### Trash (30-day restore)
+
+Deleting a ticket or note (via `DELETE`) is always a **soft-delete**: the item
+sits in the workspace trash for 30 days and can be restored by an agent or by a
+human (Settings → Recently deleted). Permanent purge is deliberately **not**
+exposed to agents — only humans can destroy data for good.
+
+```
+GET  /trash                   # list recently deleted notes+tickets      scope: notes:read / tickets:read
+POST /trash                   # restore one item                         scope: notes:write / tickets:write
+```
+
+The list is filtered to what your scopes allow (tickets need `tickets:read`,
+notes need `notes:read`); each restore action needs the matching write scope.
+
+```bash
+curl https://your-kanbai.app/api/v1/trash \
+  -H "Authorization: Bearer <TOKEN>"
+# → { notes: [{ id, body, deletedAt }], tickets: [{ id, title, number, board, boardSlug, deletedAt }], retentionDays: 30 }
+
+curl -X POST https://your-kanbai.app/api/v1/trash \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{ "action":"restore", "type":"ticket", "id":"tkt_123" }'
+# → { ok: true, restored: { type: "ticket", id: "tkt_123" } }
+```
+
+Restoring an item that isn't in the trash returns `422 not_deleted`; an item
+past the 30-day window is gone (`404`).
 
 ### Members (for migration)
 

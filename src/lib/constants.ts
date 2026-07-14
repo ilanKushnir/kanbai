@@ -51,7 +51,19 @@ export const API_VERSION = "v1";
  * without scraping the docs. Per-agent permissions are conveyed by `scopes`.
  */
 export const AGENT_CAPABILITIES = {
-  resources: ["boards", "tickets", "inbox", "notes", "comments", "members"],
+  resources: ["boards", "tickets", "inbox", "notes", "comments", "members", "trash"],
+  lifecycle: {
+    // Full status management: PATCH columnId/subState, POST /tickets/:id/move,
+    // and the one-call POST /tickets/:id/done (board's done column).
+    ticketDone: true,
+    // Notes: PATCH doneOn (complete/un-complete), scheduledDay (sort into a
+    // day/section), status inbox|archived, priority, pinned.
+    noteDone: true,
+    // DELETE tickets/notes soft-deletes into a 30-day restorable trash;
+    // GET/POST /api/v1/trash lists and restores. Permanent purge is human-only.
+    softDelete: true,
+    trashRestore: true,
+  },
   webhook: {
     selfRegister: true, // POST /api/v1/agent/webhook with the agent's bearer key
     test: true, // POST /api/v1/agent/webhook/test fires a ping to itself

@@ -61,6 +61,68 @@ async function ownNote(ctx: Context, id: string) {
   if (!n || n.userId !== ctx.user.id) throw new HttpError(404, "Note not found");
 }
 
+// ── agent API (workspace-scoped) ─────────────────────────────────────────────
+// Agents see the whole workspace's trash: notes owned by any member, tickets on
+// any of the workspace's boards. Restore only — permanent purge stays human-only.
+
+export async function listTrashForWorkspace(
+  workspaceId: string,
+  include: { notes: boolean; tickets: boolean },
+): Promise<TrashList> {
+  await purgeExpiredTrash(); // opportunistic cleanup — no cron needed
+  const since = cutoff();
+  const [notes, tickets] = await Promise.all([
+    include.notes
+      ? db.note.findMany({
+          where: { user: { workspaces: { some: { workspaceId } } }, deletedAt: { gte: since } },
+          orderBy: { deletedAt: "desc" },
+          select: { id: true, body: true, deletedAt: true },
+        })
+      : [],
+    include.tickets
+      ? db.ticket.findMany({
+          where: { board: { workspaceId }, deletedAt: { gte: since } },
+          orderBy: { deletedAt: "desc" },
+          select: { id: true, title: true, number: true, deletedAt: true, board: { select: { name: true, slug: true } } },
+        })
+      : [],
+  ]);
+  return {
+    notes: notes.map((n) => ({
+      id: n.id,
+      body: htmlToPlainText(n.body).slice(0, 200),
+      deletedAt: n.deletedAt!.toISOString(),
+    })),
+    tickets: tickets.map((t) => ({
+      id: t.id,
+      title: t.title,
+      number: t.number,
+      board: t.board.name,
+      boardSlug: t.board.slug,
+      deletedAt: t.deletedAt!.toISOString(),
+    })),
+  };
+}
+
+export async function restoreNoteInWorkspace(workspaceId: string, id: string) {
+  const n = await db.note.findUnique({ where: { id }, select: { userId: true, deletedAt: true } });
+  if (!n) throw new HttpError(404, "Note not found");
+  const member = await db.workspaceMember.findFirst({ where: { workspaceId, userId: n.userId }, select: { id: true } });
+  if (!member) throw new HttpError(404, "Note not found");
+  if (!n.deletedAt) throw new HttpError(422, "Note is not in the trash", "not_deleted");
+  await db.note.update({ where: { id }, data: { deletedAt: null } });
+}
+
+export async function restoreTicketInWorkspace(workspaceId: string, id: string) {
+  const t = await db.ticket.findUnique({
+    where: { id },
+    select: { deletedAt: true, board: { select: { workspaceId: true } } },
+  });
+  if (!t || t.board.workspaceId !== workspaceId) throw new HttpError(404, "Ticket not found");
+  if (!t.deletedAt) throw new HttpError(422, "Ticket is not in the trash", "not_deleted");
+  await db.ticket.update({ where: { id }, data: { deletedAt: null } });
+}
+
 export async function restoreNote(ctx: Context, id: string) {
   await ownNote(ctx, id);
   await db.note.update({ where: { id }, data: { deletedAt: null } });
