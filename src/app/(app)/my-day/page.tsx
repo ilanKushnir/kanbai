@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
-import { ArrowUpRight, CalendarClock, Check, CheckCircle2, CircleDashed, NotebookPen, Sparkles, Target } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CheckCircle2, CircleDashed, NotebookPen, Sparkles, Target } from "lucide-react";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
@@ -14,6 +14,7 @@ import { dueMeta, priorityMeta } from "@/lib/display";
 import { buildMyDayDoneArchive, buildMyDayFocusItems, countMyDayUnsortedNotes, getMyDayTicketBuckets, type MyDayDoneArchiveGroup, type MyDayNote } from "@/lib/my-day";
 import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
+import { DoneButton } from "@/components/my-day/done-button";
 
 export const metadata: Metadata = { title: "My Day" };
 export const dynamic = "force-dynamic";
@@ -116,7 +117,7 @@ export default async function MyDayPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-24 pt-6 md:px-6 md:pb-8 md:pt-8">
-      <header className="relative overflow-hidden rounded-[2rem] border border-border bg-[radial-gradient(circle_at_top_left,var(--color-primary-soft),transparent_34%),linear-gradient(135deg,var(--color-surface),var(--color-surface-2))] p-5 shadow-card md:p-7">
+      <header className="relative overflow-hidden rounded-3xl border border-border bg-[radial-gradient(circle_at_top_left,var(--color-primary-soft),transparent_34%),linear-gradient(135deg,var(--color-surface),var(--color-surface-2))] p-5 shadow-card md:p-7">
         <div className="absolute right-6 top-6 h-28 w-28 rounded-full bg-primary/10 blur-3xl" />
         <div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
@@ -148,7 +149,7 @@ export default async function MyDayPage() {
       )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <section className="rounded-[1.75rem] border border-border bg-surface/65 p-3 shadow-card md:p-4">
+        <section className="rounded-3xl border border-border bg-surface/60 p-3 shadow-card md:p-4">
           <div className="mb-3 flex items-center justify-between px-1">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">Do next</h2>
@@ -178,14 +179,14 @@ export default async function MyDayPage() {
         </section>
 
         <aside className="space-y-4">
-          <section className="rounded-2xl border border-border bg-surface/55 p-4">
+          <section className="rounded-2xl border border-border bg-surface/60 p-4">
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-subtle">On deck</h2>
             <div className="space-y-2">
               {onDeck.length ? onDeck.map((r) => <DeckRow key={r.id} row={r} />) : <p className="text-sm text-fg-subtle">No dated tickets later this week.</p>}
             </div>
           </section>
           <DoneArchive archive={doneArchive} />
-          <section className="rounded-2xl border border-border bg-surface/40 p-4 text-sm text-fg-muted">
+          <section className="rounded-2xl border border-border bg-surface/60 p-4 text-sm text-fg-muted">
             <div className="mb-2 flex items-center gap-2 font-medium text-fg">
               <CheckCircle2 className="h-4 w-4 text-success" /> Focus rule
             </div>
@@ -199,7 +200,7 @@ export default async function MyDayPage() {
 
 function Stat({ label, value, alert }: { label: string; value: number; alert?: boolean }) {
   return (
-    <div className="rounded-2xl border border-border bg-surface/70 px-4 py-3 shadow-sm">
+    <div className="rounded-2xl border border-border bg-surface/60 px-4 py-3 shadow-sm">
       <div className={alert ? "text-2xl font-bold text-danger" : "text-2xl font-bold"}>{value}</div>
       <div className="text-[0.6875rem] uppercase tracking-wider text-fg-subtle">{label}</div>
     </div>
@@ -249,7 +250,7 @@ function FocusCard({ row, index, urgent }: { row: Row; index: number; urgent?: b
 function FocusNoteCard({ note, index }: { note: MyDayNote; index: number }) {
   return (
     <div className="group rounded-2xl border border-primary/20 bg-primary-soft/20 px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
-      <Link href="/notes" className="flex min-w-0 items-start gap-3">
+      <Link href={`/notes?focus=${note.id}`} className="flex min-w-0 items-start gap-3">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface text-primary">
           {index}
         </span>
@@ -277,21 +278,17 @@ function FocusNoteCard({ note, index }: { note: MyDayNote; index: number }) {
 
 function DoneControl({ disabled, title }: { disabled?: boolean; title: string }) {
   return (
-    <button
-      type="submit"
+    <DoneButton
       disabled={disabled}
       title={title}
-      data-filled-class="bg-success text-white"
-      className="inline-flex items-center gap-1.5 rounded-lg border border-success bg-transparent px-2.5 py-1.5 text-xs font-semibold text-success shadow-sm transition-colors hover:bg-success hover:text-white focus:bg-success focus:text-white active:bg-success active:text-white disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-2 disabled:text-fg-subtle disabled:shadow-none"
-    >
-      <Check className="h-3.5 w-3.5" /> Done
-    </button>
+      className="inline-flex items-center gap-1.5 rounded-lg border border-success bg-transparent px-2.5 py-1.5 text-xs font-semibold text-success shadow-sm transition-colors hover:bg-success hover:text-success-fg focus:bg-success focus:text-success-fg active:bg-success active:text-success-fg disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-2 disabled:text-fg-subtle disabled:shadow-none"
+    />
   );
 }
 
 function DoneArchive({ archive }: { archive: { total: number; hasMore: boolean; groups: MyDayDoneArchiveGroup<Row, MyDayNote>[] } }) {
   return (
-    <details className="rounded-2xl border border-border bg-surface/55 p-4">
+    <details className="rounded-2xl border border-border bg-surface/60 p-4">
       <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wider text-fg-subtle">
         Done archive · {archive.total}
       </summary>
@@ -313,7 +310,7 @@ function DoneArchive({ archive }: { archive: { total: number; hasMore: boolean; 
             </div>
           ))
         )}
-        {archive.hasMore && <div className="text-xs font-medium text-primary">Show more in future archive view</div>}
+        {archive.hasMore && <div className="text-xs text-fg-subtle">Older completed items live on their boards.</div>}
       </div>
     </details>
   );

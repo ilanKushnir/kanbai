@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { boardWhereForContext } from "@/lib/authz";
+import { startOfDay } from "@/lib/notes-schedule";
 import { listNotesForUser } from "@/lib/services/notes";
 import { parseUserSettings } from "@/lib/user-settings";
 import { NotesViewClient } from "@/components/notes/notes-view-client";
@@ -36,9 +37,16 @@ export default async function NotesPage() {
       },
     }),
     // Tickets carrying a due date, scoped to boards the user can see — reflected
-    // (read-through) into the Notes time-sections under their due day.
+    // (read-through) into the Notes time-sections under their due day. Completed
+    // tickets stop reflecting once their due day has passed, so dead strikethrough
+    // rows don't pile up in "Today" forever.
     db.ticket.findMany({
-      where: { deletedAt: null, dueDate: { not: null }, board: boardWhereForContext(ctx) },
+      where: {
+        deletedAt: null,
+        dueDate: { not: null },
+        board: boardWhereForContext(ctx),
+        OR: [{ column: { isDone: false } }, { dueDate: { gte: startOfDay(new Date()) } }],
+      },
       orderBy: { dueDate: "asc" },
       select: {
         id: true,

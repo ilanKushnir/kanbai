@@ -13,6 +13,7 @@ import {
   CornerDownLeft,
   Hash,
   ArrowRight,
+  CalendarDays,
 } from "lucide-react";
 import { tone } from "@/components/ui/badge";
 import { priorityMeta } from "@/lib/display";
@@ -98,6 +99,10 @@ export function CommandPalette({
   function toggleTheme() {
     const dark = !document.documentElement.classList.contains("dark");
     document.documentElement.classList.toggle("dark", dark);
+    // Keep the PWA status bar in sync with the in-app theme (matches layout.tsx viewport colors).
+    document
+      .querySelectorAll('meta[name="theme-color"]')
+      .forEach((m) => m.setAttribute("content", dark ? "#0a0b10" : "#f7f8fb"));
     try {
       localStorage.setItem("kanbai-theme", dark ? "dark" : "light");
     } catch {}
@@ -114,7 +119,6 @@ export function CommandPalette({
         group: "Actions",
         label: "New note",
         icon: <Plus className="h-4 w-4" />,
-        hint: "C",
         onSelect: () => run(() => router.push("/notes?compose=1")),
       },
       {
@@ -133,6 +137,7 @@ export function CommandPalette({
       },
     ];
     const nav: Item[] = [
+      { key: "n-my-day", group: "Go to", label: "My Day", icon: <CalendarDays className="h-4 w-4" />, onSelect: () => run(() => router.push("/my-day")) },
       { key: "n-notes", group: "Go to", label: "Notes", icon: <NotebookPen className="h-4 w-4" />, onSelect: () => run(() => router.push("/notes")) },
       { key: "n-boards", group: "Go to", label: "Boards", icon: <Columns3 className="h-4 w-4" />, onSelect: () => run(() => router.push("/boards")) },
       { key: "n-agents", group: "Go to", label: "Agents", icon: <Bot className="h-4 w-4" />, onSelect: () => run(() => router.push("/agents")) },

@@ -137,6 +137,16 @@ function writeQueue(q: QueueItem[]) {
     /* noop */
   }
 }
+/**
+ * True when api() failed before the server answered: fetch rejects with a
+ * TypeError on network failure, or the browser already knows it's offline.
+ * Anything api() itself throws (a plain Error) means the server responded with
+ * an HTTP error — a definitive rejection that must not be queued for replay.
+ */
+function isNetworkError(e: unknown): boolean {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  return e instanceof TypeError;
+}
 function makeTempNote(body: string, scheduledDay: string | null): NoteT {
   const now = new Date().toISOString();
   return {
@@ -276,6 +286,26 @@ export function NotesView({
     }
   }, [notesById]);
 
+  // Rematerialize offline-captured notes still waiting in the local queue as
+  // pending rows on mount — otherwise a reload while offline makes them vanish
+  // (they're excluded from the notes cache) until the next successful flush.
+  React.useEffect(() => {
+    const queued = readQueue();
+    if (queued.length === 0) return;
+    setNotesById((m) => {
+      const next = { ...m };
+      for (const item of queued) {
+        if (next[item.tempId]) continue;
+        const day = item.scheduledDay !== undefined ? item.scheduledDay : dayFromBucket(item.bucket);
+        const n = makeTempNote(item.body, day ?? null);
+        n.id = item.tempId; // keep the stored id so flush's replaceTemp finds it
+        if (item.priority) n.priority = item.priority;
+        next[item.tempId] = n;
+      }
+      return next;
+    });
+  }, []);
+
   // Notes with an in-flight optimistic mutation (a local edit whose PATCH hasn't
   // returned) and notes just deleted — both must survive a background poll/refresh
   // that may read the DB before our write commits, or it would revert/resurrect them.
@@ -375,6 +405,14 @@ export function NotesView({
   const dictation = useDictation((text) => {
     setDraft((dictateBase.current ? dictateBase.current + " " : "") + text);
   }, dictationLanguage);
+  // Server-side transcription in flight: recording has stopped but the text hasn't
+  // landed in the draft yet. Status strings come from use-dictation (stopServer /
+  // transcribe); a finished run parks at progress 100, an error replaces the status.
+  const transcribing =
+    dictation.progress < 100 &&
+    (dictation.status === "Transcribing…" ||
+      dictation.status === "Uploading audio…" ||
+      dictation.status.startsWith("Preparing"));
   const [sortNote, setSortNote] = React.useState<NoteT | null>(null);
   const [showArchived, setShowArchived] = React.useState(false);
   // Fresh load: only Today is open. Every other schedule section (Unsorted, the
@@ -425,9 +463,21 @@ export function NotesView({
       const { note } = await api<{ note: NoteT }>("/api/notes", { body: { body: text, scheduledDay, priority } });
       replaceTemp(optimistic.id, note);
       router.refresh();
-    } catch {
-      writeQueue([...readQueue(), { tempId: optimistic.id, body: text, scheduledDay, priority }]);
-      toast({ title: "Saved offline", description: "It'll sync when you're back online.", variant: "info" });
+    } catch (e) {
+      if (isNetworkError(e)) {
+        writeQueue([...readQueue(), { tempId: optimistic.id, body: text, scheduledDay, priority }]);
+        toast({ title: "Saved offline", description: "It'll sync when you're back online.", variant: "info" });
+      } else {
+        // The server actively rejected the note — queueing it would poison the
+        // offline queue. Drop the optimistic row and put the text back in the composer.
+        setNotesById((m) => {
+          const next = { ...m };
+          delete next[optimistic.id];
+          return next;
+        });
+        setDraft((d) => (d.trim() ? `${d}\n${text}` : text));
+        toast({ title: "Couldn't save note", description: e instanceof Error ? e.message : undefined, variant: "error" });
+      }
     }
   }
 
@@ -441,6 +491,7 @@ export function NotesView({
   }
 
   function submitDraft() {
+    if (transcribing) return; // dictated words are still in flight; submitting now would drop them
     if (!draft.trim()) return;
     dictation.stop();
     addNote(draft, draftDay);
@@ -455,6 +506,7 @@ export function NotesView({
     if (flushingRef.current || (readQueue().length === 0 && getOfflineMutations().length === 0)) return; // single-flight: no concurrent replays
     flushingRef.current = true;
     (async () => {
+      let dropped = 0;
       try {
         for (const item of readQueue()) {
           try {
@@ -465,8 +517,17 @@ export function NotesView({
             });
             replaceTemp(item.tempId, note);
             writeQueue(readQueue().filter((x) => x.tempId !== item.tempId));
-          } catch {
-            break; // stay queued; retry next reconnect
+          } catch (e) {
+            if (isNetworkError(e)) break; // stay queued; retry next reconnect
+            // Definitive server rejection: drop this item so it can't block the
+            // queue forever, and keep flushing the rest.
+            writeQueue(readQueue().filter((x) => x.tempId !== item.tempId));
+            setNotesById((m) => {
+              const next = { ...m };
+              delete next[item.tempId];
+              return next;
+            });
+            dropped++;
           }
         }
         for (const item of getOfflineMutations()) {
@@ -476,16 +537,26 @@ export function NotesView({
               upsertNote(note);
             }
             setOfflineMutations(getOfflineMutations().filter((x) => x.enqueuedAt !== item.enqueuedAt));
-          } catch {
-            break; // stay queued; retry next reconnect
+          } catch (e) {
+            if (isNetworkError(e)) break; // stay queued; retry next reconnect
+            // Definitive server rejection: drop the mutation and keep flushing.
+            setOfflineMutations(getOfflineMutations().filter((x) => x.enqueuedAt !== item.enqueuedAt));
+            dropped++;
           }
         }
       } finally {
         flushingRef.current = false;
       }
+      if (dropped > 0) {
+        toast({
+          title: `Couldn't sync ${dropped} offline ${dropped === 1 ? "change" : "changes"}`,
+          description: "Rejected by the server and removed from the queue.",
+          variant: "error",
+        });
+      }
       router.refresh();
     })();
-  }, [router]);
+  }, [router, toast]);
 
   React.useEffect(() => {
     const foregroundSync = () => {
@@ -625,6 +696,7 @@ export function NotesView({
   }
 
   async function del(id: string) {
+    const cur = notesRef.current[id];
     setNotesById((m) => {
       const next = { ...m };
       delete next[id];
@@ -633,11 +705,31 @@ export function NotesView({
     deletedIds.current.add(id); // tombstone so a poll refresh can't resurrect it
     try {
       await api(`/api/notes/${id}`, { method: "DELETE" });
+      if (cur) {
+        toast({
+          title: "Note deleted",
+          actionLabel: "Undo",
+          onAction: () => undoDelete(cur),
+        });
+      }
     } catch {
       router.refresh();
     } finally {
       setTimeout(() => deletedIds.current.delete(id), 8000);
     }
+  }
+
+  /** Un-trash a just-deleted note (delete is soft; the server keeps it in Trash 30 days). */
+  function undoDelete(note: NoteT) {
+    deletedIds.current.delete(note.id);
+    upsertNote(note);
+    busyIds.current.add(note.id);
+    void api("/api/trash", { method: "POST", body: { action: "restore", type: "note", id: note.id } })
+      .catch(() => toast({ title: "Couldn't restore note", variant: "error" }))
+      .finally(() => {
+        busyIds.current.delete(note.id);
+        router.refresh();
+      });
   }
 
   /** Toggle the per-line "mark for ingestion" flag. The line stays in place. */
@@ -742,7 +834,11 @@ export function NotesView({
     const section = schedule.sections.find((s) => s.key === finalKey);
     const day = section ? section.day : null;
     const ids = finalMap[finalKey];
-    const index = ids.indexOf(aId);
+    // The server splices within the exact scheduledDay, but a section can also
+    // hold strays (overdue notes in Today, rolled-over notes in Unsorted) — so
+    // the persisted position must be indexed only among ids sharing the target day.
+    const dayIds = ids.filter((id) => id === aId || (notesRef.current[id]?.scheduledDay ?? null) === day);
+    const index = dayIds.indexOf(aId);
 
     // Bake the new order + schedule into local state so it doesn't snap back.
     setNotesById((m) => {
@@ -785,7 +881,11 @@ export function NotesView({
     const t = +new Date(n.updatedAt || n.createdAt);
     return Number.isFinite(t) && +now - t < 48 * 60 * 60 * 1000;
   });
-  const archived = allNotes.filter((n) => n.status === "archived");
+  // Notes done on an earlier day are hidden from every schedule section by the
+  // next-day sweep, so the archive list is their only remaining surface.
+  const archived = allNotes.filter(
+    (n) => n.status === "archived" || (n.doneOn != null && n.doneOn < schedule.todayYmd),
+  );
   // Completed notes are no longer pooled into a global Done bucket — they live at
   // the bottom of their own schedule section (see compareSectionNotes) until
   // next-day archival sweeps them out. So totalActive already counts done-today
@@ -953,14 +1053,18 @@ export function NotesView({
             >
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </button>
-            {draft.trim() && (
-              <button
-                onClick={submitDraft}
-                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg hover:bg-primary-hover cursor-pointer"
-              >
-                Add Note
-              </button>
-            )}
+            <button
+              onClick={submitDraft}
+              disabled={transcribing}
+              title={transcribing ? "Transcribing…" : undefined}
+              className={cn(
+                "rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg hover:bg-primary-hover cursor-pointer transition-all",
+                draft.trim() || transcribing ? "opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95",
+                transcribing && "cursor-not-allowed opacity-60",
+              )}
+            >
+              Add Note
+            </button>
           </div>
         </div>
         {dictation.status && (
@@ -1302,7 +1406,7 @@ function NoteSectionBlock({
           </span>
           {section.sublabel && <span className="text-[0.6875rem] font-normal normal-case text-fg-subtle">{section.sublabel}</span>}
           {count > 0 && (
-            <span className={cn("rounded-full px-1.5 py-0.5 text-xs font-semibold", variant === "unsorted" ? "bg-danger-soft text-danger" : "text-fg-subtle")}>{count}</span>
+            <span className={cn("rounded-full px-1.5 py-0.5 text-xs font-semibold", variant === "unsorted" ? "bg-primary-soft text-primary-soft-fg" : "text-fg-subtle")}>{count}</span>
           )}
         </button>
       )}
@@ -1396,7 +1500,7 @@ function ReflectionRow({
   const overdue = startOfDay(dueDay) < startOfDay(now);
   const today = startOfDay(dueDay) === startOfDay(now);
   const statusLabel = overdue ? "Overdue" : today ? "Today" : null;
-  const compact = "trun" + "cate";
+  const compact = "truncate";
   return (
     <Link
       href={ticketHref(r, boards, { from: "notes" })}
@@ -1410,7 +1514,7 @@ function ReflectionRow({
       <div
         className={cn(
           "flex min-w-0 flex-col justify-center gap-0.5 border-r px-2 py-1.5 sm:px-2.5",
-          r.done ? "border-success/30 bg-success-soft/35" : "border-border/60 bg-slate-800/25",
+          r.done ? "border-success/30 bg-success-soft/35" : "border-border/60 bg-surface-3/50",
         )}
       >
         <span className={cn(compact, "text-[0.68rem] font-semibold uppercase tracking-wide text-fg-muted")}>{r.boardName}</span>
@@ -1418,7 +1522,7 @@ function ReflectionRow({
           className={cn(
             "inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.66rem] font-semibold uppercase tracking-wide",
             r.done
-              ? "bg-success text-white"
+              ? "bg-success text-success-fg"
               : overdue
                 ? "bg-danger/15 text-danger"
                 : today
@@ -1686,7 +1790,7 @@ function NoteRow({
             className={cn(
               "relative grid h-[1.15rem] w-[1.15rem] place-items-center rounded-full border-[1.5px] transition-colors",
               done
-                ? "border-success bg-success text-white"
+                ? "border-success bg-success text-success-fg"
                 : "border-fg-subtle/60 text-transparent group-hover:border-fg-subtle hover:!border-success hover:text-success/60",
             )}
           >

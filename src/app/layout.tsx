@@ -43,6 +43,10 @@ const themeScript = `
     var t = localStorage.getItem('kanbai-theme');
     var d = t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
     if (d) document.documentElement.classList.add('dark');
+    var c = d ? '#0a0b10' : '#f7f8fb';
+    document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+      m.setAttribute('content', c);
+    });
   } catch (e) {}
 })();
 `;

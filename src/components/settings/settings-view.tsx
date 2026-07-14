@@ -7,6 +7,7 @@ import { Input, Label } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SettingsTabs } from "./settings-tabs";
+import { BackupSection } from "./backup-section";
 import { api } from "@/lib/client-api";
 import { APP_VERSION, POWERED_BY } from "@/lib/version";
 import { DICTATION_LANGUAGES } from "@/lib/user-settings";
@@ -158,6 +159,9 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
           </div>
         </div>
       </section>
+
+      {/* Backup & offline checklist */}
+      <BackupSection />
 
       {/* Workspace (managers) */}
       {isManager && workspace && (

@@ -96,6 +96,36 @@ type Filters = {
   assignee: "any" | "me" | "agents" | "unassigned";
 };
 
+// Local board state is rebuilt from server props whenever they change (error
+// recovery via router.refresh(), focus revalidation, agents filing tickets).
+function buildCols(board: BoardData): ColumnMeta[] {
+  return board.columns.map((c) => ({
+    id: c.id,
+    name: c.name,
+    isDone: c.isDone,
+    wipLimit: c.wipLimit,
+    subStates: c.subStates ?? [],
+  }));
+}
+function buildTicketsById(board: BoardData): Record<string, SerializedTicket> {
+  const m: Record<string, SerializedTicket> = {};
+  board.columns.forEach((c) => c.tickets.forEach((t) => (m[t.id] = t)));
+  return m;
+}
+function buildContainers(board: BoardData): Record<string, string[]> {
+  const m: Record<string, string[]> = {};
+  board.columns.forEach((c) => {
+    const subs = c.subStates ?? [];
+    if (subs.length) {
+      subs.forEach((s) => (m[sectionKey(c.id, s)] = []));
+      c.tickets.forEach((t) => m[sectionKey(c.id, effectiveSub(subs, t.subState)!)].push(t.id));
+    } else {
+      m[c.id] = c.tickets.map((t) => t.id);
+    }
+  });
+  return m;
+}
+
 export function BoardView({
   board,
   agents: agentsProp,
@@ -141,39 +171,54 @@ export function BoardView({
     };
   }, []);
 
-  const [cols, setCols] = React.useState<ColumnMeta[]>(() =>
-    board.columns.map((c) => ({ id: c.id, name: c.name, isDone: c.isDone, wipLimit: c.wipLimit, subStates: c.subStates ?? [] })),
+  const [cols, setCols] = React.useState<ColumnMeta[]>(() => buildCols(board));
+  const [ticketsById, setTicketsById] = React.useState<Record<string, SerializedTicket>>(() =>
+    buildTicketsById(board),
   );
-  const [ticketsById, setTicketsById] = React.useState<Record<string, SerializedTicket>>(() => {
-    const m: Record<string, SerializedTicket> = {};
-    board.columns.forEach((c) => c.tickets.forEach((t) => (m[t.id] = t)));
-    return m;
-  });
   // containers maps a section key → ordered ticket ids. Empty sections still get a
   // key so they register as drop targets and can receive cards.
-  const [containers, setContainers] = React.useState<Record<string, string[]>>(() => {
-    const m: Record<string, string[]> = {};
-    board.columns.forEach((c) => {
-      const subs = c.subStates ?? [];
-      if (subs.length) {
-        subs.forEach((s) => (m[sectionKey(c.id, s)] = []));
-        c.tickets.forEach((t) => m[sectionKey(c.id, effectiveSub(subs, t.subState)!)].push(t.id));
-      } else {
-        m[c.id] = c.tickets.map((t) => t.id);
-      }
-    });
-    return m;
-  });
+  const [containers, setContainers] = React.useState<Record<string, string[]>>(() => buildContainers(board));
   const containersRef = React.useRef(containers);
   const setCont = (next: Record<string, string[]>) => {
     containersRef.current = next;
     setContainers(next);
   };
 
+  // In-flight mutations; while > 0 we don't overwrite local state from props.
+  const busyRef = React.useRef(0);
+  async function tracked<T>(fn: () => Promise<T>): Promise<T> {
+    busyRef.current++;
+    try {
+      return await fn();
+    } finally {
+      busyRef.current--;
+    }
+  }
+
   const [activeId, setActiveId] = React.useState<string | null>(null);
   // Snapshot of containers at drag start, so a cancel (Escape) or a release onto
   // nothing reverts the optimistic cross-container moves made during onDragOver.
   const dragSnapshot = React.useRef<Record<string, string[]>>({});
+  const activeIdRef = React.useRef<string | null>(null);
+  activeIdRef.current = activeId;
+
+  // Server truth changed (router.refresh() after an error, focus revalidation,
+  // an agent filing tickets) → rebuild local state. Skipped mid-drag/mid-save;
+  // the next refresh reconciles then.
+  React.useEffect(() => {
+    if (activeIdRef.current || busyRef.current > 0) return;
+    setCols(buildCols(board));
+    setTicketsById(buildTicketsById(board));
+    setCont(buildContainers(board));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board]);
+
+  // Keep an open board fresh: revalidate when the tab regains focus.
+  React.useEffect(() => {
+    const onFocus = () => router.refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [router]);
   const [selectedId, setSelectedId] = React.useState<string | null>(initialTicketId ?? null);
   const [celebrateId, setCelebrateId] = React.useState<string | null>(null);
   const [focusedId, setFocusedId] = React.useState<string | null>(null);
@@ -327,15 +372,18 @@ export function BoardView({
   }
 
   async function persistMove(ticketId: string, columnId: string, position: number, subState?: string | null) {
-    try {
-      const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}/move`, {
-        body: { columnId, position, ...(subState !== undefined ? { subState } : {}) },
-      });
-      setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
-    } catch {
-      toast({ title: "Couldn't move card", variant: "error" });
-      router.refresh();
-    }
+    if (ticketId.startsWith("tmp-")) return; // optimistic card not saved yet — nothing to move
+    await tracked(async () => {
+      try {
+        const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}/move`, {
+          body: { columnId, position, ...(subState !== undefined ? { subState } : {}) },
+        });
+        setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
+      } catch {
+        toast({ title: "Couldn't move card", description: "Restoring the board.", variant: "error" });
+        router.refresh();
+      }
+    });
   }
 
   async function setColumnSubStates(columnId: string, subStates: string[]) {
@@ -370,15 +418,12 @@ export function BoardView({
       });
       return changed ? mm : m;
     });
-    try {
-      await api(`/api/columns/${columnId}`, { method: "PATCH", body: { subStates } });
-    } catch {
-      router.refresh();
-    }
+    await patchColumn(columnId, { subStates }, "update sub-states");
   }
 
   /** Move via the "Move to" menu (no drag): mirrors onDragEnd's optimistic update. */
   function moveTicketTo(ticketId: string, columnId: string, subState?: string) {
+    if (ticketId.startsWith("tmp-")) return; // optimistic card not saved yet
     const col = cols.find((c) => c.id === columnId);
     const targetSub = effectiveSub(col?.subStates ?? [], subState);
     const targetKey = sectionKey(columnId, targetSub);
@@ -405,46 +450,92 @@ export function BoardView({
   }
 
   async function handleCreate(columnId: string, title: string) {
-    try {
-      const { ticket } = await api<{ ticket: SerializedTicket }>("/api/tickets", {
-        body: { boardId: board.id, columnId, title },
-      });
-      const col = cols.find((c) => c.id === columnId);
-      const sub = col?.subStates.length ? col.subStates[0] : null;
-      const key = sectionKey(columnId, sub);
-      setTicketsById((m) => ({ ...m, [ticket.id]: { ...ticket, subState: sub } }));
-      setCont({ ...containersRef.current, [key]: [...(containersRef.current[key] ?? []), ticket.id] });
-    } catch {
-      toast({ title: "Couldn't add card", variant: "error" });
-      router.refresh();
-    }
+    // Optimistic: show the card instantly (rapid Enter-to-add-another entry),
+    // swap in the real ticket when the server answers.
+    const col = cols.find((c) => c.id === columnId);
+    const sub = col?.subStates.length ? col.subStates[0] : null;
+    const key = sectionKey(columnId, sub);
+    const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const now = new Date().toISOString();
+    const temp: SerializedTicket = {
+      id: tempId,
+      number: null,
+      boardId: board.id,
+      columnId,
+      column: col?.name ?? "",
+      title,
+      description: "",
+      position: 0,
+      priority: "none",
+      subState: sub,
+      dueDate: null,
+      assignee: null,
+      createdBy: { type: "user", id: currentUser?.id ?? null },
+      labels: [],
+      commentCount: 0,
+      comments: [],
+      sourceNoteId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setTicketsById((m) => ({ ...m, [tempId]: temp }));
+    setCont({ ...containersRef.current, [key]: [...(containersRef.current[key] ?? []), tempId] });
+
+    await tracked(async () => {
+      try {
+        const { ticket } = await api<{ ticket: SerializedTicket }>("/api/tickets", {
+          body: { boardId: board.id, columnId, title },
+        });
+        setTicketsById((m) => {
+          const mm = { ...m, [ticket.id]: { ...ticket, subState: sub } };
+          delete mm[tempId];
+          return mm;
+        });
+        setCont({
+          ...containersRef.current,
+          [key]: (containersRef.current[key] ?? []).map((id) => (id === tempId ? ticket.id : id)),
+        });
+      } catch {
+        // Roll the temp card back; keep the title in the toast so nothing typed is lost.
+        setCont({
+          ...containersRef.current,
+          [key]: (containersRef.current[key] ?? []).filter((id) => id !== tempId),
+        });
+        setTicketsById((m) => {
+          const mm = { ...m };
+          delete mm[tempId];
+          return mm;
+        });
+        toast({ title: "Couldn't add card", description: `“${title}” wasn't saved.`, variant: "error" });
+      }
+    });
+  }
+
+  /** PATCH a column optimistically; on failure toast + restore from the server. */
+  async function patchColumn(columnId: string, body: Record<string, unknown>, what: string) {
+    await tracked(async () => {
+      try {
+        await api(`/api/columns/${columnId}`, { method: "PATCH", body });
+      } catch {
+        toast({ title: `Couldn't ${what}`, description: "Restoring the board.", variant: "error" });
+        router.refresh();
+      }
+    });
   }
 
   async function renameColumn(columnId: string, name: string) {
     setCols((cs) => cs.map((c) => (c.id === columnId ? { ...c, name } : c)));
-    try {
-      await api(`/api/columns/${columnId}`, { method: "PATCH", body: { name } });
-    } catch {
-      router.refresh();
-    }
+    await patchColumn(columnId, { name }, "rename the column");
   }
 
   async function setWip(columnId: string, wipLimit: number | null) {
     setCols((cs) => cs.map((c) => (c.id === columnId ? { ...c, wipLimit } : c)));
-    try {
-      await api(`/api/columns/${columnId}`, { method: "PATCH", body: { wipLimit } });
-    } catch {
-      router.refresh();
-    }
+    await patchColumn(columnId, { wipLimit }, "set the WIP limit");
   }
 
   async function toggleDone(columnId: string, isDone: boolean) {
     setCols((cs) => cs.map((c) => (c.id === columnId ? { ...c, isDone } : c)));
-    try {
-      await api(`/api/columns/${columnId}`, { method: "PATCH", body: { isDone } });
-    } catch {
-      router.refresh();
-    }
+    await patchColumn(columnId, { isDone }, "update the column");
   }
 
   async function addColumn(name: string) {
@@ -467,11 +558,14 @@ export function BoardView({
     const next = [...cols];
     [next[idx], next[swap]] = [next[swap], next[idx]];
     setCols(next);
-    try {
-      await api("/api/columns/reorder", { body: { boardId: board.id, orderedIds: next.map((c) => c.id) } });
-    } catch {
-      router.refresh();
-    }
+    await tracked(async () => {
+      try {
+        await api("/api/columns/reorder", { body: { boardId: board.id, orderedIds: next.map((c) => c.id) } });
+      } catch {
+        toast({ title: "Couldn't move the column", description: "Restoring the board.", variant: "error" });
+        router.refresh();
+      }
+    });
   }
 
   async function deleteColumn(columnId: string) {
@@ -603,7 +697,12 @@ export function BoardView({
       visibleIds: sections.flatMap((s) => s.visibleIds),
     };
   });
-  gridRef.current = grid.map((g) => ({ colId: g.col.id, ids: g.visibleIds }));
+  // Keyboard-nav walks only cards that are actually rendered (each section
+  // collapses its oldest cards past the visible limit).
+  gridRef.current = grid.map((g) => ({
+    colId: g.col.id,
+    ids: g.sections.flatMap((s) => s.visibleIds.slice(-COLUMN_VISIBLE_LIMIT)),
+  }));
 
   const activeTicket = activeId ? ticketsById[activeId] : null;
   const selectedTicket = selectedId ? ticketsById[selectedId] : null;
@@ -662,7 +761,7 @@ export function BoardView({
               dragging={activeId != null}
               allColumns={cols}
               onMoveTo={moveTicketTo}
-              onCardClick={(id) => setSelectedId(id)}
+              onCardClick={(id) => !id.startsWith("tmp-") && setSelectedId(id)}
               onCreate={(title) => handleCreate(col.id, title)}
               onRename={(name) => renameColumn(col.id, name)}
               onSetWip={(n) => setWip(col.id, n)}
@@ -1064,7 +1163,10 @@ function Section({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const [showAll, setShowAll] = React.useState(false);
-  const shown = showAll ? ids : ids.slice(0, COLUMN_VISIBLE_LIMIT);
+  // Collapse the OLDEST cards (head of the list) — new cards append at the end,
+  // so "Add card" and just-completed cards stay visible instead of vanishing
+  // behind the toggle.
+  const shown = showAll ? ids : ids.slice(-COLUMN_VISIBLE_LIMIT);
   const hidden = ids.length - shown.length;
   const empty = ids.length === 0;
 
@@ -1088,6 +1190,24 @@ function Section({
         </div>
       )}
 
+      {/* The collapsed tail lives at the TOP: older cards hide up here. */}
+      {hidden > 0 && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
+        >
+          Show {hidden} older
+        </button>
+      )}
+      {showAll && ids.length > COLUMN_VISIBLE_LIMIT && (
+        <button
+          onClick={() => setShowAll(false)}
+          className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
+        >
+          Show fewer
+        </button>
+      )}
+
       <SortableContext items={shown} strategy={verticalListSortingStrategy}>
         {shown.map((tid) => {
           const t = ticketsById[tid];
@@ -1106,23 +1226,6 @@ function Section({
         })}
       </SortableContext>
 
-      {hidden > 0 && (
-        <button
-          onClick={() => setShowAll(true)}
-          className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
-        >
-          Show {hidden} older
-        </button>
-      )}
-      {showAll && ids.length > COLUMN_VISIBLE_LIMIT && (
-        <button
-          onClick={() => setShowAll(false)}
-          className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
-        >
-          Show fewer
-        </button>
-      )}
-
       {/* Plain columns show their own filter-empty message; sub-stated columns show
           one column-level message instead of repeating it per band. */}
       {empty && allCount > 0 && fill && <p className="px-1 py-1.5 text-xs text-fg-subtle">No cards match the filter.</p>}
@@ -1137,11 +1240,11 @@ function Section({
             dragging
               ? "border-primary/40 bg-primary-soft/20 text-primary/70"
               : fill
-                ? "border-transparent text-transparent"
+                ? "border-border/40 text-fg-subtle/60"
                 : "border-border/40 text-transparent",
           )}
         >
-          {dragging ? "Drop here" : null}
+          {dragging ? "Drop here" : fill ? "No cards yet" : null}
         </div>
       )}
 
@@ -1233,7 +1336,7 @@ function SortableTicket({
       style={{ transform: CSS.Translate.toString(transform), transition }}
       {...attributes}
       {...listeners}
-      className="group/card relative"
+      className={cn("group/card relative", ticket.id.startsWith("tmp-") && "animate-scale-in opacity-70")}
     >
       <TicketCard
         ticket={ticket}
@@ -1262,7 +1365,7 @@ function SortableTicket({
         </Menu>
       </div>
       {celebrate && (
-        <span className="pointer-events-none absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-success text-white shadow-md animate-check-pop">
+        <span className="pointer-events-none absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-success text-success-fg shadow-md animate-check-pop">
           <Check className="h-3.5 w-3.5" />
         </span>
       )}

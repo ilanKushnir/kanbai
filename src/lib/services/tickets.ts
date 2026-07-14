@@ -198,6 +198,17 @@ export async function updateTicket(
   actor: Actor,
 ) {
   const existing = await loadTicket(ticketId);
+
+  // A column change must go through moveTicket so both columns are renumbered,
+  // band grouping is preserved, and the sub-state is validated — a raw columnId
+  // write keeps the stale position and the card lands mid-column after reload.
+  if (input.columnId !== undefined && input.columnId !== existing.columnId) {
+    const { columnId, position: _position, subState, ...rest } = input;
+    const moved = await moveTicket(ticketId, columnId, Number.MAX_SAFE_INTEGER, actor, subState);
+    if (Object.keys(rest).length === 0) return moved;
+    return updateTicket(ticketId, rest, actor);
+  }
+
   const board = await boardCtx(existing.boardId);
   await onMutation(actor, board.workspaceId);
 
@@ -216,7 +227,17 @@ export async function updateTicket(
     data.columnId = input.columnId;
   }
   if (input.position !== undefined) data.position = input.position;
-  if (input.subState !== undefined) data.subState = input.subState;
+  if (input.subState !== undefined) {
+    // Same-column sub-state change: validate against the column's band list so
+    // agents/UI can't store orphaned values (mirrors moveTicket's resolution).
+    const column = await db.column.findUnique({ where: { id: existing.columnId }, select: { subStates: true } });
+    const subStates = parseSubStates(column?.subStates ?? null);
+    data.subState = subStates.length
+      ? input.subState && subStates.includes(input.subState)
+        ? input.subState
+        : subStates[0]
+      : null;
+  }
   if (input.assigneeType !== undefined) {
     const a = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId);
     data.assigneeType = a.assigneeType;
@@ -299,13 +320,13 @@ export async function moveTicket(
     const i = sub ? subStates.indexOf(sub) : -1;
     return i === -1 ? 0 : i;
   };
-  const targetIds = (
-    await db.ticket.findMany({
-      where: { columnId: toColumnId, deletedAt: null },
-      orderBy: { position: "asc" },
-      select: { id: true, subState: true },
-    })
-  )
+  const targetRows = await db.ticket.findMany({
+    where: { columnId: toColumnId, deletedAt: null },
+    orderBy: { position: "asc" },
+    select: { id: true, subState: true, position: true },
+  });
+  const oldPos = new Map(targetRows.map((t) => [t.id, t.position]));
+  const targetIds = targetRows
     .filter((t) => t.id !== ticketId)
     .map((t, i) => ({ id: t.id, band: bandIndex(t.subState), ord: i }))
     .sort((a, b) => a.band - b.band || a.ord - b.ord)
@@ -313,24 +334,32 @@ export async function moveTicket(
   const clamped = Math.max(0, Math.min(position, targetIds.length));
   targetIds.splice(clamped, 0, ticketId);
 
-  await db.$transaction([
-    ...targetIds.map((id, idx) =>
-      db.ticket.update({
-        where: { id },
-        data: { columnId: toColumnId, position: idx, ...(id === ticketId ? { subState: resolvedSubState } : {}) },
-      }),
-    ),
-  ]);
+  // Only touch rows that actually change — a blanket renumber would bump every
+  // ticket's updatedAt, which My Day uses to group completions by day.
+  await db.$transaction(
+    targetIds
+      .map((id, idx) => ({ id, idx }))
+      .filter(({ id, idx }) => id === ticketId || oldPos.get(id) !== idx)
+      .map(({ id, idx }) =>
+        db.ticket.update({
+          where: { id },
+          data: { columnId: toColumnId, position: idx, ...(id === ticketId ? { subState: resolvedSubState } : {}) },
+        }),
+      ),
+  );
 
   // Reindex the source column if the ticket actually changed columns.
   if (fromColumnId !== toColumnId) {
-    const sourceIds = await db.ticket.findMany({
+    const sourceRows = await db.ticket.findMany({
       where: { columnId: fromColumnId, deletedAt: null },
       orderBy: { position: "asc" },
-      select: { id: true },
+      select: { id: true, position: true },
     });
     await db.$transaction(
-      sourceIds.map((t, idx) => db.ticket.update({ where: { id: t.id }, data: { position: idx } })),
+      sourceRows
+        .map((t, idx) => ({ t, idx }))
+        .filter(({ t, idx }) => t.position !== idx)
+        .map(({ t, idx }) => db.ticket.update({ where: { id: t.id }, data: { position: idx } })),
     );
   }
 

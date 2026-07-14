@@ -3,13 +3,16 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const myDayPage = readFileSync("src/app/(app)/my-day/page.tsx", "utf8");
+const doneButton = readFileSync("src/components/my-day/done-button.tsx", "utf8");
 
 test("My Day focus note cards expose a Done action backed by the note done server action", () => {
   const noteCard = myDayPage.slice(myDayPage.indexOf("function FocusNoteCard"), myDayPage.indexOf("function DeckRow"));
   assert.match(myDayPage, /async function markMyDayNoteDone/);
   assert.match(noteCard, /<form action=\{markMyDayNoteDone\}/);
   assert.match(noteCard, /name="noteId"/);
-  assert.match(noteCard, />\s*Done\s*</);
+  assert.match(noteCard, /<DoneControl /); // visible "Done" label lives in the client DoneButton
+  assert.match(doneButton, /\bDone\b\s*<\/button>/);
+  assert.match(doneButton, /useFormStatus/); // pending-aware: spinner + disabled while saving
 });
 
 test("My Day focus ticket cards expose a Done action backed by the ticket done server action", () => {
@@ -18,7 +21,7 @@ test("My Day focus ticket cards expose a Done action backed by the ticket done s
   assert.match(myDayPage, /assertTicketAccess\(ctx, ticketId, true\)/);
   assert.match(ticketCard, /<form action=\{markMyDayTicketDone\}/);
   assert.match(ticketCard, /name="ticketId"/);
-  assert.match(ticketCard, />\s*Done\s*</);
+  assert.match(ticketCard, /<DoneControl /); // label rendered by the client DoneButton (pending-aware)
 });
 
 
@@ -48,7 +51,8 @@ test("My Day mobile shell leaves enough bottom scroll room for the fixed nav", (
 test("My Day done controls are outline-first and completed items render a collapsed Done archive", () => {
   assert.match(myDayPage, /function DoneControl/);
   assert.match(myDayPage, /border-success/);
-  assert.match(myDayPage, /bg-success text-white/);
+  // Filled state uses the success-fg token (contrast-safe in dark mode), not raw white.
+  assert.match(myDayPage, /hover:bg-success hover:text-success-fg/);
   assert.match(myDayPage, /<details[^>]*>/);
   assert.match(myDayPage, /<summary[^>]*>[^]*Done archive/);
 });

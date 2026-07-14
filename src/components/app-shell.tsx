@@ -102,12 +102,13 @@ export function AppShell({
                 key={item.key}
                 href={item.href}
                 className={cn(
-                  "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   active
                     ? "bg-primary-soft text-primary-soft-fg"
                     : "text-fg-muted hover:bg-surface-2 hover:text-fg",
                 )}
               >
+                {active && <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-primary" />}
                 <Icon className="h-4.5 w-4.5" />
                 {item.label}
                 {item.key === "notes" && inboxCount > 0 && (
@@ -194,13 +195,15 @@ export function AppShell({
                 )}
                 onClick={() => setOptimisticPath(item.href)}
               >
-                <span className="relative">
-                  <Icon className="h-5 w-5" />
-                  {item.key === "notes" && inboxCount > 0 && (
-                    <span className="absolute -right-2 -top-1 rounded-full bg-primary px-1 text-[0.5625rem] font-semibold text-primary-fg leading-tight">
-                      {inboxCount}
-                    </span>
-                  )}
+                <span className={cn("relative grid place-items-center rounded-full px-4 py-1 transition-colors", active && "bg-primary-soft")}>
+                  <span className="relative">
+                    <Icon className="h-5 w-5" />
+                    {item.key === "notes" && inboxCount > 0 && (
+                      <span className="absolute -right-2 -top-1 rounded-full bg-primary px-1 text-[0.5625rem] font-semibold text-primary-fg leading-tight">
+                        {inboxCount}
+                      </span>
+                    )}
+                  </span>
                 </span>
                 {item.label}
               </Link>

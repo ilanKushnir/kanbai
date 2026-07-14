@@ -53,6 +53,7 @@
   --accent-fg:    #06343c;
 
   --success: #0ea96b;
+  --success-fg: #ffffff;
   --success-soft: #d8f6e8;
   --warning: #d98a00;
   --warning-soft: #fcefcf;
@@ -89,6 +90,7 @@
   --accent-fg:    #04282e;
 
   --success: #2fd896;
+  --success-fg: #06301f;
   --success-soft: #0f2e22;
   --warning: #f0b73e;
   --warning-soft: #2e2410;
@@ -125,6 +127,7 @@
   --color-accent-fg: var(--accent-fg);
 
   --color-success: var(--success);
+  --color-success-fg: var(--success-fg);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);

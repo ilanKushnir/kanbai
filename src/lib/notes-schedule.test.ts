@@ -195,3 +195,22 @@ test("defaultCollapsedKeys opens only Today on a fresh load", () => {
     assert.equal(collapsed.has(key), true, `${key} should start collapsed`);
   }
 });
+
+test("every section's drop day classifies back into that same section, all year, any week start", () => {
+  // The regression this guards: late in a month, "Next month"'s day (the 1st)
+  // could classify as next_week/a weekday slot, and "Later this month"'s range
+  // could be empty — a dropped note teleported into a different section.
+  for (let offset = 0; offset < 365; offset++) {
+    const now = new Date(2026, 0, 1 + offset, 12);
+    for (const weekStartsOn of [0, 1]) {
+      const schedule = buildSchedule(now, weekStartsOn);
+      for (const s of schedule.sections) {
+        assert.equal(
+          schedule.classify(s.day),
+          s.key,
+          `${now.toDateString()} (week starts ${weekStartsOn}): section ${s.key} day ${s.day} classified as ${schedule.classify(s.day)}`,
+        );
+      }
+    }
+  }
+});

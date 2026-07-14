@@ -49,7 +49,7 @@ export function Modal({
   return createPortal(
     <div className="fixed inset-0 z-50 flex touch-none items-end justify-center overflow-hidden sm:items-center sm:p-4">
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-[2px] animate-fade-in"
+        className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-[2px] animate-fade-in"
         onClick={onClose}
         aria-hidden
       />
@@ -65,6 +65,7 @@ export function Modal({
           className,
         )}
       >
+        <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-border-strong sm:hidden" aria-hidden />
         {(title || !hideClose) && (
           <div className="flex items-start justify-between gap-4 px-5 pt-5 pb-3 shrink-0">
             <div className="min-w-0">

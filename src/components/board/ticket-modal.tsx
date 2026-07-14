@@ -98,8 +98,12 @@ export function TicketModal({
 
   async function remove() {
     if (!confirm("Delete this ticket?")) return;
-    await api(`/api/tickets/${t.id}`, { method: "DELETE" });
-    onDeleted(t.id);
+    try {
+      await api(`/api/tickets/${t.id}`, { method: "DELETE" });
+      onDeleted(t.id);
+    } catch (e) {
+      toast({ title: "Couldn't delete", description: e instanceof Error ? e.message : undefined, variant: "error" });
+    }
   }
 
   function setDueIn(days: number) {
@@ -122,6 +126,14 @@ export function TicketModal({
     }
   }
 
+  function handleClose() {
+    // Flush an in-progress title edit (saved on blur only) so Escape/backdrop
+    // close doesn't silently discard it.
+    const trimmed = title.trim();
+    if (trimmed && trimmed !== t.title) patch({ title: trimmed });
+    onClose();
+  }
+
   const column = columns.find((c) => c.id === t.columnId);
   const doneColumn = columns.find((c) => c.isDone);
   const isDone = Boolean(column?.isDone);
@@ -137,7 +149,7 @@ export function TicketModal({
   }
 
   return (
-    <Modal open onClose={onClose} size="lg" hideClose>
+    <Modal open onClose={handleClose} size="lg" hideClose>
       <div className="flex items-center justify-between gap-2 pb-3">
         <div className="flex items-center gap-1.5">
         <Menu
@@ -196,12 +208,12 @@ export function TicketModal({
                 isDone
                   ? "bg-success-soft text-success cursor-default"
                   : doneColumn
-                    ? "bg-success text-white shadow-sm hover:bg-success/90 cursor-pointer"
+                    ? "bg-success text-success-fg shadow-sm hover:bg-success/90 cursor-pointer"
                     : "bg-surface-2 text-fg-subtle cursor-not-allowed opacity-60",
               )}
             >
               <CircleCheck className="h-3.5 w-3.5" />
-              {isDone ? "Done" : "Done"}
+              {isDone ? "Done" : "Mark done"}
             </button>
           )}
           {t.number != null && (
@@ -218,7 +230,7 @@ export function TicketModal({
             <Trash2 className="h-4 w-4" />
           </button>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="grid h-8 w-8 place-items-center rounded-lg text-fg-subtle hover:bg-surface-2 hover:text-fg transition-colors cursor-pointer"
             aria-label="Close"
           >

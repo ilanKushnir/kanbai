@@ -114,13 +114,22 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
   const firstPastNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 1);
 
   sections.push({ key: "next_week", label: "Next week", day: ymd(startNextWeek), kind: "next_week" });
-  sections.push({
-    key: "later_this_month",
-    label: "Later this month",
-    day: ymd(firstPastNextWeek),
-    kind: "later_this_month",
-  });
-  sections.push({ key: "next_month", label: "Next month", day: ymd(firstOfNextMonth), kind: "next_month" });
+  // "Later this month" only exists while there are days between the end of next
+  // week and the next month boundary — late in a month its drop range is empty,
+  // and a drop would classify into a DIFFERENT section (the note seemed to
+  // vanish into a collapsed bucket). Same for "Next month": near a boundary the
+  // 1st can still fall inside this/next week, so its drop day is the first day
+  // that clears both windows — every section's day classifies back to itself.
+  if (ymd(firstPastNextWeek) < ymd(firstOfNextMonth)) {
+    sections.push({
+      key: "later_this_month",
+      label: "Later this month",
+      day: ymd(firstPastNextWeek),
+      kind: "later_this_month",
+    });
+  }
+  const nextMonthDay = ymd(firstOfNextMonth) > ymd(firstPastNextWeek) ? ymd(firstOfNextMonth) : ymd(firstPastNextWeek);
+  sections.push({ key: "next_month", label: "Next month", day: nextMonthDay, kind: "next_month" });
   sections.push({ key: "long_term", label: "Long term", day: ymd(firstPastNextMonth), kind: "long_term" });
 
   const endThisWeekYmd = ymd(addDays(today, daySlotCount));

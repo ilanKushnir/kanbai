@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       orderBy: { position: "asc" },
       select: { id: true, name: true, slug: true, color: true },
     }),
-    db.note.count({ where: { userId: ctx.user.id, status: "inbox" } }),
+    db.note.count({ where: { userId: ctx.user.id, status: "inbox", scheduledDay: null, doneOn: null, deletedAt: null } }),
   ]);
 
   return (

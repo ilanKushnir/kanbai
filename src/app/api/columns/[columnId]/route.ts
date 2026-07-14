@@ -42,8 +42,15 @@ export const DELETE = handler(
     await assertColumnAccess(ctx, columnId, true);
     await markManualAction(ctx.workspace.id);
 
-    const count = await db.ticket.count({ where: { columnId, deletedAt: null } });
-    if (count > 0) throw new HttpError(422, "Move or delete this column's cards first.", "column_not_empty");
+    // Count soft-deleted tickets too: the column FK cascades, so deleting the
+    // column would hard-delete trashed tickets that were promised 30-day restore.
+    const count = await db.ticket.count({ where: { columnId } });
+    if (count > 0)
+      throw new HttpError(
+        422,
+        "Move or delete this column's cards first (including any in Recently deleted).",
+        "column_not_empty",
+      );
     const col = await db.column.findUnique({ where: { id: columnId }, select: { boardId: true } });
     const total = await db.column.count({ where: { boardId: col!.boardId } });
     if (total <= 1) throw new HttpError(422, "A board needs at least one column.", "last_column");
