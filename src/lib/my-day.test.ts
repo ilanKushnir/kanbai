@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildMyDayDoneArchive,
   buildMyDayFocusItems,
+  buildMyDayQueue,
   countMyDayUnsortedNotes,
   type MyDayNote,
   type MyDayTicket,
@@ -82,6 +83,29 @@ test("My Day excludes items completed before today from the active focus lane", 
     items.map((item) => `${item.kind}:${item.id}`),
     ["ticket:open-ticket", "note:done-today"],
   );
+});
+
+test("My Day queue splits overdue / today / anytime and keeps done-today notes out of the lane", () => {
+  const queue = buildMyDayQueue({
+    now: todayNoon,
+    notes: [
+      note({ id: "today-note" }),
+      note({ id: "done-today-note", doneOn: today }), // archived surface, not the queue
+      note({ id: "future-note", scheduledDay: "2026-06-22", bucket: "tomorrow" }),
+    ],
+    tickets: [
+      ticket({ id: "overdue-ticket", dueDate: new Date(2026, 5, 19, 9, 0, 0).toISOString() }),
+      ticket({ id: "today-ticket" }),
+      ticket({ id: "week-ticket", dueDate: new Date(2026, 5, 24, 9, 0, 0).toISOString() }),
+      ticket({ id: "mine-ticket", dueDate: null, assignee: { type: "user", id: "user-1" } }),
+      ticket({ id: "someone-elses", dueDate: null, assignee: { type: "user", id: "user-2" } }),
+    ],
+    userId: "user-1",
+  });
+
+  assert.deepEqual(queue.overdue.map((i) => `${i.kind}:${i.id}:${i.urgent}`), ["ticket:overdue-ticket:true"]);
+  assert.deepEqual(queue.today.map((i) => `${i.kind}:${i.id}`), ["ticket:today-ticket", "note:today-note"]);
+  assert.deepEqual(queue.anytime.map((i) => `${i.kind}:${i.id}`), ["ticket:mine-ticket"]);
 });
 
 test("My Day groups completed tickets and notes by completion day, collapsed and initially limited", () => {

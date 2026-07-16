@@ -29,7 +29,7 @@ export function AppShell({
   isManager,
   isSystemAdmin,
   workspaces,
-  inboxCount,
+  notesDueCount,
 }: {
   children: React.ReactNode;
   boards: NavBoard[];
@@ -38,7 +38,8 @@ export function AppShell({
   isManager: boolean;
   isSystemAdmin: boolean;
   workspaces: WorkspaceOption[];
-  inboxCount: number;
+  /** Notes + reflected tickets due today or overdue (the Notes nav badge). */
+  notesDueCount: number;
 }) {
   const userMenuProps = { userName, userEmail, isManager, isSystemAdmin, workspaces };
   const pathname = usePathname();
@@ -111,9 +112,13 @@ export function AppShell({
                 {active && <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-primary" />}
                 <Icon className="h-4.5 w-4.5" />
                 {item.label}
-                {item.key === "notes" && inboxCount > 0 && (
-                  <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[0.625rem] font-semibold text-primary-fg">
-                    {inboxCount}
+                {item.key === "notes" && notesDueCount > 0 && (
+                  <span
+                    className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[0.625rem] font-semibold text-primary-fg"
+                    title="Due today or overdue"
+                  >
+                    {notesDueCount}
+                    <span className="sr-only"> due today or overdue</span>
                   </span>
                 )}
               </Link>
@@ -198,9 +203,10 @@ export function AppShell({
                 <span className={cn("relative grid place-items-center rounded-full px-4 py-1 transition-colors", active && "bg-primary-soft")}>
                   <span className="relative">
                     <Icon className="h-5 w-5" />
-                    {item.key === "notes" && inboxCount > 0 && (
+                    {item.key === "notes" && notesDueCount > 0 && (
                       <span className="absolute -right-2 -top-1 rounded-full bg-primary px-1 text-[0.5625rem] font-semibold text-primary-fg leading-tight">
-                        {inboxCount}
+                        {notesDueCount}
+                        <span className="sr-only"> due today or overdue</span>
                       </span>
                     )}
                   </span>

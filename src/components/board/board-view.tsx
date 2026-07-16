@@ -15,6 +15,7 @@ import {
   rectIntersection,
   closestCenter,
   getFirstCollision,
+  MeasuringStrategy,
   type Announcements,
   type CollisionDetection,
   type DragStartEvent,
@@ -88,8 +89,19 @@ const STAGE_BAND: Record<ColumnStage, string> = {
 };
 type SectionData = { key: string; sub: string | null; allIds: string[]; visibleIds: string[] };
 
-/** Collapse a column's older cards behind a "show older" toggle past this count. */
+/** Collapse a column's older cards behind a "show more" toggle past this count. */
 const COLUMN_VISIBLE_LIMIT = 12;
+/** Sub-state bands stack inside one column, so they collapse sooner. */
+const SUBSTATE_VISIBLE_LIMIT = 6;
+/** Don't bother collapsing for a trivial tail (a "Show 1 more" button is noise). */
+const COLLAPSE_SLACK = 2;
+
+function sectionVisibleLimit(subStated: boolean): number {
+  return subStated ? SUBSTATE_VISIBLE_LIMIT : COLUMN_VISIBLE_LIMIT;
+}
+function collapsedIds(ids: string[], limit: number): string[] {
+  return ids.length > limit + COLLAPSE_SLACK ? ids.slice(-limit) : ids;
+}
 
 // A "section" is a drop container: a plain column is one section (key = columnId);
 // a column with sub-states is one section per sub-state (key = columnId\0subState).
@@ -102,6 +114,18 @@ function sectionKey(colId: string, sub: string | null): string {
 function parseSection(key: string): { colId: string; sub: string | null } {
   const i = key.indexOf(SECTION_SEP);
   return i === -1 ? { colId: key, sub: null } : { colId: key.slice(0, i), sub: key.slice(i + 1) };
+}
+// While a card is dragged over a sub-stated column, an overlay of equal-height
+// drop zones (one per sub-state) covers the visible column, so the second band
+// is reachable without scrolling past the first band's cards. Zones are extra
+// droppables whose ids wrap the section key they stand in for.
+const ZONE_PREFIX = `zone${SECTION_SEP}`;
+function zoneId(sectionKey: string): string {
+  return `${ZONE_PREFIX}${sectionKey}`;
+}
+/** The section key a zone id stands for, or null when the id isn't a zone. */
+function zoneSection(id: string): string | null {
+  return id.startsWith(ZONE_PREFIX) ? id.slice(ZONE_PREFIX.length) : null;
 }
 function columnSectionKeys(col: { id: string; subStates: string[] }): string[] {
   return col.subStates.length ? col.subStates.map((s) => sectionKey(col.id, s)) : [col.id];
@@ -225,6 +249,9 @@ export function BoardView({
   }
 
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  // The column whose sub-state drop zones are showing (the column the drag is
+  // currently over, when it has sub-states). Null outside a drag.
+  const [zoneColId, setZoneColId] = React.useState<string | null>(null);
   // Snapshot of containers at drag start, so a cancel (Escape) or a release onto
   // nothing reverts the optimistic cross-container moves made during onDragOver.
   const dragSnapshot = React.useRef<Record<string, string[]>>({});
@@ -290,6 +317,11 @@ export function BoardView({
   // back to the closest card for smooth insertion.
   const collisionDetection = React.useCallback<CollisionDetection>((args) => {
     const pointer = pointerWithin(args);
+    // Sub-state zones overlay the hovered column's cards during a drag, so when
+    // the pointer sits inside one, the zone IS the target — never the cards or
+    // section droppables underneath it.
+    const zone = pointer.find((c) => zoneSection(String(c.id)) != null);
+    if (zone) return [{ id: zone.id }];
     const intersections = pointer.length ? pointer : rectIntersection(args);
     let overId = getFirstCollision(intersections, "id");
     // Dead space (between columns, below the bands of a sub-stated column): fall
@@ -320,11 +352,16 @@ export function BoardView({
 
   function onDragStart(e: DragStartEvent) {
     dragSnapshot.current = containersRef.current;
-    setActiveId(String(e.active.id));
+    const id = String(e.active.id);
+    setActiveId(id);
+    // Show the origin column's sub-state zones right away.
+    const origin = keyOf(containersRef.current, id);
+    setZoneColId(origin ? parseSection(origin).colId : null);
   }
 
   function onDragCancel() {
     setActiveId(null);
+    setZoneColId(null);
     setCont(dragSnapshot.current);
   }
 
@@ -334,13 +371,20 @@ export function BoardView({
     const activeId = String(active.id);
     const overId = String(over.id);
     const prev = containersRef.current;
+    const zoneKey = zoneSection(overId);
     const activeContainer = keyOf(prev, activeId);
-    const overContainer = overId in prev ? overId : keyOf(prev, overId);
+    const overContainer = zoneKey ?? (overId in prev ? overId : keyOf(prev, overId));
+    // Keep the hovered column's sub-state zones up while the drag is over it.
+    if (overContainer) {
+      const colId = parseSection(overContainer).colId;
+      setZoneColId((cur) => (cur === colId ? cur : colId));
+    }
     if (!activeContainer || !overContainer || activeContainer === overContainer) return;
 
     const activeItems = prev[activeContainer];
-    const overItems = prev[overContainer];
-    const overIndex = overId in prev ? overItems.length : Math.max(0, overItems.indexOf(overId));
+    const overItems = prev[overContainer] ?? [];
+    // A drop on a zone or an empty container appends; on a card it inserts there.
+    const overIndex = zoneKey != null || overId in prev ? overItems.length : Math.max(0, overItems.indexOf(overId));
     setCont({
       ...prev,
       [activeContainer]: activeItems.filter((id) => id !== activeId),
@@ -350,6 +394,7 @@ export function BoardView({
 
   function onDragEnd(e: DragEndEvent) {
     setActiveId(null);
+    setZoneColId(null);
     const { active, over } = e;
     if (!over) {
       // Released onto nothing — undo the optimistic onDragOver reshuffle.
@@ -361,10 +406,11 @@ export function BoardView({
     const prev = containersRef.current;
     const activeContainer = keyOf(prev, activeId);
     if (!activeContainer) return;
-    const overContainer = overId in prev ? overId : keyOf(prev, overId);
+    const zoneKey = zoneSection(overId);
+    const overContainer = zoneKey ?? (overId in prev ? overId : keyOf(prev, overId));
 
     let result = prev;
-    if (overContainer && activeContainer === overContainer) {
+    if (overContainer && activeContainer === overContainer && zoneKey == null) {
       const items = prev[activeContainer];
       const oldIndex = items.indexOf(activeId);
       const newIndex = overId in prev ? items.length - 1 : items.indexOf(overId);
@@ -372,6 +418,16 @@ export function BoardView({
         result = { ...prev, [activeContainer]: arrayMove(items, oldIndex, newIndex) };
         setCont(result);
       }
+    }
+    // A release on a zone lands in that band. onDragOver normally moved the card
+    // there already; reconcile here in case the final over-change never fired.
+    if (zoneKey != null && activeContainer !== zoneKey) {
+      result = {
+        ...result,
+        [activeContainer]: result[activeContainer].filter((id) => id !== activeId),
+        [zoneKey]: [...(result[zoneKey] ?? []).filter((id) => id !== activeId), activeId],
+      };
+      setCont(result);
     }
 
     const finalContainer = keyOf(result, activeId);
@@ -731,7 +787,7 @@ export function BoardView({
   // collapses its oldest cards past the visible limit).
   gridRef.current = grid.map((g) => ({
     colId: g.col.id,
-    ids: g.sections.flatMap((s) => s.visibleIds.slice(-COLUMN_VISIBLE_LIMIT)),
+    ids: g.sections.flatMap((s) => collapsedIds(s.visibleIds, sectionVisibleLimit(g.col.subStates.length > 0))),
   }));
 
   const activeTicket = activeId ? ticketsById[activeId] : null;
@@ -740,7 +796,8 @@ export function BoardView({
   // Human-readable screen-reader announcements (the droppable ids embed a NUL
   // separator + sub-state, which would otherwise be read verbatim).
   const describeOver = (id: string) => {
-    const { colId, sub } = parseSection(keyOf(containersRef.current, id) ?? id);
+    const key = zoneSection(id) ?? keyOf(containersRef.current, id) ?? id;
+    const { colId, sub } = parseSection(key);
     const col = cols.find((c) => c.id === colId);
     return `${col?.name ?? "column"}${sub ? " · " + sub : ""}`;
   };
@@ -770,6 +827,9 @@ export function BoardView({
         id="kanbai-board"
         sensors={sensors}
         collisionDetection={collisionDetection}
+        // Sub-state zones mount mid-drag (when the drag first hovers a column),
+        // so droppable rects must be re-measured continuously, not just at start.
+        measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
         accessibility={{ announcements }}
         onDragStart={onDragStart}
         onDragOver={onDragOver}
@@ -789,6 +849,7 @@ export function BoardView({
               celebrateId={celebrateId}
               focusedId={focusedId}
               dragging={activeId != null}
+              zonesActive={activeId != null && zoneColId === col.id}
               allColumns={cols}
               onMoveTo={moveTicketTo}
               onCardClick={(id) => !id.startsWith("tmp-") && setSelectedId(id)}
@@ -974,6 +1035,7 @@ function Column({
   celebrateId,
   focusedId,
   dragging,
+  zonesActive,
   allColumns,
   onMoveTo,
   onCardClick,
@@ -994,6 +1056,8 @@ function Column({
   celebrateId: string | null;
   focusedId: string | null;
   dragging: boolean;
+  /** A drag is over this column → overlay its sub-state drop zones. */
+  zonesActive: boolean;
   allColumns: ColumnMeta[];
   onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
   onCardClick: (id: string) => void;
@@ -1018,6 +1082,7 @@ function Column({
     allCount: s.allIds.length,
     stage: col.stage,
     dragging,
+    visibleLimit: sectionVisibleLimit(subStated),
     ticketsById,
     celebrateId,
     focusedId,
@@ -1173,14 +1238,17 @@ function Column({
       </div>
 
       {subStated ? (
-        <div className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-1", overLimit && "rounded-2xl p-0.5 ring-1 ring-danger/30")}>
-          {sections.map((s) => (
-            <Section key={s.key} {...sectionProps(s)} label={s.sub ?? undefined} count={s.allIds.length} />
-          ))}
-          {sections.reduce((n, s) => n + s.visibleIds.length, 0) === 0 && totalCount > 0 && (
-            <p className="px-1 py-1.5 text-xs text-fg-subtle">No cards match the filter.</p>
-          )}
-          <AddCard onCreate={onCreate} />
+        <div className={cn("relative flex min-h-0 flex-1 flex-col", overLimit && "rounded-2xl ring-1 ring-danger/30")}>
+          <div className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-1", overLimit && "p-0.5")}>
+            {sections.map((s) => (
+              <Section key={s.key} {...sectionProps(s)} label={s.sub ?? undefined} count={s.allIds.length} />
+            ))}
+            {sections.reduce((n, s) => n + s.visibleIds.length, 0) === 0 && totalCount > 0 && (
+              <p className="px-1 py-1.5 text-xs text-fg-subtle">No cards match the filter.</p>
+            )}
+            <AddCard onCreate={onCreate} />
+          </div>
+          {zonesActive && <SubStateZones colName={col.name} sections={sections} />}
         </div>
       ) : (
         <Section {...sectionProps(sections[0])} fill overLimit={overLimit} footer={<AddCard onCreate={onCreate} />} />
@@ -1200,6 +1268,7 @@ function Section({
   overLimit,
   ids,
   allCount,
+  visibleLimit,
   ticketsById,
   celebrateId,
   focusedId,
@@ -1217,6 +1286,7 @@ function Section({
   overLimit?: boolean;
   ids: string[];
   allCount: number;
+  visibleLimit: number;
   ticketsById: Record<string, SerializedTicket>;
   celebrateId: string | null;
   focusedId: string | null;
@@ -1229,8 +1299,9 @@ function Section({
   const [showAll, setShowAll] = React.useState(false);
   // Collapse the OLDEST cards (head of the list) — new cards append at the end,
   // so "Add card" and just-completed cards stay visible instead of vanishing
-  // behind the toggle.
-  const shown = showAll ? ids : ids.slice(-COLUMN_VISIBLE_LIMIT);
+  // behind the toggle. Sections barely past the limit stay fully expanded
+  // (COLLAPSE_SLACK) so a lone hidden card never earns a toggle.
+  const shown = showAll ? ids : collapsedIds(ids, visibleLimit);
   const hidden = ids.length - shown.length;
   const empty = ids.length === 0;
 
@@ -1264,17 +1335,17 @@ function Section({
       {hidden > 0 && (
         <button
           onClick={() => setShowAll(true)}
-          className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
+          className="rounded-lg px-2 py-1.5 text-start text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
         >
-          Show {hidden} older
+          Show {hidden} more
         </button>
       )}
-      {showAll && ids.length > COLUMN_VISIBLE_LIMIT && (
+      {showAll && ids.length > visibleLimit + COLLAPSE_SLACK && (
         <button
           onClick={() => setShowAll(false)}
-          className="rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
+          className="rounded-lg px-2 py-1.5 text-start text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
         >
-          Show fewer
+          Show less
         </button>
       )}
 
@@ -1319,6 +1390,49 @@ function Section({
       )}
 
       {footer}
+    </div>
+  );
+}
+
+/**
+ * The drag-time overlay for a sub-stated column: one equal-height drop zone per
+ * sub-state, covering the column's visible viewport. Dropping anywhere in a zone
+ * moves the card into that column + sub-state — no scrolling past a long first
+ * band to reach the second.
+ */
+function SubStateZones({ colName, sections }: { colName: string; sections: SectionData[] }) {
+  return (
+    <div
+      className="absolute inset-0 z-10 flex flex-col gap-1.5 rounded-2xl bg-surface/55 p-1 backdrop-blur-[2px] animate-scale-in"
+      role="group"
+      aria-label={`Drop zones for ${colName}`}
+    >
+      {sections.map((s) => (
+        <ZoneTarget key={s.key} id={zoneId(s.key)} label={s.sub ?? colName} count={s.allIds.length} />
+      ))}
+    </div>
+  );
+}
+
+function ZoneTarget({ id, label, count }: { id: string; label: string; count: number }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      aria-label={`Drop to move to ${label}`}
+      className={cn(
+        "flex min-h-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl border-2 border-dashed px-2 transition-colors",
+        isOver
+          ? "border-primary bg-primary-soft/80 text-primary"
+          : "border-border-strong/50 bg-surface/80 text-fg-muted",
+      )}
+    >
+      <span dir="auto" className="max-w-full truncate text-sm font-semibold">
+        {label}
+      </span>
+      <span className={cn("text-[0.6875rem] tabular-nums", isOver ? "text-primary/80" : "text-fg-subtle")}>
+        {isOver ? "Release to drop here" : `${count} ${count === 1 ? "card" : "cards"}`}
+      </span>
     </div>
   );
 }

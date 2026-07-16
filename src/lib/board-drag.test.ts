@@ -33,6 +33,29 @@ test("A cancelled or void drag reverts the optimistic move (no stranded card)", 
   assert.match(boardView, /if \(!over\) \{\s*\n\s*\/\/[^\n]*\n\s*setCont\(dragSnapshot\.current\);/);
 });
 
+test("Dragging over a sub-stated column overlays equal-height drop zones for each band", () => {
+  // Zone ids wrap section keys; both drag handlers must resolve them back.
+  assert.match(boardView, /const ZONE_PREFIX = /);
+  assert.match(boardView, /function zoneSection\(/);
+  assert.match(boardView, /function SubStateZones\(/);
+  // Zones fill the visible column equally (flex-1 targets on an absolute overlay).
+  assert.match(boardView, /absolute inset-0 z-10 flex flex-col/);
+  assert.match(boardView, /min-h-0 flex-1 flex-col items-center justify-center/);
+  // When the pointer is inside a zone, the zone wins collision detection outright.
+  assert.match(boardView, /if \(zone\) return \[\{ id: zone\.id \}\];/);
+  // Zones mount mid-drag, so droppable rects are re-measured continuously.
+  assert.match(boardView, /MeasuringStrategy\.Always/);
+  // A release on a zone lands in that band even if the last over-change never fired.
+  assert.match(boardView, /zoneKey != null && activeContainer !== zoneKey/);
+});
+
+test("Dense sub-state bands collapse behind a per-band Show more / Show less toggle", () => {
+  assert.match(boardView, /const SUBSTATE_VISIBLE_LIMIT = \d+/);
+  assert.match(boardView, /function collapsedIds\(/);
+  assert.match(boardView, /Show \{hidden\} more/);
+  assert.match(boardView, /Show less/);
+});
+
 test("Server keeps a column grouped by sub-state band so column-wide positions stay valid", () => {
   // moveTicket must order the destination column by band before inserting, so the
   // client's grouped position index matches the server's stored order.

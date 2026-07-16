@@ -100,6 +100,43 @@ export function buildMyDayFocusItems<TTicket extends MyDayTicket, TNote extends 
   ];
 }
 
+export type MyDayQueue<TTicket extends MyDayTicket = MyDayTicket, TNote extends MyDayNote = MyDayNote> = {
+  /** Tickets whose due day has passed — the lane to clear first. */
+  overdue: MyDayFocusItem<TTicket, TNote>[];
+  /** Due-today tickets, then today's still-open scheduled notes. */
+  today: MyDayFocusItem<TTicket, TNote>[];
+  /** Undated tickets assigned to the user — no deadline, but on their plate. */
+  anytime: MyDayFocusItem<TTicket, TNote>[];
+};
+
+/**
+ * The execution queue for the My Day page: the same population as
+ * {@link buildMyDayFocusItems} but split into Overdue / Today / Anytime groups,
+ * and with done-today notes left out (they live in the Done archive; an
+ * execution queue only lists work still open).
+ */
+export function buildMyDayQueue<TTicket extends MyDayTicket, TNote extends MyDayNote>(input: {
+  now?: Date;
+  tickets: TTicket[];
+  notes: TNote[];
+  userId?: string;
+}): MyDayQueue<TTicket, TNote> {
+  const now = input.now ?? new Date();
+  const buckets = getMyDayTicketBuckets(input.tickets, now, input.userId);
+  const ticketItem = (ticket: TTicket, urgent: boolean) => ({ kind: "ticket" as const, id: ticket.id, ticket, urgent });
+
+  return {
+    overdue: buckets.overdue.map((ticket) => ticketItem(ticket, true)),
+    today: [
+      ...buckets.today.map((ticket) => ticketItem(ticket, false)),
+      ...getMyDayTodayNotes(input.notes, now)
+        .filter((note) => note.doneOn == null)
+        .map((note) => ({ kind: "note" as const, id: note.id, note, urgent: false as const })),
+    ],
+    anytime: buckets.mine.map((ticket) => ticketItem(ticket, false)),
+  };
+}
+
 
 export type MyDayDoneArchiveItem<TTicket extends MyDayTicket = MyDayTicket, TNote extends MyDayNote = MyDayNote> =
   | { kind: "ticket"; id: string; completedOn: string; ticket: TTicket }
