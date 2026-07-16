@@ -49,11 +49,12 @@ test("Dragging over a sub-stated column overlays equal-height drop zones for eac
   assert.match(boardView, /zoneKey != null && activeContainer !== zoneKey/);
 });
 
-test("Dense sub-state bands collapse behind a per-band Show more / Show less toggle", () => {
+test("Dense sub-state bands collapse behind a per-band batched Show more toggle", () => {
   assert.match(boardView, /const SUBSTATE_VISIBLE_LIMIT = \d+/);
-  assert.match(boardView, /function collapsedIds\(/);
-  assert.match(boardView, /Show \{hidden\} more/);
-  assert.match(boardView, /Show less/);
+  assert.match(boardView, /visibleNewestFirstIds/);
+  assert.match(boardView, /nextVisibleCount/);
+  assert.match(boardView, /Show \{Math\.min\(hidden, visibleLimit\)\} more/);
+  assert.match(boardView, /Show fewer/);
 });
 
 test("Server keeps a column grouped by sub-state band so column-wide positions stay valid", () => {

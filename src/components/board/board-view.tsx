@@ -25,7 +25,6 @@ import {
 import {
   SortableContext,
   verticalListSortingStrategy,
-  arrayMove,
   useSortable,
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
@@ -55,6 +54,13 @@ import { cn } from "@/lib/utils";
 import { tone } from "@/components/ui/badge";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
 import { COLUMN_STAGES, STAGE_META, type ColumnStage } from "@/lib/column-stage";
+import {
+  insertInNewestFirstOrder,
+  isDenseSection,
+  moveInNewestFirstOrder,
+  nextVisibleCount,
+  visibleNewestFirstIds,
+} from "@/lib/board-section-visibility";
 import type { BoardData } from "@/lib/services/boards";
 import type { SerializedTicket } from "@/lib/serialize";
 
@@ -99,8 +105,8 @@ const COLLAPSE_SLACK = 2;
 function sectionVisibleLimit(subStated: boolean): number {
   return subStated ? SUBSTATE_VISIBLE_LIMIT : COLUMN_VISIBLE_LIMIT;
 }
-function collapsedIds(ids: string[], limit: number): string[] {
-  return ids.length > limit + COLLAPSE_SLACK ? ids.slice(-limit) : ids;
+function visibleSectionIds(ids: string[], visibleCount: number): string[] {
+  return visibleNewestFirstIds(ids, visibleCount);
 }
 
 // A "section" is a drop container: a plain column is one section (key = columnId);
@@ -383,12 +389,14 @@ export function BoardView({
 
     const activeItems = prev[activeContainer];
     const overItems = prev[overContainer] ?? [];
-    // A drop on a zone or an empty container appends; on a card it inserts there.
-    const overIndex = zoneKey != null || overId in prev ? overItems.length : Math.max(0, overItems.indexOf(overId));
+    const nextOverItems =
+      zoneKey != null || overId in prev
+        ? [...overItems.filter((id) => id !== activeId), activeId]
+        : insertInNewestFirstOrder(overItems, activeId, overId);
     setCont({
       ...prev,
       [activeContainer]: activeItems.filter((id) => id !== activeId),
-      [overContainer]: [...overItems.slice(0, overIndex), activeId, ...overItems.slice(overIndex)],
+      [overContainer]: nextOverItems,
     });
   }
 
@@ -412,10 +420,9 @@ export function BoardView({
     let result = prev;
     if (overContainer && activeContainer === overContainer && zoneKey == null) {
       const items = prev[activeContainer];
-      const oldIndex = items.indexOf(activeId);
-      const newIndex = overId in prev ? items.length - 1 : items.indexOf(overId);
-      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        result = { ...prev, [activeContainer]: arrayMove(items, oldIndex, newIndex) };
+      const nextItems = overId in prev ? [...items.filter((id) => id !== activeId), activeId] : moveInNewestFirstOrder(items, activeId, overId);
+      if (nextItems !== items) {
+        result = { ...prev, [activeContainer]: nextItems };
         setCont(result);
       }
     }
@@ -787,7 +794,7 @@ export function BoardView({
   // collapses its oldest cards past the visible limit).
   gridRef.current = grid.map((g) => ({
     colId: g.col.id,
-    ids: g.sections.flatMap((s) => collapsedIds(s.visibleIds, sectionVisibleLimit(g.col.subStates.length > 0))),
+    ids: g.sections.flatMap((s) => visibleSectionIds(s.visibleIds, sectionVisibleLimit(g.col.subStates.length > 0))),
   }));
 
   const activeTicket = activeId ? ticketsById[activeId] : null;
@@ -1296,13 +1303,14 @@ function Section({
   footer?: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
-  const [showAll, setShowAll] = React.useState(false);
-  // Collapse the OLDEST cards (head of the list) — new cards append at the end,
-  // so "Add card" and just-completed cards stay visible instead of vanishing
-  // behind the toggle. Sections barely past the limit stay fully expanded
-  // (COLLAPSE_SLACK) so a lone hidden card never earns a toggle.
-  const shown = showAll ? ids : collapsedIds(ids, visibleLimit);
-  const hidden = ids.length - shown.length;
+  const dense = isDenseSection(ids.length, visibleLimit, COLLAPSE_SLACK);
+  const [visibleCount, setVisibleCount] = React.useState(visibleLimit);
+  const clampedVisibleCount = Math.min(visibleCount, Math.max(ids.length, visibleLimit));
+
+  // Newer cards append at the end of the section; present them first. Dense
+  // sections reveal older cards in batches per section/sub-state, not all at once.
+  const shown = visibleSectionIds(ids, dense ? clampedVisibleCount : ids.length);
+  const hidden = dense ? Math.max(0, ids.length - shown.length) : 0;
   const empty = ids.length === 0;
 
   return (
@@ -1311,7 +1319,7 @@ function Section({
       className={cn(
         "flex flex-col gap-2 rounded-2xl border transition-colors",
         // The column's stage sets its surface: intake dashed & faded, backlog
-        // quiet, active brand-lit, done emerald-washed (see globals.css).
+        // quiet, active brand-lit, done softly purple-filled (see globals.css).
         fill ? "group/col min-h-0 flex-1 overflow-y-auto p-2" : "p-2",
         // Drop target highlight replaces the stage surface while hovered so the
         // primary tint always wins, whatever the stage's own colors are.
@@ -1331,21 +1339,21 @@ function Section({
         </div>
       )}
 
-      {/* The collapsed tail lives at the TOP: older cards hide up here. */}
       {hidden > 0 && (
         <button
-          onClick={() => setShowAll(true)}
+          onClick={() => setVisibleCount((count) => nextVisibleCount(count, ids.length, visibleLimit))}
           className="rounded-lg px-2 py-1.5 text-start text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
         >
-          Show {hidden} more
+          Show {Math.min(hidden, visibleLimit)} more
+          {hidden > visibleLimit ? ` (${hidden} older)` : ""}
         </button>
       )}
-      {showAll && ids.length > visibleLimit + COLLAPSE_SLACK && (
+      {dense && hidden === 0 && (
         <button
-          onClick={() => setShowAll(false)}
+          onClick={() => setVisibleCount(visibleLimit)}
           className="rounded-lg px-2 py-1.5 text-start text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
         >
-          Show less
+          Show fewer
         </button>
       )}
 
