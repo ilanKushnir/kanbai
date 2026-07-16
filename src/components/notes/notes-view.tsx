@@ -49,7 +49,6 @@ import {
   Minimize2,
   Ticket,
 } from "lucide-react";
-import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown, toggleTask } from "@/components/ui/markdown";
@@ -62,6 +61,7 @@ import { enqueueOfflineMutation, getOfflineMutations, setOfflineMutations } from
 import { ticketHref } from "@/lib/links";
 import { cn } from "@/lib/utils";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
+import { containerOf, moveAcrossContainers, sectionDisplay } from "@/lib/notes-drag";
 import {
   buildSchedule,
   coarseBucket,
@@ -422,6 +422,9 @@ export function NotesView({
     defaultCollapsedKeys(buildSchedule(new Date(), weekStartsOn)),
   );
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  // Section the active drag was picked up from — the only section that keeps its
+  // rows mid-drag; every other section collapses into a compact landing band.
+  const [dragOrigin, setDragOrigin] = React.useState<string | null>(null);
   const [recentlyDone, setRecentlyDone] = React.useState<Set<string>>(() => new Set());
   // The note id that just settled into the bottom of its section after the
   // done-delay elapsed — gets a one-shot landing animation in place.
@@ -767,15 +770,12 @@ export function NotesView({
   }
 
   // ── drag & drop across sections ──────────────────────────────────────────────
-  function keyOf(map: Record<string, string[]>, id: string): string | null {
-    if (id in map) return id;
-    return Object.keys(map).find((k) => map[k].includes(id)) ?? null;
-  }
-
   function onDragStart(e: DragStartEvent) {
     const snapshot = Object.fromEntries(Object.entries(baseContainers).map(([k, v]) => [k, [...v]]));
     setDM(snapshot);
-    setActiveId(String(e.active.id));
+    const id = String(e.active.id);
+    setActiveId(id);
+    setDragOrigin(containerOf(snapshot, id));
   }
 
   function onDragOver(e: DragOverEvent) {
@@ -783,25 +783,21 @@ export function NotesView({
     if (!over) return;
     const map = dragMapRef.current;
     if (!map) return;
-    const aId = String(active.id);
-    const overId = String(over.id);
-    const activeContainer = keyOf(map, aId);
-    const overContainer = overId in map ? overId : keyOf(map, overId);
-    if (!activeContainer || !overContainer || activeContainer === overContainer) return;
+    const next = moveAcrossContainers(map, String(active.id), String(over.id));
+    if (next) setDM(next);
+  }
 
-    const activeItems = map[activeContainer];
-    const overItems = map[overContainer];
-    const overIndex = overId in map ? overItems.length : Math.max(0, overItems.indexOf(overId));
-    setDM({
-      ...map,
-      [activeContainer]: activeItems.filter((id) => id !== aId),
-      [overContainer]: [...overItems.slice(0, overIndex), aId, ...overItems.slice(overIndex)],
-    });
+  function onDragCancel() {
+    setActiveId(null);
+    setDragOrigin(null);
+    setDM(null);
   }
 
   function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
+    const originKey = dragOrigin;
     setActiveId(null);
+    setDragOrigin(null);
     const map = dragMapRef.current;
     if (!map || !over) {
       setDM(null);
@@ -809,12 +805,12 @@ export function NotesView({
     }
     const aId = String(active.id);
     const overId = String(over.id);
-    const activeContainer = keyOf(map, aId);
+    const activeContainer = containerOf(map, aId);
     if (!activeContainer) {
       setDM(null);
       return;
     }
-    const overContainer = overId in map ? overId : keyOf(map, overId);
+    const overContainer = overId in map ? overId : containerOf(map, overId);
 
     let finalMap = map;
     if (overContainer && activeContainer === overContainer) {
@@ -826,7 +822,7 @@ export function NotesView({
       }
     }
 
-    const finalKey = keyOf(finalMap, aId);
+    const finalKey = containerOf(finalMap, aId);
     if (!finalKey) {
       setDM(null);
       return;
@@ -839,6 +835,15 @@ export function NotesView({
     // the persisted position must be indexed only among ids sharing the target day.
     const dayIds = ids.filter((id) => id === aId || (notesRef.current[id]?.scheduledDay ?? null) === day);
     const index = dayIds.indexOf(aId);
+
+    // Landing bands stay collapsed after the drop, so when the destination isn't
+    // visible confirm where the note went.
+    if (section && finalKey !== originKey) {
+      const hidden = section.kind === "day" ? collapsed.has("this_week") : collapsed.has(finalKey);
+      if (hidden) {
+        toast({ title: `Moved to ${section.label}`, description: section.sublabel, variant: "info" });
+      }
+    }
 
     // Bake the new order + schedule into local state so it doesn't snap back.
     setNotesById((m) => {
@@ -877,10 +882,6 @@ export function NotesView({
   const sorted = allNotes
     .filter((n) => n.status === "sorted" && (!q || n.body.toLowerCase().includes(q)))
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-  const recentSorted = sorted.filter((n) => {
-    const t = +new Date(n.updatedAt || n.createdAt);
-    return Number.isFinite(t) && +now - t < 48 * 60 * 60 * 1000;
-  });
   // Notes done on an earlier day are hidden from every schedule section by the
   // next-day sweep, so the archive list is their only remaining surface.
   const archived = allNotes.filter(
@@ -896,11 +897,10 @@ export function NotesView({
   );
 
   const dragging = !!activeId;
-  function isOpen(key: string, count: number) {
-    if (dragging) return true; // every section becomes a drop target mid-drag
-    if (q) return count > 0;
-    return !collapsed.has(key);
-  }
+  // Mid-drag every section stays "open" but non-origin sections render as compact
+  // landing bands instead of full contents (see sectionDisplay + NoteSectionBlock).
+  const displayOf = (key: string, count: number) =>
+    sectionDisplay({ key, dragging, dragOriginKey: dragOrigin, collapsedKeys: collapsed, searching: !!q, count });
   function toggleSection(key: string) {
     setCollapsed((s) => {
       const next = new Set(s);
@@ -928,7 +928,7 @@ export function NotesView({
     (sum, s) => sum + (containers[s.key]?.filter(matchId).length ?? 0) + refsFor(s.key).length,
     0,
   );
-  const weekOpen = isOpen("this_week", weekCount);
+  const weekOpen = displayOf("this_week", weekCount).open;
   const activeNote = activeId ? notesById[activeId] : null;
 
   React.useEffect(() => {
@@ -986,10 +986,12 @@ export function NotesView({
   function block(section: NoteSection, extra?: { card?: boolean; variant?: "unsorted" | "today" | "plain" | "quiet"; icon?: React.ComponentType<{ className?: string }> }) {
     const ids = (containers[section.key] ?? []).filter(matchId);
     const refs = refsFor(section.key);
+    const display = displayOf(section.key, ids.length + refs.length);
     return (
       <NoteSectionBlock
         section={section}
-        open={isOpen(section.key, ids.length + refs.length)}
+        open={display.open}
+        dropMode={display.mode === "drop-zone"}
         count={sectionCount(section.key)}
         ids={ids}
         reflections={refs}
@@ -1033,13 +1035,17 @@ export function NotesView({
                   if (!dictation.listening) dictateBase.current = draft.trim();
                   dictation.toggle();
                 }}
+                title={dictation.listening ? "Stop dictation" : "Dictate"}
+                aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
                 className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer",
-                  dictation.listening ? "animate-pulse-soft bg-danger text-white" : "bg-surface-2 text-fg-muted hover:text-fg",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer",
+                  dictation.listening
+                    ? "animate-pulse-soft bg-danger px-2.5 py-1.5 text-white"
+                    : "bg-surface-2 p-1.5 text-fg-muted hover:text-fg",
                 )}
               >
                 <Mic className="h-3.5 w-3.5" />
-                {dictation.listening ? "Recording… tap to stop" : "Dictate"}
+                {dictation.listening && "Recording… tap to stop"}
               </button>
             )}
             <DayChip value={draftDay} schedule={schedule} onChange={setDraftDay} />
@@ -1086,6 +1092,7 @@ export function NotesView({
         onDragStart={onDragStart}
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
+        onDragCancel={onDragCancel}
       >
         {/* Unsorted — quick-capture catch-all, styled apart */}
         <div className="mt-5">{block(unsorted, { card: true, variant: "unsorted", icon: Inbox })}</div>
@@ -1116,6 +1123,7 @@ export function NotesView({
                         section={s}
                         sub
                         open
+                        dropMode={dragging && s.key !== dragOrigin}
                         count={sectionCount(s.key)}
                         ids={ids}
                         reflections={refsFor(s.key)}
@@ -1141,7 +1149,9 @@ export function NotesView({
         <DragOverlay dropAnimation={null}>
           {activeNote ? (
             <div className="rotate-1 rounded-xl border border-primary/40 bg-surface px-3 py-2 shadow-lg">
-              <span className="line-clamp-2 text-sm">{activeNote.body}</span>
+              <span className="line-clamp-2 text-sm" dir="auto">
+                {activeNote.body}
+              </span>
             </div>
           ) : null}
         </DragOverlay>
@@ -1293,6 +1303,7 @@ function NoteSectionBlock({
   variant = "plain",
   icon: Icon,
   dragging,
+  dropMode,
   onToggle,
   onAdd,
   notesById,
@@ -1323,6 +1334,7 @@ function NoteSectionBlock({
   variant?: "unsorted" | "today" | "plain" | "quiet";
   icon?: React.ComponentType<{ className?: string }>;
   dragging?: boolean;
+  dropMode?: boolean;
   onToggle: () => void;
   onAdd: (text: string) => void;
 }) {
@@ -1336,8 +1348,44 @@ function NoteSectionBlock({
   }
 
   const empty = ids.length === 0;
-  // Empty day slots stay compact; a drop target only appears while dragging.
-  const showDropZone = sub && empty && (dragging || isOver);
+
+  // Mid-drag, non-origin sections collapse into this compact landing band: just
+  // the label + live count over a thumb-sized droppable — never the full rows.
+  if (dropMode) {
+    return (
+      <div className={cn(sub ? "py-0.5" : !card && "px-2 py-1.5")}>
+        <div
+          ref={setNodeRef}
+          className={cn(
+            "flex items-center gap-2 rounded-xl border border-dashed px-3 transition-colors",
+            sub ? "min-h-10" : "min-h-12",
+            isOver
+              ? "border-primary bg-primary-soft/40"
+              : variant === "today"
+                ? "border-primary/45 bg-primary-soft/10"
+                : variant === "unsorted"
+                  ? "border-border bg-surface/40"
+                  : "border-border/70 bg-surface/25",
+          )}
+        >
+          {Icon && <Icon className={cn("h-3.5 w-3.5 shrink-0", isOver ? "text-primary" : "text-fg-subtle")} />}
+          <span
+            className={cn(
+              "text-xs font-semibold uppercase tracking-wider",
+              isOver ? "text-primary" : variant === "today" ? "text-fg" : "text-fg-muted",
+            )}
+          >
+            {section.label}
+          </span>
+          {section.sublabel && <span className="text-[0.6875rem] text-fg-subtle">{section.sublabel}</span>}
+          <span className="ml-auto flex shrink-0 items-center gap-2">
+            {count > 0 && <span className="text-[0.6875rem] font-medium text-fg-subtle">{count}</span>}
+            {isOver && <span className="text-[0.6875rem] font-semibold text-primary">Drop</span>}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   const outer = card
     ? cn(
@@ -1443,7 +1491,8 @@ function NoteSectionBlock({
             </div>
           </SortableContext>
 
-          {reflections.length > 0 && (
+          {/* reflected tickets are read-only context — hidden mid-drag to keep the origin quiet */}
+          {reflections.length > 0 && !dragging && (
             <div className="mt-1 space-y-1">
               {reflections.map((r) => (
                 <ReflectionRow key={r.id} reflection={r} boards={boards} handedness={handedness} />
@@ -1456,9 +1505,9 @@ function NoteSectionBlock({
               <CornerDownLeft className="mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle" />
               {addLine}
             </div>
-          ) : sub ? (
-            // empty day: a dashed drop target that only appears while dragging
-            showDropZone && (
+          ) : dragging ? (
+            // the origin section emptied mid-drag: keep a target to drop back into
+            empty && (
               <div
                 className={cn(
                   "mx-1 my-0.5 rounded-md border border-dashed px-2 py-1.5 text-center text-[0.6875rem] transition-colors",
@@ -1468,7 +1517,7 @@ function NoteSectionBlock({
                 Drop here
               </div>
             )
-          ) : (
+          ) : sub ? null : (
             <button
               onClick={() => setAdding(true)}
               className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-fg-subtle hover:bg-surface-2/60 hover:text-fg-muted cursor-pointer"
