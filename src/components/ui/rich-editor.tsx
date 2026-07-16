@@ -144,6 +144,7 @@ export function RichEditor({
       </div>
       <div
         ref={ref}
+        dir="auto"
         contentEditable
         suppressContentEditableWarning
         role="textbox"

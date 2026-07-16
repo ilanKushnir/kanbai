@@ -4,6 +4,7 @@ import { logActivity } from "@/lib/activity";
 import { shortToken } from "@/lib/password";
 import { ticketInclude, serializeTicket, serializePublicTicket, type UserLite } from "@/lib/serialize";
 import { parseSubStates, stringifySubStates } from "@/lib/substates";
+import { resolveColumnStage, type ColumnStage } from "@/lib/column-stage";
 import { onMutation } from "@/lib/snapshots";
 import { reconcileColumnSubStates, type Actor } from "./tickets";
 
@@ -28,10 +29,10 @@ export function slugify(name: string) {
 }
 
 const DEFAULT_COLUMNS = [
-  { name: "Backlog", isDone: false },
-  { name: "To Do", isDone: false },
-  { name: "In Progress", isDone: false },
-  { name: "Done", isDone: true },
+  { name: "Ideas", isDone: false, stage: "intake" },
+  { name: "Backlog", isDone: false, stage: "backlog" },
+  { name: "In Work", isDone: false, stage: "active" },
+  { name: "Done", isDone: true, stage: "done" },
 ];
 
 export async function createBoard(
@@ -107,6 +108,7 @@ export async function getBoardWithData(
       id: c.id,
       name: c.name,
       isDone: c.isDone,
+      stage: resolveColumnStage(c.stage, c.name, c.isDone),
       wipLimit: c.wipLimit,
       subStates: parseSubStates(c.subStates),
       tickets: c.tickets.map((t) => serializeTicket(t, usersById)),
@@ -123,7 +125,7 @@ export async function createBoardWithStructure(
     name: string;
     description?: string;
     color?: string;
-    columns?: { name: string; isDone?: boolean }[];
+    columns?: { name: string; isDone?: boolean; stage?: ColumnStage }[];
     labels?: { name: string; color?: string }[];
     createdAt?: string | null;
   },
@@ -142,13 +144,21 @@ export async function createBoardWithStructure(
       color: input.color ?? "iris",
       position: count,
       ...(input.createdAt ? { createdAt: new Date(input.createdAt) } : {}),
-      columns: { create: cols.map((c, i) => ({ name: c.name, isDone: c.isDone ?? false, position: i })) },
+      // stage "done" and the isDone flag imply each other — keep them in lockstep.
+      columns: {
+        create: cols.map((c, i) => ({
+          name: c.name,
+          isDone: c.stage ? c.stage === "done" : c.isDone ?? false,
+          stage: c.stage ?? (c.isDone ? "done" : null),
+          position: i,
+        })),
+      },
       labels: input.labels?.length
         ? { create: input.labels.map((l) => ({ name: l.name, color: l.color ?? "slate" })) }
         : undefined,
     },
     include: {
-      columns: { orderBy: { position: "asc" }, select: { id: true, name: true, isDone: true } },
+      columns: { orderBy: { position: "asc" }, select: { id: true, name: true, isDone: true, stage: true } },
       labels: { select: { id: true, name: true, color: true } },
     },
   });
@@ -166,7 +176,7 @@ export async function updateBoardColumn(
   workspaceId: string,
   boardId: string,
   columnId: string,
-  input: { name?: string; isDone?: boolean; wipLimit?: number | null; subStates?: string[] },
+  input: { name?: string; isDone?: boolean; stage?: ColumnStage; wipLimit?: number | null; subStates?: string[] },
   actor: Actor,
 ) {
   await onMutation(actor, workspaceId);
@@ -185,7 +195,7 @@ export async function updateBoardColumn(
 
   const data: Record<string, unknown> = {};
   if (input.name !== undefined) data.name = input.name;
-  if (input.isDone !== undefined) data.isDone = input.isDone;
+  applyColumnStageSync(data, input);
   if (input.wipLimit !== undefined) data.wipLimit = input.wipLimit;
   // subStates is the whole list for this column — normalized (trimmed, de-duped
   // case-insensitively, capped) before it's stored. Sending [] clears them.
@@ -204,10 +214,32 @@ export async function updateBoardColumn(
     id: column.id,
     name: column.name,
     isDone: column.isDone,
+    stage: resolveColumnStage(column.stage, column.name, column.isDone),
     wipLimit: column.wipLimit,
     position: column.position,
     subStates: parseSubStates(column.subStates),
   };
+}
+
+/**
+ * Keep a column's semantic `stage` and its `isDone` flag (which drives
+ * completion counting) in lockstep on update, whichever one the caller sends:
+ *   - stage: "done"      → isDone true
+ *   - stage: anything else → isDone false
+ *   - isDone: true (no stage) → stage "done"
+ *   - isDone: false (no stage) → clear a stored "done" stage (re-derive from name)
+ */
+export function applyColumnStageSync(
+  data: Record<string, unknown>,
+  input: { isDone?: boolean; stage?: ColumnStage },
+) {
+  if (input.stage !== undefined) {
+    data.stage = input.stage;
+    data.isDone = input.stage === "done";
+  } else if (input.isDone !== undefined) {
+    data.isDone = input.isDone;
+    data.stage = input.isDone ? "done" : null;
+  }
 }
 
 /** Toggle a board's public visibility; mints a stable publicId the first time. */
@@ -258,6 +290,7 @@ export async function getPublicBoard(publicId: string) {
       id: c.id,
       name: c.name,
       isDone: c.isDone,
+      stage: resolveColumnStage(c.stage, c.name, c.isDone),
       tickets: c.tickets.map((t) => serializePublicTicket(t, usersById)),
     })),
   };

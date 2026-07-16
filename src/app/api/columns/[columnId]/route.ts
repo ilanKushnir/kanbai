@@ -5,6 +5,8 @@ import { parse, readJson } from "@/lib/parse";
 import { updateColumnSchema } from "@/lib/validation";
 import { markManualAction } from "@/lib/snapshots";
 import { parseSubStates, stringifySubStates } from "@/lib/substates";
+import { resolveColumnStage } from "@/lib/column-stage";
+import { applyColumnStageSync } from "@/lib/services/boards";
 import { reconcileColumnSubStates } from "@/lib/services/tickets";
 import { db } from "@/lib/db";
 
@@ -18,7 +20,7 @@ export const PATCH = handler(
     const data: Record<string, unknown> = {};
     if (input.name !== undefined) data.name = input.name;
     if (input.wipLimit !== undefined) data.wipLimit = input.wipLimit;
-    if (input.isDone !== undefined) data.isDone = input.isDone;
+    applyColumnStageSync(data, input); // stage ↔ isDone stay in lockstep
     if (input.subStates !== undefined) data.subStates = stringifySubStates(input.subStates);
     const column = await db.column.update({ where: { id: columnId }, data });
     // Changing the band list can orphan tickets' sub-states — snap them back valid.
@@ -29,6 +31,7 @@ export const PATCH = handler(
         name: column.name,
         wipLimit: column.wipLimit,
         isDone: column.isDone,
+        stage: resolveColumnStage(column.stage, column.name, column.isDone),
         subStates: parseSubStates(column.subStates),
       },
     });

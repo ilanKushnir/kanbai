@@ -29,7 +29,9 @@ export function Markdown({
   counter.current = -1;
 
   return (
-    <div className={cn("md", className)}>
+    // dir="auto": a note that starts in Hebrew/Arabic renders right-to-left,
+    // even when it mixes in English words. LTR content is unaffected.
+    <div dir="auto" className={cn("md", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

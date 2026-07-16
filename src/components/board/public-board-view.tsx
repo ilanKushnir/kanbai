@@ -56,7 +56,7 @@ function ReadOnlyTicket({ ticket, onClose }: { ticket: SerializedPublicTicket; o
         <span>·</span>
         <span>{ticket.column}</span>
       </div>
-      <h2 className="text-xl font-semibold tracking-tight">{ticket.title}</h2>
+      <h2 dir="auto" className="text-xl font-semibold tracking-tight">{ticket.title}</h2>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {ticket.priority !== "none" && (

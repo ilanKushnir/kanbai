@@ -302,7 +302,7 @@ function DoneArchive({ archive }: { archive: { total: number; hasMore: boolean; 
               <div className="space-y-1.5">
                 {group.items.map((item) => (
                   <div key={`${item.kind}-${item.id}`} className="rounded-xl border border-success/20 bg-success-soft/35 px-3 py-2 text-sm">
-                    <div className="line-clamp-2 font-medium text-fg">{item.kind === "ticket" ? item.ticket.title : item.note.body}</div>
+                    <div dir="auto" className="line-clamp-2 font-medium text-fg">{item.kind === "ticket" ? item.ticket.title : item.note.body}</div>
                     <div className="mt-1 text-xs text-success">{item.kind === "ticket" ? "Ticket" : "Note"} · done</div>
                   </div>
                 ))}
@@ -320,7 +320,7 @@ function DeckRow({ row }: { row: Row }) {
   const d = dueMeta(row.dueDate);
   return (
     <Link href={`/boards/${row.boardSlug}?ticket=${row.id}`} className="block rounded-xl border border-border/70 bg-surface/60 px-3 py-2 hover:bg-surface">
-      <div className="line-clamp-2 text-sm font-medium">{row.title}</div>
+      <div dir="auto" className="line-clamp-2 text-sm font-medium">{row.title}</div>
       <div className="mt-1 flex items-center justify-between gap-2 text-xs text-fg-subtle">
         <span>{row.boardName}</span>
         {d && <span>{d.label}</span>}

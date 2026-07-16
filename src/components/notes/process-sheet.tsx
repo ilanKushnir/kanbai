@@ -109,7 +109,7 @@ export function ProcessSheet({
       size="md"
     >
       <div className="mb-4 rounded-xl bg-surface-2 p-3 text-sm text-fg">
-        <span className="line-clamp-4 whitespace-pre-wrap">{note.body}</span>
+        <span dir="auto" className="line-clamp-4 block whitespace-pre-wrap">{note.body}</span>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1">
@@ -235,6 +235,7 @@ function TicketTab({
       <div>
         <Label>Ticket title</Label>
         <input
+          dir="auto"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           className="h-9.5 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"

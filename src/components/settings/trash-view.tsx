@@ -151,7 +151,7 @@ function Row({
     <div className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-3 shadow-card">
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-fg-muted">{icon}</span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{title}</div>
+        <div dir="auto" className="truncate text-sm font-medium">{title}</div>
         <div className="mt-0.5 truncate text-xs text-fg-subtle">{meta}</div>
       </div>
       <Button variant="secondary" size="sm" onClick={onRestore} disabled={busy} className="shrink-0">

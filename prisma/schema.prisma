@@ -162,6 +162,7 @@ model Column {
   position Int     @default(0)
   wipLimit Int?
   isDone   Boolean @default(false) // tickets here count as completed
+  stage    String? // semantic stage: intake | backlog | active | done; null = derived from name/isDone
   subStates String? // JSON array of sub-state names, e.g. ["In progress","Blocked"]
 
   board   Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)

@@ -1185,7 +1185,7 @@ export function NotesView({
             <div className="mt-2 space-y-2">
               {archived.map((n) => (
                 <div key={n.id} className="flex items-center gap-2 rounded-xl border border-border px-3 py-2">
-                  <p className="min-w-0 flex-1 truncate text-sm text-fg-subtle">{n.body}</p>
+                  <p dir="auto" className="min-w-0 flex-1 truncate text-sm text-fg-subtle">{n.body}</p>
                   <button
                     onClick={() => restore(n.id)}
                     className="shrink-0 rounded-lg px-2 py-1 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg cursor-pointer"

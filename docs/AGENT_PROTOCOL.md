@@ -50,7 +50,12 @@ curl https://your-kanbai.app/api/v1/me \
 #   "baseUrl": "https://your-kanbai.app/api/v1",
 #   "agent": {...}, "workspaceId": "...", "scopes": [...],
 #   "capabilities": {
-#     "resources": ["boards","tickets","inbox","notes","comments","members"],
+#     "resources": ["boards","columns","tickets","inbox","notes","comments","members","trash"],
+#     "lifecycle": { "ticketDone": true, "noteDone": true, "notePromote": true,
+#                    "softDelete": true, "trashRestore": true, "boardArchive": true },
+#     "boards": { "update": true, "columns": { "create": true, "update": true,
+#                 "reorder": true, "deleteEmptyOnly": true }, "columnStages": true },
+#     "members": { "manage": true },
 #     "webhook": { "selfRegister": true, "test": true, "signing": "optional" },
 #     "events": ["note.queued","note.sorted","ticket.created", ...]
 #   },
@@ -60,7 +65,8 @@ curl https://your-kanbai.app/api/v1/me \
 #     "descriptionFormat": "html",
 #     "descriptionAllowedTags": ["p","b","i","u","h3","ul","ol","li","blockquote","a", ...],
 #     "priorities": ["none","low","medium","high","urgent"],
-#     "noteBuckets": ["today","tomorrow","next_week","next_month","general"]
+#     "noteBuckets": ["today","tomorrow","next_week","next_month","general"],
+#     "columnStages": [{ "stage":"intake", "label":"Ideas", "hint":"…" }, ...]
 #   }
 # }
 ```
@@ -79,12 +85,23 @@ Base URL: `https://your-kanbai.app/api/v1`. All bodies are JSON.
 ### Boards
 
 ```
-GET   /boards                                # list boards (+ columns, labels)  scope: boards:read
-GET   /boards/{boardId}                      # board with all columns & tickets scope: boards:read
-POST  /boards                                # create a board w/ columns+labels  scope: boards:write
-GET   /boards/{boardId}/columns/{columnId}   # read one column                  scope: boards:read
-PATCH /boards/{boardId}/columns/{columnId}   # rename / set sub-states / flags   scope: boards:write
+GET    /boards                                # list boards (+ columns, labels)   scope: boards:read
+GET    /boards/{boardId}                      # board with all columns & tickets  scope: boards:read
+POST   /boards                                # create a board w/ columns+labels  scope: boards:write
+PATCH  /boards/{boardId}                      # update name/description/color, or archive/unarchive  scope: boards:write
+GET    /boards/{boardId}/columns              # list the board's columns          scope: boards:read
+POST   /boards/{boardId}/columns              # add a column                      scope: boards:write
+POST   /boards/{boardId}/columns/reorder      # reorder columns (all ids, once)   scope: boards:write
+GET    /boards/{boardId}/columns/{columnId}   # read one column                   scope: boards:read
+PATCH  /boards/{boardId}/columns/{columnId}   # rename / stage / sub-states / flags  scope: boards:write
+DELETE /boards/{boardId}/columns/{columnId}   # delete an EMPTY column only       scope: boards:write
 ```
+
+**Archive, don't delete.** `PATCH /boards/{id} { "archived": true }` is the
+agent-safe way to retire a board — fully reversible with `{ "archived": false }`,
+every ticket intact. There is deliberately **no board `DELETE`** for agents, and
+`DELETE` on a column is refused (`422 column_not_empty`) while any card lives in
+it — including trashed ones — so nothing restorable can ever be destroyed.
 
 **Create a board** (migration-friendly — define columns & labels up front):
 
@@ -101,12 +118,28 @@ curl -X POST https://your-kanbai.app/api/v1/boards \
 # → { board: { id, slug, columns:[{id,name,isDone}], labels:[{id,name,color}] } }
 ```
 
-#### Columns: rename & sub-states
+#### Columns: rename, stage & sub-states
 
 Manage an existing board's columns without recreating it. A **column** has a
-`name`, an `isDone` flag (tickets there count as completed), an optional
-`wipLimit`, and an ordered list of **sub-states** — lightweight stages *within*
-the column (e.g. `In progress` / `Blocked`) that a ticket can sit in.
+`name`, a semantic **`stage`**, an `isDone` flag (tickets there count as
+completed), an optional `wipLimit`, and an ordered list of **sub-states** —
+lightweight stages *within* the column (e.g. `In progress` / `Blocked`) that a
+ticket can sit in.
+
+**Column stages** describe what a column *means* and drive the board's visual
+language (also self-described in `/me` → `conventions.columnStages`):
+
+| Stage | UI label | Meaning |
+| --- | --- | --- |
+| `intake` | Ideas | raw ideas / ungroomed intake, not reviewed yet |
+| `backlog` | Backlog | reviewed, ready to pick up |
+| `active` | In Work | being worked on right now |
+| `done` | Done | completed — implies `isDone: true` |
+
+`stage` and `isDone` are kept in lockstep server-side: setting
+`stage: "done"` flips `isDone` on, any other stage flips it off, and setting
+`isDone` directly adjusts the stage. Columns created before stages existed
+resolve to a sensible stage from their name + `isDone` flag.
 
 ```bash
 # Rename a column and give it two sub-states
@@ -128,8 +161,9 @@ untouched. Accepted fields (**at least one is required** — an empty body is
 | Field | Rule |
 | --- | --- |
 | `name` | trimmed, non-empty, ≤ 40 chars, unique per board (case-insensitive); duplicate returns `409` |
+| `stage` | `intake` \| `backlog` \| `active` \| `done` — semantic column type; `done` implies `isDone: true` |
 | `subStates` | array of trimmed names (each 1–24 chars), **max 8**; normalized server-side: blanks dropped, **de-duped case-insensitively**, order preserved. Send `[]` to clear all sub-states |
-| `isDone` | boolean — whether tickets in this column count as done |
+| `isDone` | boolean — whether tickets in this column count as done (kept in lockstep with `stage`) |
 | `wipLimit` | integer 1–99, or `null` to remove the limit |
 
 Sending `subStates` replaces the column's whole list (it's not a merge), but
@@ -286,8 +320,29 @@ PATCH  /notes/{noteId}         # edit body/pinned/status/schedule/done/priority 
 DELETE /notes/{noteId}         # soft-delete → 30-day trash               scope: notes:write
 POST   /notes/{noteId}/move    # move to a bucket + position              scope: notes:write
 POST   /notes/{noteId}/queue   # queue the note to an agent to sort       scope: notes:write
+POST   /notes/{noteId}/promote # note → ticket in ONE action              scope: notes:write + tickets:write
 POST   /notes/{noteId}/attachments  # attach audio/image/file (data URL)  scope: notes:write
 ```
+
+**Promote a note into a ticket — one action.** `POST /notes/{noteId}/promote`
+creates the ticket and atomically marks the note **sorted** (linked to the
+ticket, hidden from the inbox, fully recoverable — the note is *not* deleted).
+Never emulate this with create-ticket + delete-note. Unlike
+`POST /inbox/{id}/sort`, it works on **any** workspace note, queued to you or
+not. All fields are optional except `boardId`: `title` defaults to the note's
+first line, the full body carries over as the description, and the note's
+priority is inherited. Also accepts `columnId`/`columnName`, `description`,
+`priority`, `dueDate`, `labelIds`, and `labelNames` (auto-created).
+
+```bash
+curl -X POST https://your-kanbai.app/api/v1/notes/note_123/promote \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{ "boardId":"brd_product", "columnName":"Backlog", "labelNames":["idea"] }'
+# → 201 { ticket: {...}, note: { id: "note_123", status: "sorted" } }
+```
+
+Promoting a note that is already sorted returns `409`.
 
 **List** supports query filters (all optional, combinable):
 
@@ -394,12 +449,20 @@ curl -X POST https://your-kanbai.app/api/v1/trash \
 Restoring an item that isn't in the trash returns `422 not_deleted`; an item
 past the 30-day window is gone (`404`).
 
-### Members (for migration)
+### Members
 
 ```
-GET  /members                 # list workspace members (map assignees)   scope: members:read
-POST /members                 # create/add a user to this workspace      scope: members:write
+GET    /members               # list workspace members (map assignees)   scope: members:read
+POST   /members               # create/add a user to this workspace      scope: members:write
+PATCH  /members/{userId}      # change role and/or per-board access      scope: members:write
+DELETE /members/{userId}      # remove from THIS workspace (membership only)  scope: members:write
 ```
+
+`PATCH` accepts `role` (`admin` | `member`) and/or `boardAccess`
+(`[{ boardId, level: "view"|"edit" }]` — replaces the member's grant list).
+`DELETE` removes the **membership only**: the user account, their notes, and
+every ticket survive intact, and `POST /members` with the same email restores
+access. The workspace **owner** can never be changed or removed (`403`).
 
 `POST /members` creates the user if their email is new (returns a one-time
 `tempPassword` so you can onboard them) and adds them to the workspace:

@@ -51,7 +51,7 @@ export const API_VERSION = "v1";
  * without scraping the docs. Per-agent permissions are conveyed by `scopes`.
  */
 export const AGENT_CAPABILITIES = {
-  resources: ["boards", "tickets", "inbox", "notes", "comments", "members", "trash"],
+  resources: ["boards", "columns", "tickets", "inbox", "notes", "comments", "members", "trash"],
   lifecycle: {
     // Full status management: PATCH columnId/subState, POST /tickets/:id/move,
     // and the one-call POST /tickets/:id/done (board's done column).
@@ -59,10 +59,30 @@ export const AGENT_CAPABILITIES = {
     // Notes: PATCH doneOn (complete/un-complete), scheduledDay (sort into a
     // day/section), status inbox|archived, priority, pinned.
     noteDone: true,
+    // POST /notes/{id}/promote converts ANY workspace note into a ticket in one
+    // atomic action (title defaults from the note; note becomes "sorted",
+    // recoverable). POST /inbox/{id}/sort is the same for queued-to-me notes.
+    notePromote: true,
     // DELETE tickets/notes soft-deletes into a 30-day restorable trash;
     // GET/POST /api/v1/trash lists and restores. Permanent purge is human-only.
     softDelete: true,
     trashRestore: true,
+    // PATCH /boards/{id} { archived } — the reversible "delete" for boards.
+    boardArchive: true,
+  },
+  boards: {
+    // PATCH /boards/{id}: name, description, color, archived.
+    update: true,
+    // Columns: POST /boards/{id}/columns, PATCH/DELETE …/columns/{id} (delete is
+    // empty-only so nothing restorable is lost), POST …/columns/reorder.
+    columns: { create: true, update: true, reorder: true, deleteEmptyOnly: true },
+    // Semantic column stages (see conventions.columnStages) drive board styling.
+    columnStages: true,
+  },
+  members: {
+    // GET/POST /members, PATCH/DELETE /members/{userId}. Removal is a
+    // membership change only — accounts and their data are never deleted.
+    manage: true,
   },
   webhook: {
     selfRegister: true, // POST /api/v1/agent/webhook with the agent's bearer key

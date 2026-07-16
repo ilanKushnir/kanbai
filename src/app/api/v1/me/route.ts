@@ -10,6 +10,7 @@ import {
   AGENT_CAPABILITIES,
   WEBHOOK_EVENTS,
 } from "@/lib/constants";
+import { COLUMN_STAGES, STAGE_META } from "@/lib/column-stage";
 import { APP_VERSION } from "@/lib/version";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,9 @@ export const GET = handler(async (req: Request) => {
       descriptionAllowedTags: [...RICH_TEXT_TAGS],
       priorities: [...PRIORITIES],
       noteBuckets: [...NOTE_BUCKETS],
+      // Semantic column stages: set via PATCH column { stage }. "done" implies
+      // isDone (completion counting); the two are kept in lockstep server-side.
+      columnStages: COLUMN_STAGES.map((s) => ({ stage: s, label: STAGE_META[s].label, hint: STAGE_META[s].hint })),
     },
   });
 });

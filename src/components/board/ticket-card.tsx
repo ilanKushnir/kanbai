@@ -54,10 +54,12 @@ export function TicketCard({
         </div>
       )}
 
-      <p className="text-sm font-medium leading-snug text-fg">{ticket.title}</p>
+      {/* dir="auto": first strong character sets base direction, so Hebrew/Arabic
+          titles read right-to-left even when they mix in English words. */}
+      <p dir="auto" className="text-sm font-medium leading-snug text-fg">{ticket.title}</p>
 
       {excerpt && (
-        <p className="mt-1 line-clamp-2 text-xs text-fg-muted leading-relaxed">{excerpt}</p>
+        <p dir="auto" className="mt-1 line-clamp-2 text-xs text-fg-muted leading-relaxed">{excerpt}</p>
       )}
 
       <div className="mt-2.5 flex items-center gap-2">

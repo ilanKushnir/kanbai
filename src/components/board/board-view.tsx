@@ -53,11 +53,39 @@ import { api } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
 import { tone } from "@/components/ui/badge";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
+import { COLUMN_STAGES, STAGE_META, type ColumnStage } from "@/lib/column-stage";
 import type { BoardData } from "@/lib/services/boards";
 import type { SerializedTicket } from "@/lib/serialize";
 
 type AgentLite = { id: string; name: string; color: string; kind: string };
-type ColumnMeta = { id: string; name: string; isDone: boolean; wipLimit: number | null; subStates: string[] };
+type ColumnMeta = {
+  id: string;
+  name: string;
+  isDone: boolean;
+  stage: ColumnStage;
+  wipLimit: number | null;
+  subStates: string[];
+};
+
+/** Stage color language — dots, tinted chips, and the column/band surfaces. */
+const STAGE_DOT: Record<ColumnStage, string> = {
+  intake: "var(--stage-intake)",
+  backlog: "var(--stage-backlog)",
+  active: "var(--stage-active)",
+  done: "var(--stage-done)",
+};
+const STAGE_FILL: Record<ColumnStage, string> = {
+  intake: "kb-col-intake",
+  backlog: "kb-col-backlog",
+  active: "kb-col-active",
+  done: "kb-col-done",
+};
+const STAGE_BAND: Record<ColumnStage, string> = {
+  intake: "kb-band-intake",
+  backlog: "kb-band-backlog",
+  active: "kb-band-active",
+  done: "kb-band-done",
+};
 type SectionData = { key: string; sub: string | null; allIds: string[]; visibleIds: string[] };
 
 /** Collapse a column's older cards behind a "show older" toggle past this count. */
@@ -103,6 +131,7 @@ function buildCols(board: BoardData): ColumnMeta[] {
     id: c.id,
     name: c.name,
     isDone: c.isDone,
+    stage: c.stage,
     wipLimit: c.wipLimit,
     subStates: c.subStates ?? [],
   }));
@@ -533,9 +562,10 @@ export function BoardView({
     await patchColumn(columnId, { wipLimit }, "set the WIP limit");
   }
 
-  async function toggleDone(columnId: string, isDone: boolean) {
-    setCols((cs) => cs.map((c) => (c.id === columnId ? { ...c, isDone } : c)));
-    await patchColumn(columnId, { isDone }, "update the column");
+  async function setStage(columnId: string, stage: ColumnStage) {
+    // The stage drives isDone server-side (done ⇔ isDone) — mirror that locally.
+    setCols((cs) => cs.map((c) => (c.id === columnId ? { ...c, stage, isDone: stage === "done" } : c)));
+    await patchColumn(columnId, { stage }, "change the column type");
   }
 
   async function addColumn(name: string) {
@@ -765,7 +795,7 @@ export function BoardView({
               onCreate={(title) => handleCreate(col.id, title)}
               onRename={(name) => renameColumn(col.id, name)}
               onSetWip={(n) => setWip(col.id, n)}
-              onToggleDone={(d) => toggleDone(col.id, d)}
+              onSetStage={(s) => setStage(col.id, s)}
               onSetSubStates={(s) => setColumnSubStates(col.id, s)}
               onMove={(dir) => moveColumn(col.id, dir)}
               onDelete={() => deleteColumn(col.id)}
@@ -829,6 +859,7 @@ function Toolbar({
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
         <input
+          dir="auto"
           value={filters.q}
           onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
           placeholder="Filter cards…"
@@ -949,7 +980,7 @@ function Column({
   onCreate,
   onRename,
   onSetWip,
-  onToggleDone,
+  onSetStage,
   onSetSubStates,
   onMove,
   onDelete,
@@ -969,12 +1000,12 @@ function Column({
   onCreate: (title: string) => void;
   onRename: (name: string) => void;
   onSetWip: (n: number | null) => void;
-  onToggleDone: (isDone: boolean) => void;
+  onSetStage: (stage: ColumnStage) => void;
   onSetSubStates: (subStates: string[]) => void;
   onMove: (dir: "left" | "right") => void;
   onDelete: () => void;
 }) {
-  const dot = col.isDone ? tone("emerald").dot : tone("slate").dot;
+  const dot = STAGE_DOT[col.stage];
   const overLimit = col.wipLimit != null && totalCount > col.wipLimit;
   const atLimit = col.wipLimit != null && totalCount === col.wipLimit;
   const [renaming, setRenaming] = React.useState(false);
@@ -985,6 +1016,7 @@ function Column({
     id: s.key,
     ids: s.visibleIds,
     allCount: s.allIds.length,
+    stage: col.stage,
     dragging,
     ticketsById,
     celebrateId,
@@ -997,10 +1029,18 @@ function Column({
   return (
     <div className="group/col flex w-[19rem] min-h-0 shrink-0 flex-col">
       <div className="mb-2 flex items-center gap-2 px-1">
-        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: dot }} />
+        {col.stage === "done" ? (
+          <CircleCheck className="h-3.5 w-3.5 shrink-0" style={{ color: dot }} aria-hidden />
+        ) : (
+          <span
+            className={cn("h-2 w-2 shrink-0 rounded-full", col.stage === "intake" && "opacity-70")}
+            style={{ backgroundColor: dot, boxShadow: col.stage === "active" ? `0 0 8px ${"var(--stage-active)"}` : undefined }}
+          />
+        )}
         {renaming ? (
           <input
             autoFocus
+            dir="auto"
             value={nameDraft}
             onChange={(e) => setNameDraft(e.target.value)}
             onBlur={() => {
@@ -1017,16 +1057,24 @@ function Column({
             className="w-32 rounded border border-primary bg-surface px-1.5 py-0.5 text-sm font-semibold outline-none"
           />
         ) : (
-          <span className="text-sm font-semibold">{col.name}</span>
+          <span
+            dir="auto"
+            className={cn("truncate text-sm font-semibold", col.stage === "intake" && "text-fg-muted")}
+            title={STAGE_META[col.stage].hint}
+          >
+            {col.name}
+          </span>
         )}
         <span
           className={cn(
-            "rounded-full px-1.5 py-0.5 text-[0.6875rem] font-medium",
+            "rounded-full px-1.5 py-0.5 text-[0.6875rem] font-medium tabular-nums",
             overLimit
               ? "bg-danger-soft text-danger"
               : atLimit
                 ? "bg-warning-soft text-warning"
-                : "bg-surface-2 text-fg-subtle",
+                : col.stage === "done"
+                  ? "bg-success-soft/80 text-success"
+                  : "bg-surface-2 text-fg-subtle",
           )}
           title={col.wipLimit ? `WIP limit ${col.wipLimit}` : undefined}
         >
@@ -1085,10 +1133,24 @@ function Column({
                 <SubStatesEditor value={col.subStates} onChange={onSetSubStates} />
               </div>
               <div className="my-1 h-px bg-border" />
-              <MenuItem onClick={() => { close(); onToggleDone(!col.isDone); }}>
-                <CircleCheck className={cn("h-4 w-4", col.isDone && "text-success")} />
-                {col.isDone ? "Unmark done column" : "Mark as done column"}
-              </MenuItem>
+              <div className="px-2.5 pb-1 pt-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">
+                Column type
+              </div>
+              {COLUMN_STAGES.map((s) => (
+                <MenuItem
+                  key={s}
+                  active={col.stage === s}
+                  onClick={() => {
+                    close();
+                    if (s !== col.stage) onSetStage(s);
+                  }}
+                >
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: STAGE_DOT[s] }} />
+                  <span className="flex-1">{STAGE_META[s].label}</span>
+                  <span className="max-w-[9.5rem] truncate text-[0.625rem] text-fg-subtle">{STAGE_META[s].hint}</span>
+                </MenuItem>
+              ))}
+              <div className="my-1 h-px bg-border" />
               <MenuItem
                 onClick={() => index > 0 && (close(), onMove("left"))}
                 className={index === 0 ? "pointer-events-none opacity-40" : ""}
@@ -1133,6 +1195,7 @@ function Section({
   label,
   count,
   fill,
+  stage,
   dragging,
   overLimit,
   ids,
@@ -1149,6 +1212,7 @@ function Section({
   label?: string;
   count?: number;
   fill?: boolean;
+  stage: ColumnStage;
   dragging: boolean;
   overLimit?: boolean;
   ids: string[];
@@ -1175,17 +1239,23 @@ function Section({
       ref={setNodeRef}
       className={cn(
         "flex flex-col gap-2 rounded-2xl border transition-colors",
-        fill
-          ? "group/col min-h-0 flex-1 overflow-y-auto border-transparent bg-surface-2/50 p-2"
-          : "border-border/50 bg-surface-2/40 p-2",
-        isOver && "border-primary/50 bg-primary-soft/40 ring-1 ring-primary/30",
+        // The column's stage sets its surface: intake dashed & faded, backlog
+        // quiet, active brand-lit, done emerald-washed (see globals.css).
+        fill ? "group/col min-h-0 flex-1 overflow-y-auto p-2" : "p-2",
+        // Drop target highlight replaces the stage surface while hovered so the
+        // primary tint always wins, whatever the stage's own colors are.
+        isOver
+          ? "border-primary/50 bg-primary-soft/40 ring-1 ring-primary/30"
+          : fill
+            ? STAGE_FILL[stage]
+            : STAGE_BAND[stage],
         fill && overLimit && "ring-1 ring-danger/30",
       )}
     >
       {label && (
         <div className="flex items-center gap-1.5 px-1 pt-0.5 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">
           <span className="h-1 w-1 rounded-full bg-fg-subtle/60" />
-          <span className="truncate">{label}</span>
+          <span dir="auto" className="truncate">{label}</span>
           <span className="ml-auto tabular-nums">{count}</span>
         </div>
       )}
@@ -1400,11 +1470,11 @@ function MoveMenu({
               close();
             }}
           >
-            {c.name}
+            <span dir="auto">{c.name}</span>
           </MenuItem>
         ) : (
           <div key={c.id}>
-            <div className="px-2.5 pb-0.5 pt-1.5 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">
+            <div dir="auto" className="px-2.5 pb-0.5 pt-1.5 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">
               {c.name}
             </div>
             {c.subStates.map((s) => (
@@ -1416,7 +1486,7 @@ function MoveMenu({
                   close();
                 }}
               >
-                <span className="pl-1.5">{s}</span>
+                <span dir="auto" className="pl-1.5">{s}</span>
               </MenuItem>
             ))}
           </div>
@@ -1459,6 +1529,7 @@ function AddCard({ onCreate }: { onCreate: (title: string) => void }) {
     <div className="rounded-xl border border-border bg-surface p-2 shadow-card">
       <textarea
         ref={ref}
+        dir="auto"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
@@ -1511,6 +1582,7 @@ function AddColumn({ onCreate }: { onCreate: (name: string) => void }) {
     <div className="w-[15rem] shrink-0">
       <input
         ref={ref}
+        dir="auto"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {

@@ -277,7 +277,7 @@ export function CommandPalette({
                         )}
                       >
                         <span className="grid h-5 w-5 shrink-0 place-items-center">{item.icon}</span>
-                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        <span dir="auto" className="min-w-0 flex-1 truncate">{item.label}</span>
                         {item.sub && <span className="shrink-0 truncate text-xs text-fg-subtle">{item.sub}</span>}
                         {item.hint && (
                           <kbd className="shrink-0 rounded border border-border bg-surface-2 px-1.5 py-0.5 text-[0.625rem] text-fg-subtle">

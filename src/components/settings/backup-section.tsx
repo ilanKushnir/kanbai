@@ -12,6 +12,7 @@ type ImportResult = {
   tickets: number;
   notes: number;
   alreadyDone: number;
+  extrasCreated: number;
   skipped: { type: string; id: string; reason: string }[];
 };
 
@@ -37,20 +38,26 @@ export function BackupSection() {
       toast({ title: "That's not a valid progress file", variant: "error" });
       return;
     }
-    const items = (parsed as { items?: unknown })?.items;
-    if (!Array.isArray(items) || items.length === 0) {
-      toast({ title: "No checked items in this file", variant: "error" });
+    const { items, extras } = (parsed ?? {}) as { items?: unknown; extras?: unknown };
+    const itemList = Array.isArray(items) ? items : [];
+    const extraList = Array.isArray(extras) ? extras : [];
+    if (itemList.length === 0 && extraList.length === 0) {
+      toast({ title: "No checked items or extra tasks in this file", variant: "error" });
       return;
     }
     setImporting(true);
     setResult(null);
     try {
-      const res = await api<ImportResult>("/api/import/progress", { body: { items } });
+      const res = await api<ImportResult>("/api/import/progress", { body: { items: itemList, extras: extraList } });
       setResult(res);
       const done = res.tickets + res.notes;
+      const bits = [
+        done ? `${done} item${done === 1 ? "" : "s"} marked done` : "",
+        res.extrasCreated ? `${res.extrasCreated} extra task${res.extrasCreated === 1 ? "" : "s"} added as notes` : "",
+      ].filter(Boolean);
       toast({
-        title: done ? `Marked ${done} item${done === 1 ? "" : "s"} done` : "Nothing new to apply",
-        description: res.alreadyDone ? `${res.alreadyDone} already done` : undefined,
+        title: bits.length ? bits.join(" · ") : "Nothing new to apply",
+        description: res.alreadyDone ? `${res.alreadyDone} already done or existing` : undefined,
         variant: "success",
       });
       setPasteText("");
@@ -79,7 +86,7 @@ export function BackupSection() {
         <Row
           icon={<FileCheck2 className="h-4 w-4 text-primary" />}
           title="Offline checklist"
-          desc="One HTML file with all your open tickets and notes (incl. Unsorted). Open it anywhere — even with the server down — tick things off, then import your progress below."
+          desc="One HTML file with all your open tickets and notes (incl. Unsorted). Open it anywhere — even with the server down — tick things off, add new tasks as they come up, then import your progress below."
         >
           <Button variant="primary" size="sm" onClick={() => (window.location.href = "/api/export/checklist")}>
             <Download className="h-3.5 w-3.5" /> Download
@@ -146,6 +153,9 @@ export function BackupSection() {
                     {result.tickets} ticket{result.tickets === 1 ? "" : "s"} + {result.notes} note
                     {result.notes === 1 ? "" : "s"} marked done
                   </span>
+                  {result.extrasCreated > 0 && (
+                    <> · {result.extrasCreated} extra task{result.extrasCreated === 1 ? "" : "s"} added as notes</>
+                  )}
                   {result.alreadyDone > 0 && <> · {result.alreadyDone} already done</>}
                   {result.skipped.length > 0 && (
                     <> · {result.skipped.length} skipped ({result.skipped[0].reason}

@@ -31,6 +31,7 @@ type SnapTicket = {
   description: string;
   position: number;
   priority: string;
+  subState?: string | null;
   dueDate: string | null;
   assigneeType: string | null;
   assigneeUserId: string | null;
@@ -55,7 +56,15 @@ type SnapBoard = {
   publicId: string | null;
   createdAt: string;
   labels: { id: string; name: string; color: string }[];
-  columns: { id: string; name: string; position: number; wipLimit: number | null; isDone: boolean }[];
+  columns: {
+    id: string;
+    name: string;
+    position: number;
+    wipLimit: number | null;
+    isDone: boolean;
+    stage?: string | null;
+    subStates?: string | null;
+  }[];
   tickets: SnapTicket[];
 };
 
@@ -90,7 +99,15 @@ export async function captureWorkspaceBoards(workspaceId: string): Promise<{ boa
       publicId: b.publicId,
       createdAt: b.createdAt.toISOString(),
       labels: b.labels.map((l) => ({ id: l.id, name: l.name, color: l.color })),
-      columns: b.columns.map((c) => ({ id: c.id, name: c.name, position: c.position, wipLimit: c.wipLimit, isDone: c.isDone })),
+      columns: b.columns.map((c) => ({
+        id: c.id,
+        name: c.name,
+        position: c.position,
+        wipLimit: c.wipLimit,
+        isDone: c.isDone,
+        stage: c.stage,
+        subStates: c.subStates,
+      })),
       tickets: b.tickets.map((t) => ({
         id: t.id,
         columnId: t.columnId,
@@ -99,6 +116,7 @@ export async function captureWorkspaceBoards(workspaceId: string): Promise<{ boa
         description: t.description,
         position: t.position,
         priority: t.priority,
+        subState: t.subState,
         dueDate: t.dueDate ? t.dueDate.toISOString() : null,
         assigneeType: t.assigneeType,
         assigneeUserId: t.assigneeUserId,
@@ -333,7 +351,17 @@ async function buildBoardRestoreOps(workspaceId: string, b: SnapBoard): Promise<
     ...b.labels.map((l) => db.label.create({ data: { id: l.id, boardId: b.id, name: l.name, color: l.color } })),
     ...b.columns.map((c) =>
       db.column.create({
-        data: { id: c.id, boardId: b.id, name: c.name, position: c.position, wipLimit: c.wipLimit, isDone: c.isDone },
+        data: {
+          id: c.id,
+          boardId: b.id,
+          name: c.name,
+          position: c.position,
+          wipLimit: c.wipLimit,
+          isDone: c.isDone,
+          // Older snapshots predate stage/subStates — restore them as unset.
+          stage: c.stage ?? null,
+          subStates: c.subStates ?? null,
+        },
       }),
     ),
     ...b.tickets.map((t) =>
@@ -347,6 +375,7 @@ async function buildBoardRestoreOps(workspaceId: string, b: SnapBoard): Promise<
           description: t.description,
           position: t.position,
           priority: t.priority,
+          subState: t.subState ?? null,
           dueDate: t.dueDate ? new Date(t.dueDate) : null,
           assigneeType: t.assigneeType,
           assigneeUserId: t.assigneeUserId && validUsers.has(t.assigneeUserId) ? t.assigneeUserId : null,

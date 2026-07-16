@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS, NOTE_BUCKETS } from "./constants";
+import { COLUMN_STAGES } from "./column-stage";
 
 /**
  * A due date in ISO 8601, accepted in any of three unambiguous shapes:
@@ -57,10 +58,31 @@ export const createBoardV1Schema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().max(2000).optional(),
   color: z.enum(BOARD_COLORS).optional(),
-  columns: z.array(z.object({ name: z.string().trim().min(1).max(40), isDone: z.boolean().optional() })).max(20).optional(),
+  columns: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(40),
+        isDone: z.boolean().optional(),
+        stage: z.enum(COLUMN_STAGES).optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
   labels: z.array(z.object({ name: z.string().trim().min(1).max(40), color: z.string().optional() })).max(40).optional(),
   createdAt: z.iso.datetime().optional(),
 });
+
+/** Agent API board update: metadata + archive (reversible; boards are never hard-deleted). */
+export const updateBoardV1Schema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    color: z.enum(BOARD_COLORS).optional(),
+    archived: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "Provide at least one field to update (name, description, color, archived).",
+  });
 
 export const createTicketV1Schema = z.object({
   boardId: z.string().min(1),
@@ -126,6 +148,7 @@ export const updateColumnSchema = z.object({
   name: z.string().trim().min(1).max(40).optional(),
   wipLimit: z.number().int().min(1).max(99).nullable().optional(),
   isDone: z.boolean().optional(),
+  stage: z.enum(COLUMN_STAGES).optional(),
   subStates: z.array(z.string().trim().min(1).max(24)).max(8).optional(),
 });
 
@@ -136,13 +159,22 @@ export const updateColumnSchema = z.object({
  */
 export const updateBoardColumnV1Schema = updateColumnSchema.refine(
   (v) => Object.keys(v).length > 0,
-  { message: "Provide at least one field to update (name, subStates, isDone, wipLimit)." },
+  { message: "Provide at least one field to update (name, subStates, isDone, stage, wipLimit)." },
 );
 
 export const createColumnSchema = z.object({
   boardId: z.string().min(1),
   name: z.string().trim().min(1).max(40),
   isDone: z.boolean().optional(),
+  stage: z.enum(COLUMN_STAGES).optional(),
+});
+
+/** Agent API column create (boardId comes from the route path). */
+export const createColumnV1Schema = createColumnSchema.omit({ boardId: true });
+
+/** Agent API column reorder (boardId comes from the route path). */
+export const reorderColumnsV1Schema = z.object({
+  orderedIds: z.array(z.string()).min(1),
 });
 
 export const reorderColumnsSchema = z.object({
@@ -229,6 +261,33 @@ export const promoteNoteSchema = z.object({
   dueDate: dueDateSchema.nullable().optional(),
   labelNames: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
 });
+
+/**
+ * Agent promotes ANY workspace note into a ticket in one action (create ticket +
+ * mark the note sorted, atomically). `title` is optional — it defaults to the
+ * note's first line — and labels resolve by id or by name (auto-created).
+ */
+export const promoteNoteV1Schema = z.object({
+  boardId: z.string().min(1),
+  columnId: z.string().optional(),
+  columnName: z.string().max(40).optional(),
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().max(20_000).optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  dueDate: dueDateSchema.nullable().optional(),
+  labelIds: z.array(z.string()).optional(),
+  labelNames: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+});
+
+/** Agent API member update: role and/or per-board access grants. */
+export const updateMemberV1Schema = z
+  .object({
+    role: z.enum(["admin", "member"]).optional(),
+    boardAccess: z.array(z.object({ boardId: z.string(), level: z.enum(["view", "edit"]) })).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "Provide at least one field to update (role, boardAccess).",
+  });
 
 export const createAgentSchema = z.object({
   name: z.string().trim().min(1).max(60),

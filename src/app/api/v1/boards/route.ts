@@ -4,6 +4,7 @@ import { parse, readJson } from "@/lib/parse";
 import { createBoardV1Schema } from "@/lib/validation";
 import { createBoardWithStructure } from "@/lib/services/boards";
 import { parseSubStates } from "@/lib/substates";
+import { resolveColumnStage } from "@/lib/column-stage";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export const GET = handler(async (req: Request) => {
       labels: { select: { id: true, name: true, color: true } },
       columns: {
         orderBy: { position: "asc" },
-        select: { id: true, name: true, isDone: true, subStates: true, _count: { select: { tickets: true } } },
+        select: { id: true, name: true, isDone: true, stage: true, subStates: true, _count: { select: { tickets: true } } },
       },
     },
   });
@@ -36,6 +37,8 @@ export const GET = handler(async (req: Request) => {
         id: c.id,
         name: c.name,
         isDone: c.isDone,
+        // Semantic stage (intake | backlog | active | done) — drives board styling.
+        stage: resolveColumnStage(c.stage, c.name, c.isDone),
         // The column's progress statuses — set a ticket's via PATCH { subState }.
         subStates: parseSubStates(c.subStates),
         ticketCount: c._count.tickets,

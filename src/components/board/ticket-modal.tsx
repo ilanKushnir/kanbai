@@ -239,8 +239,9 @@ export function TicketModal({
         </div>
       </div>
 
-      {/* Title */}
+      {/* Title — dir="auto" keeps RTL-first titles (Hebrew/Arabic) reading correctly while editing */}
       <textarea
+        dir="auto"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         onBlur={() => title.trim() && title !== t.title && patch({ title: title.trim() })}
@@ -462,7 +463,7 @@ export function TicketModal({
                     {timeAgo(c.createdAt)}
                   </span>
                 </div>
-                <p className="mt-0.5 whitespace-pre-wrap text-sm text-fg leading-relaxed">{c.body}</p>
+                <p dir="auto" className="mt-0.5 whitespace-pre-wrap text-sm text-fg leading-relaxed">{c.body}</p>
               </div>
             </div>
           ))}
@@ -470,6 +471,7 @@ export function TicketModal({
 
         <div className="mt-3 flex items-end gap-2">
           <textarea
+            dir="auto"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             onKeyDown={(e) => {

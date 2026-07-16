@@ -154,7 +154,7 @@ function ResultLink({ href, icon, title, subtitle }: { href: string; icon: React
     >
       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2">{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-fg">{title}</span>
+        <span dir="auto" className="block overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-fg">{title}</span>
         <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-xs text-fg-subtle">{subtitle}</span>
       </span>
       <ArrowUpRight className="h-4 w-4 shrink-0 text-fg-subtle transition-colors group-hover:text-fg-muted" />

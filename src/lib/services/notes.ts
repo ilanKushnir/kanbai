@@ -335,8 +335,13 @@ export async function fulfillNote(
     actor,
   );
 
-  await db.ticket.update({ where: { id: ticket.id }, data: { sourceNoteId: noteId } });
-  await db.note.update({ where: { id: noteId }, data: { status: "sorted" } });
+  // One atomic step: link the ticket to its source note AND mark the note
+  // sorted — the note can never end up half-converted. "sorted" hides it from
+  // the inbox but keeps it (and the link back) fully recoverable.
+  await db.$transaction([
+    db.ticket.update({ where: { id: ticket.id }, data: { sourceNoteId: noteId } }),
+    db.note.update({ where: { id: noteId }, data: { status: "sorted" } }),
+  ]);
   await logActivity({ actor, action: "note.sorted", boardId: input.boardId, ticketId: ticket.id, meta: { noteId } });
 
   // Close the loop: tell the agent the note was queued to that it's been filed,

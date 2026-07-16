@@ -5,5 +5,6 @@ import { cn } from "@/lib/utils";
  * (see lib/sanitize.ts), so it is safe to inject here.
  */
 export function RichText({ html, className }: { html: string; className?: string }) {
-  return <div className={cn("rich", className)} dangerouslySetInnerHTML={{ __html: html }} />;
+  // dir="auto": RTL-first descriptions (Hebrew/Arabic) read right-to-left.
+  return <div dir="auto" className={cn("rich", className)} dangerouslySetInnerHTML={{ __html: html }} />;
 }

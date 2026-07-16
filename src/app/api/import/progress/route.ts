@@ -1,27 +1,11 @@
-import { z } from "zod";
 import { handler, ok } from "@/lib/api";
 import { getCurrentContext } from "@/lib/auth";
 import { assertTicketAccess } from "@/lib/authz";
 import { parse, readJson } from "@/lib/parse";
-import { updateNote } from "@/lib/services/notes";
+import { checklistProgressSchema } from "@/lib/checklist-progress";
+import { updateNote, createNote } from "@/lib/services/notes";
 import { moveTicketToDone } from "@/lib/services/tickets";
 import { db } from "@/lib/db";
-
-const dayString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-
-/** The progress file produced by the offline checklist (extra keys ignored). */
-const progressSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        type: z.enum(["ticket", "note"]),
-        id: z.string().min(1).max(64),
-        done: z.boolean().optional(),
-        doneAt: dayString.optional(),
-      }),
-    )
-    .max(5000),
-});
 
 function localDay(): string {
   const d = new Date();
@@ -31,17 +15,21 @@ function localDay(): string {
 /**
  * Apply progress marked offline (via the exported checklist) after downtime:
  * checked tickets move to their board's done column, checked notes get their
- * doneOn stamped with the day they were ticked. Idempotent — items already
- * done are counted, not re-done; unknown ids are skipped with a reason.
+ * doneOn stamped with the day they were ticked, and `extras` — local-only
+ * tasks added inside the checklist file — come in as fresh notes (done ones
+ * arrive already completed). Idempotent — items already done are counted, not
+ * re-done; an extra whose exact text already exists as one of your notes is
+ * skipped rather than duplicated; unknown ids are skipped with a reason.
  */
 export const POST = handler(async (req: Request) => {
   const ctx = await getCurrentContext();
-  const { items } = parse(progressSchema, await readJson(req));
+  const { items, extras } = parse(checklistProgressSchema, await readJson(req));
   const actor = { type: "user" as const, id: ctx.user.id, name: ctx.user.name };
 
   let tickets = 0;
   let notes = 0;
   let alreadyDone = 0;
+  let extrasCreated = 0;
   const skipped: { type: string; id: string; reason: string }[] = [];
 
   for (const item of items) {
@@ -88,5 +76,35 @@ export const POST = handler(async (req: Request) => {
     }
   }
 
-  return ok({ tickets, notes, alreadyDone, skipped });
+  // Local-only tasks added in the checklist file become real notes. Re-importing
+  // the same progress file must not multiply them, so an extra whose exact text
+  // already exists among the user's notes (any status, incl. trashed) is skipped.
+  const seenTexts = new Set<string>();
+  for (const extra of extras) {
+    const text = extra.text.trim();
+    const dedupeKey = text.toLowerCase();
+    if (!text || seenTexts.has(dedupeKey)) continue;
+    seenTexts.add(dedupeKey);
+    try {
+      const existing = await db.note.findFirst({
+        where: { userId: ctx.user.id, body: text },
+        select: { id: true },
+      });
+      if (existing) {
+        alreadyDone++;
+        continue;
+      }
+      const note = await createNote(ctx.user.id, text, { scheduledDay: null });
+      if (extra.done) await updateNote(note.id, { doneOn: extra.doneAt ?? localDay() });
+      extrasCreated++;
+    } catch (e) {
+      skipped.push({
+        type: "extra",
+        id: extra.id ?? text.slice(0, 40),
+        reason: e instanceof Error ? e.message : "failed",
+      });
+    }
+  }
+
+  return ok({ tickets, notes, alreadyDone, extrasCreated, skipped });
 });
