@@ -29,7 +29,10 @@ export const PATCH = handler(async (req: Request) => {
     input.handedness !== undefined ||
     input.dictationLanguage !== undefined
   ) {
-    const settings = parseUserSettings(ctx.user.settings);
+    // Re-read the blob fresh: ctx.user was snapshotted at request start, and
+    // other writers (e.g. board pins) may have updated settings since.
+    const fresh = await db.user.findUnique({ where: { id: ctx.user.id }, select: { settings: true } });
+    const settings = parseUserSettings(fresh?.settings ?? ctx.user.settings);
     if (input.defaultLanding !== undefined) settings.defaultLanding = input.defaultLanding;
     if (input.weekStartsOn !== undefined) settings.weekStartsOn = input.weekStartsOn;
     if (input.handedness !== undefined) settings.handedness = input.handedness;

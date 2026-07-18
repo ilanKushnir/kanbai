@@ -175,6 +175,11 @@ export const setBoardMemberAccessSchema = z.object({
   level: z.enum(["view", "edit"]).nullable(),
 });
 
+/** Pin/unpin a board for the signed-in user (a personal bookmark, not board state). */
+export const pinBoardSchema = z.object({
+  pinned: z.boolean(),
+});
+
 export const updateColumnSchema = z.object({
   name: z.string().trim().min(1).max(40).optional(),
   wipLimit: z.number().int().min(1).max(99).nullable().optional(),

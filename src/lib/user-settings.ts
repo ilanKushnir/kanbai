@@ -11,6 +11,8 @@ export type UserSettings = {
   handedness: Handedness;
   /** Preferred server-side Whisper transcription language. */
   dictationLanguage: DictationLanguage;
+  /** Boards the user pinned on the Boards page (ids across all their workspaces). */
+  pinnedBoardIds: string[];
 };
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -18,7 +20,22 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   weekStartsOn: 0,
   handedness: "right",
   dictationLanguage: "auto",
+  pinnedBoardIds: [],
 };
+
+/** Sanity cap — nobody scans hundreds of pins, and it bounds the settings blob. */
+export const MAX_PINNED_BOARDS = 100;
+
+function parsePinnedBoardIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids: string[] = [];
+  for (const id of value) {
+    if (typeof id !== "string" || !id || ids.includes(id)) continue;
+    ids.push(id);
+    if (ids.length >= MAX_PINNED_BOARDS) break;
+  }
+  return ids;
+}
 
 const LANDINGS: LandingPage[] = ["my-day", "notes", "boards"];
 export const DICTATION_LANGUAGES: { value: DictationLanguage; label: string; whisperLanguage?: string; model: string; note?: string }[] = [
@@ -39,7 +56,7 @@ export const DICTATION_LANGUAGES: { value: DictationLanguage; label: string; whi
 const DICTATION_VALUES = DICTATION_LANGUAGES.map((l) => l.value);
 
 export function parseUserSettings(raw?: string | null): UserSettings {
-  if (!raw) return { ...DEFAULT_USER_SETTINGS };
+  if (!raw) return { ...DEFAULT_USER_SETTINGS, pinnedBoardIds: [] };
   try {
     const o = JSON.parse(raw) as Partial<UserSettings>;
     return {
@@ -50,8 +67,9 @@ export function parseUserSettings(raw?: string | null): UserSettings {
           : 0,
       handedness: o.handedness === "left" ? "left" : "right",
       dictationLanguage: o.dictationLanguage && DICTATION_VALUES.includes(o.dictationLanguage) ? o.dictationLanguage : "auto",
+      pinnedBoardIds: parsePinnedBoardIds(o.pinnedBoardIds),
     };
   } catch {
-    return { ...DEFAULT_USER_SETTINGS };
+    return { ...DEFAULT_USER_SETTINGS, pinnedBoardIds: [] };
   }
 }
