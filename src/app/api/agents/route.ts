@@ -9,6 +9,7 @@ export const GET = handler(async () => {
   const ctx = await getCurrentContext();
   const agents = await db.agent.findMany({
     where: { workspaceId: ctx.workspace.id },
+    include: { ownerUser: { select: { name: true } } },
     orderBy: { createdAt: "asc" },
   });
   return ok({ agents: agents.map(serializeAgent) });

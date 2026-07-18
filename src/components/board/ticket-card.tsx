@@ -1,7 +1,7 @@
 import { MessageSquare, CalendarClock, NotebookPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { priorityMeta, dueMeta } from "@/lib/display";
+import { priorityMeta, dueMeta, assigneeLabel } from "@/lib/display";
 import { cn, htmlToPlainText } from "@/lib/utils";
 
 /** The subset of ticket fields a card renders — satisfied by both the full and public serializers. */
@@ -13,7 +13,7 @@ export type TicketCardData = {
   dueDate: string | null;
   labels: { id: string; name: string; color: string }[];
   commentCount: number;
-  assignee: { type: "user" | "agent"; name: string; color?: string } | null;
+  assignee: { type: "user" | "agent"; name: string; color?: string; ownerName?: string | null } | null;
   sourceNoteId?: string | null;
 };
 
@@ -99,6 +99,7 @@ export function TicketCard({
               color={ticket.assignee.type === "agent" ? ticket.assignee.color : undefined}
               isAgent={ticket.assignee.type === "agent"}
               size={22}
+              title={assigneeLabel(ticket.assignee)}
             />
           )}
         </div>

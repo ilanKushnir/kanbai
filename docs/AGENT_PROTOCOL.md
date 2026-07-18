@@ -211,7 +211,45 @@ Fields: `boardId` (required), `title` (required), `columnId` (defaults to the
 first column), `description` (**simple HTML** — `<p> <b> <i> <u> <h3> <ul>/<ol>/<li>
 <blockquote> <a>`; sanitized server-side, anything else is stripped; plain text is
 fine too), `priority` (`none|low|medium|high|urgent`), `dueDate` (ISO 8601 — see
-below — or null), `assigneeType` (`user|agent`), `assigneeAgentId`, `labelIds[]`.
+below — or null), `assigneeAgentId`, `assigneeUserId`, `assigneeEmail`,
+`labelIds[]`.
+
+#### Assigning tickets
+
+On create, set exactly one of:
+
+- `assigneeAgentId` — assign to an agent in the workspace;
+- `assigneeUserId` — assign to a human by user id (discover ids via
+  `GET /members`, scope `members:read`);
+- `assigneeEmail` — migration convenience: resolves a workspace member by email.
+
+A human assignee must be an **assignable board member**: a workspace
+owner/admin (implicit access to every board), or a member the board is shared
+with — e.g. someone invited into the workspace with access to that board.
+Anyone else is rejected with `422`: an id/email that matches no workspace
+member → `assignee_not_member`; a workspace member the board is *not* shared
+with → `assignee_no_board_access`.
+
+An **agent assignee is subject to ownership**. An agent with an owning user
+(`ownerUserId`) belongs to that user: only the owner — or an agent acting for
+the same owner — may assign tickets to it. As a caller you may set
+`assigneeAgentId` to yourself, to any ownerless workspace agent, or (if you
+are owner-mapped) to another agent of your own owner; a *legacy ownerless
+agent* is workspace-level automation and may dispatch to any workspace agent.
+Assigning another owner's agent → `422 assignee_agent_not_owned`. Everyone can
+still *read* such assignments — tickets serialize agent assignees with owner
+context (`assignee.ownerUserId`, `assignee.ownerName`).
+
+`PATCH /tickets/{id}` follows the same rule — send `assigneeType` (`user|agent`)
+with the matching `assigneeUserId` / `assigneeAgentId`, or `assigneeType: null`
+to unassign:
+
+```bash
+curl -X PATCH https://your-kanbai.app/api/v1/tickets/tkt_123 \
+  -H "Authorization: Bearer $KANBAI_KEY" \
+  -H "content-type: application/json" \
+  -d '{ "assigneeType": "user", "assigneeUserId": "usr_abc" }'
+```
 
 #### `dueDate` contract
 
@@ -752,6 +790,14 @@ instance into one Kanbai workspace. Read from Kanboard's JSON-RPC API
 | `id` (per project) | `number` (preserves the task reference) |
 | `date_creation` (epoch) | `createdAt` (ISO 8601) |
 | `position` | order — create tasks in `position` order |
+
+   Assignees must be able to access the board (see [Assigning
+   tickets](#assigning-tickets)): after step 2, grant each project's users
+   access to its board — `PATCH /api/v1/members/{userId}` with
+   `boardAccess: [{ "boardId": "...", "level": "edit" }]` (`getProjectUsers`
+   tells you who belongs where) — *before* creating that board's tickets.
+   An `assigneeEmail` naming a member without access to the board is rejected
+   with `422`; workspace owners/admins are always assignable.
 
 4. **Comments** → `getAllComments(task_id)` → `POST /api/v1/tickets/{id}/comments`.
 

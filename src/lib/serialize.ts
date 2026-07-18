@@ -3,7 +3,9 @@ import { toRichHtml } from "@/lib/sanitize";
 
 export const ticketInclude = {
   labels: { include: { label: true } },
-  agent: true,
+  // The owning user rides along so agent assignees render with owner context
+  // ("Hermes · Yuval") everywhere without a members lookup.
+  agent: { include: { ownerUser: { select: { id: true, name: true } } } },
   comments: { orderBy: { createdAt: "asc" as const } },
   subtasks: { orderBy: { position: "asc" as const } },
   column: { select: { id: true, name: true, isDone: true } },
@@ -20,10 +22,21 @@ export function serializeTicket(t: TicketWithRelations, usersById?: Map<string, 
     name: string;
     color?: string;
     kind?: string;
+    /** Agent assignees only: the owning user (null = workspace agent). */
+    ownerUserId?: string | null;
+    ownerName?: string | null;
   } = null;
 
   if (t.assigneeType === "agent" && t.agent) {
-    assignee = { type: "agent", id: t.agent.id, name: t.agent.name, color: t.agent.color, kind: t.agent.kind };
+    assignee = {
+      type: "agent",
+      id: t.agent.id,
+      name: t.agent.name,
+      color: t.agent.color,
+      kind: t.agent.kind,
+      ownerUserId: t.agent.ownerUserId,
+      ownerName: t.agent.ownerUser?.name ?? null,
+    };
   } else if (t.assigneeType === "user" && t.assigneeUserId) {
     const u = usersById?.get(t.assigneeUserId);
     assignee = { type: "user", id: t.assigneeUserId, name: u?.name ?? "Someone" };

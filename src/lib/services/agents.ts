@@ -12,6 +12,8 @@ export function serializeAgent(a: {
   color: string;
   status: string;
   ownerUserId: string | null;
+  /** Included where owner context is displayed (assignee pickers/cards). */
+  ownerUser?: { name: string } | null;
   apiKeyPrefix: string | null;
   apiKeyLast4: string | null;
   webhookUrl: string | null;
@@ -28,6 +30,7 @@ export function serializeAgent(a: {
     color: a.color,
     status: a.status,
     ownerUserId: a.ownerUserId,
+    ownerName: a.ownerUser?.name ?? null,
     hasKey: !!a.apiKeyPrefix,
     apiKeyPrefix: a.apiKeyPrefix,
     apiKeyLast4: a.apiKeyLast4,

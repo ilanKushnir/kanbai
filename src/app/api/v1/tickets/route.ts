@@ -33,6 +33,31 @@ export const POST = handler(async (req: Request) => {
     }
   }
 
+  // Assignee: agent, or a human by user id / workspace email (migration).
+  // A human assignee must be an assignable board member — createTicket's
+  // resolveAssignee rejects outsiders and members the board isn't shared with.
+  // Resolved before the label find-or-create so a bad assignee 422s cleanly.
+  let assigneeType: "user" | "agent" | null = null;
+  let assigneeUserId: string | null = null;
+  let assigneeAgentId: string | null = null;
+  if (input.assigneeAgentId) {
+    assigneeType = "agent";
+    assigneeAgentId = input.assigneeAgentId;
+  } else if (input.assigneeUserId) {
+    assigneeType = "user";
+    assigneeUserId = input.assigneeUserId;
+  } else if (input.assigneeEmail) {
+    const member = await db.workspaceMember.findFirst({
+      where: { workspaceId: agent.workspaceId, user: { email: input.assigneeEmail.toLowerCase() } },
+      select: { userId: true },
+    });
+    if (!member) {
+      throw new HttpError(422, "assigneeEmail does not match any workspace member", "assignee_not_member");
+    }
+    assigneeType = "user";
+    assigneeUserId = member.userId;
+  }
+
   // Labels: explicit ids + find-or-create by name.
   const labelIds = [...(input.labelIds ?? [])];
   if (input.labelNames?.length) {
@@ -49,24 +74,6 @@ export const POST = handler(async (req: Request) => {
       const createdLabel = await db.label.create({ data: { boardId: input.boardId, name, color } });
       existing.push(createdLabel);
       labelIds.push(createdLabel.id);
-    }
-  }
-
-  // Assignee: agent, or a workspace member by email (migration).
-  let assigneeType: "user" | "agent" | null = null;
-  let assigneeUserId: string | null = null;
-  let assigneeAgentId: string | null = null;
-  if (input.assigneeAgentId) {
-    assigneeType = "agent";
-    assigneeAgentId = input.assigneeAgentId;
-  } else if (input.assigneeEmail) {
-    const member = await db.workspaceMember.findFirst({
-      where: { workspaceId: agent.workspaceId, user: { email: input.assigneeEmail.toLowerCase() } },
-      select: { userId: true },
-    });
-    if (member) {
-      assigneeType = "user";
-      assigneeUserId = member.userId;
     }
   }
 

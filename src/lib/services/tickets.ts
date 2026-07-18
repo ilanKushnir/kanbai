@@ -53,32 +53,78 @@ async function boardLabelIds(labelIds: string[], board: BoardCtx): Promise<strin
 }
 
 /**
- * Validate an assignee against the board's workspace and return the normalized
- * (type, userId, agentId) triple. Throws if the referenced user/agent is foreign.
+ * Validate an assignee against the board and return the normalized
+ * (type, userId, agentId) triple. A human assignee must be an *assignable
+ * board member* — a workspace owner/admin (implicit access to every board) or
+ * a member the board is shared with via a BoardAccess grant — mirroring
+ * `boardAssigneeUsers`, the list every assignee picker offers. An agent
+ * assignee is subject to ownership: an owned agent may only be assigned by
+ * its owner (or by an agent acting for that same owner); ownerless workspace
+ * agents stay assignable by anyone. Throws if the referenced user/agent is
+ * foreign, lacks access to this board, or is an agent the actor doesn't own.
  */
 async function resolveAssignee(
   board: BoardCtx,
   type: "user" | "agent" | null | undefined,
   userId: string | null | undefined,
   agentId: string | null | undefined,
+  actor: Actor,
 ): Promise<{ assigneeType: "user" | "agent" | null; assigneeUserId: string | null; assigneeAgentId: string | null }> {
   if (type === "user" && userId) {
     const member = await db.workspaceMember.findFirst({
       where: { workspaceId: board.workspaceId, userId },
-      select: { id: true },
+      select: { role: true },
     });
-    if (!member) throw new HttpError(422, "Assignee is not a member of this workspace");
+    if (!member) throw new HttpError(422, "Assignee is not a member of this workspace", "assignee_not_member");
+    if (member.role !== "owner" && member.role !== "admin") {
+      const grant = await db.boardAccess.findUnique({
+        where: { boardId_userId: { boardId: board.id, userId } },
+        select: { id: true },
+      });
+      if (!grant) {
+        throw new HttpError(422, "Assignee does not have access to this board", "assignee_no_board_access");
+      }
+    }
     return { assigneeType: "user", assigneeUserId: userId, assigneeAgentId: null };
   }
   if (type === "agent" && agentId) {
-    const agent = await db.agent.findUnique({ where: { id: agentId }, select: { workspaceId: true } });
+    const agent = await db.agent.findUnique({
+      where: { id: agentId },
+      select: { workspaceId: true, ownerUserId: true },
+    });
     if (!agent || agent.workspaceId !== board.workspaceId) {
       throw new HttpError(422, "Assignee agent is not in this workspace");
     }
+    await assertActorMayAssignAgent(actor, agentId, agent.ownerUserId);
     return { assigneeType: "agent", assigneeUserId: null, assigneeAgentId: agentId };
   }
   // null / unassigned (or a type with no id)
   return { assigneeType: type ?? null, assigneeUserId: null, assigneeAgentId: null };
+}
+
+/**
+ * Ownership gate for agent assignees. An agent with an owner belongs to that
+ * user: only the owner may assign tickets to it — everyone else can still SEE
+ * such assignments, they just can't create them. Acting agents are capped the
+ * same way: an owner-mapped agent may assign itself or agents of its own
+ * owner, while an ownerless (workspace) acting agent — workspace-level
+ * automation like a legacy Hermes — may assign any workspace agent. System
+ * actors (internal maintenance) are unrestricted.
+ */
+async function assertActorMayAssignAgent(actor: Actor, agentId: string, ownerUserId: string | null) {
+  if (ownerUserId == null || actor.type === "system") return;
+  if (actor.type === "user") {
+    if (actor.id === ownerUserId) return;
+    throw new HttpError(422, "Only this agent's owner can assign tickets to it", "assignee_agent_not_owned");
+  }
+  // actor.type === "agent"
+  if (actor.id === agentId) return; // an agent may always take work itself
+  const acting = actor.id
+    ? await db.agent.findUnique({ where: { id: actor.id }, select: { ownerUserId: true } })
+    : null;
+  if (acting && acting.ownerUserId == null) return; // workspace-wide automation
+  if (acting?.ownerUserId === ownerUserId) return; // same owner's fleet
+  throw new HttpError(422, "Only this agent's owner can assign tickets to it", "assignee_agent_not_owned");
 }
 
 export async function createTicket(
@@ -114,7 +160,7 @@ export async function createTicket(
   }
 
   const labelIds = await boardLabelIds(input.labelIds ?? [], board);
-  const assignee = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId);
+  const assignee = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId, actor);
 
   const last = await db.ticket.findFirst({
     where: { columnId },
@@ -239,7 +285,7 @@ export async function updateTicket(
       : null;
   }
   if (input.assigneeType !== undefined) {
-    const a = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId);
+    const a = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId, actor);
     data.assigneeType = a.assigneeType;
     data.assigneeUserId = a.assigneeUserId;
     data.assigneeAgentId = a.assigneeAgentId;

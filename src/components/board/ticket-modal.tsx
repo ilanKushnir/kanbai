@@ -27,7 +27,7 @@ import { RichEditor } from "@/components/ui/rich-editor";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
-import { priorityMeta, dueMeta } from "@/lib/display";
+import { priorityMeta, dueMeta, assigneeLabel } from "@/lib/display";
 import { timeAgo, cn } from "@/lib/utils";
 import type { SerializedTicket } from "@/lib/serialize";
 
@@ -350,8 +350,14 @@ export function TicketModal({
                     color={t.assignee.type === "agent" ? t.assignee.color : undefined}
                     isAgent={t.assignee.type === "agent"}
                     size={16}
+                    title={assigneeLabel(t.assignee)}
                   />
                   {t.assignee.name}
+                  {/* Owner context for user-owned agents ("Hermes · Yuval"): anyone
+                      can see whose agent holds the ticket, only the owner assigns. */}
+                  {t.assignee.type === "agent" && t.assignee.ownerName && (
+                    <span className="text-fg-subtle">· {t.assignee.ownerName}</span>
+                  )}
                 </>
               ) : (
                 <span className="text-fg-muted">Assign</span>

@@ -9,6 +9,7 @@ export function Avatar({
   size = 24,
   src,
   className,
+  title,
 }: {
   name: string;
   color?: string;
@@ -17,11 +18,13 @@ export function Avatar({
   /** Optional image URL (e.g. a user's avatarUrl); falls back to initials if absent. */
   src?: string | null;
   className?: string;
+  /** Tooltip override, e.g. an agent assignee with owner context ("Hermes · Yuval"). */
+  title?: string;
 }) {
   const bg = color ?? "#6d5dfb";
   return (
     <span
-      title={name}
+      title={title ?? name}
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white overflow-hidden",
         className,

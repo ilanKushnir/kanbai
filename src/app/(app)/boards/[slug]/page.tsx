@@ -5,6 +5,7 @@ import { getContext } from "@/lib/auth";
 import { assertBoardAccess } from "@/lib/authz";
 import { getBoardWithData } from "@/lib/services/boards";
 import { boardAssigneeUsers } from "@/lib/services/board-members";
+import { parseUserSettings } from "@/lib/user-settings";
 import { BoardViewClient } from "@/components/board/board-view-client";
 import { ShareButton } from "@/components/board/share-button";
 import { BoardSettings } from "@/components/board/board-settings";
@@ -46,14 +47,23 @@ export default async function BoardPage({
     notFound();
   }
 
-  const agents = await db.agent.findMany({
+  const agentRows = await db.agent.findMany({
     where: { workspaceId: ctx.workspace.id, status: "active" },
-    select: { id: true, name: true, color: true, kind: true },
+    select: {
+      id: true,
+      name: true,
+      color: true,
+      kind: true,
+      ownerUserId: true,
+      ownerUser: { select: { name: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
+  const agents = agentRows.map(({ ownerUser, ...a }) => ({ ...a, ownerName: ownerUser?.name ?? null }));
 
   // Humans this board's tickets can be assigned to: managers + shared members.
   const members = await boardAssigneeUsers(board.id);
+  const { weekStartsOn } = parseUserSettings(ctx.user.settings);
 
   const total = board.columns.reduce((s, c) => s + c.tickets.length, 0);
   const t = tone(board.color);
@@ -96,6 +106,7 @@ export default async function BoardPage({
           agents={agents}
           members={members}
           currentUser={{ id: ctx.user.id, name: ctx.user.name }}
+          weekStartsOn={weekStartsOn}
           initialTicketId={initialTicketId}
           returnTo={from === "notes" ? "notes" : undefined}
         />

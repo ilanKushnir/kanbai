@@ -52,6 +52,7 @@ import { Menu, MenuItem } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
+import { canAssignAgent } from "@/lib/display";
 import { tone } from "@/components/ui/badge";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
 import { COLUMN_STAGES, STAGE_META, type ColumnStage } from "@/lib/column-stage";
@@ -65,7 +66,15 @@ import {
 import type { BoardData } from "@/lib/services/boards";
 import type { SerializedTicket } from "@/lib/serialize";
 
-type AgentLite = { id: string; name: string; color: string; kind: string };
+type AgentLite = {
+  id: string;
+  name: string;
+  color: string;
+  kind: string;
+  /** Owned agents are only assignable by their owner; null = workspace agent. */
+  ownerUserId: string | null;
+  ownerName: string | null;
+};
 type MemberLite = { id: string; name: string; avatarUrl?: string | null };
 /** Assignee chosen in the add-card composer, before the ticket exists. */
 type NewAssignee = { type: "user" | "agent"; id: string; name: string; color?: string; kind?: string };
@@ -196,6 +205,7 @@ export function BoardView({
   currentUser,
   initialTicketId,
   returnTo,
+  switcher,
 }: {
   board: BoardData;
   agents: AgentLite[];
@@ -203,6 +213,8 @@ export function BoardView({
   currentUser?: { id: string; name: string } | null;
   initialTicketId?: string;
   returnTo?: "notes";
+  /** The kanban ⇄ week view switch, rendered at the start of the toolbar row. */
+  switcher?: React.ReactNode;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -215,13 +227,20 @@ export function BoardView({
     async function load() {
       try {
         const { agents: all } = await api<{
-          agents: { id: string; name: string; color: string; kind: string; status: string }[];
+          agents: (AgentLite & { status: string })[];
         }>("/api/agents");
         if (!cancelled) {
           setAgents(
             all
               .filter((a) => a.status === "active")
-              .map((a) => ({ id: a.id, name: a.name, color: a.color, kind: a.kind })),
+              .map((a) => ({
+                id: a.id,
+                name: a.name,
+                color: a.color,
+                kind: a.kind,
+                ownerUserId: a.ownerUserId,
+                ownerName: a.ownerName,
+              })),
           );
         }
       } catch {
@@ -817,6 +836,11 @@ export function BoardView({
   const activeTicket = activeId ? ticketsById[activeId] : null;
   const selectedTicket = selectedId ? ticketsById[selectedId] : null;
 
+  // Pickers only offer agents the current user may assign (own + workspace
+  // agents) — other users' agents stay visible on cards, just not assignable.
+  // The server enforces the same rule.
+  const assignableAgents = agents.filter((a) => canAssignAgent(a, currentUser?.id));
+
   // Human-readable screen-reader announcements (the droppable ids embed a NUL
   // separator + sub-state, which would otherwise be read verbatim).
   const describeOver = (id: string) => {
@@ -845,6 +869,7 @@ export function BoardView({
         activeFilterCount={activeFilterCount}
         labels={board.labels}
         agents={agents}
+        switcher={switcher}
       />
 
       <DndContext
@@ -876,7 +901,7 @@ export function BoardView({
               zonesActive={activeId != null && zoneColId === col.id}
               allColumns={cols}
               members={members}
-              agents={agents}
+              agents={assignableAgents}
               currentUser={currentUser}
               onMoveTo={moveTicketTo}
               onCardClick={(id) => !id.startsWith("tmp-") && setSelectedId(id)}
@@ -909,7 +934,7 @@ export function BoardView({
           ticket={selectedTicket}
           columns={cols}
           labels={board.labels}
-          agents={agents}
+          agents={assignableAgents}
           members={members}
           currentUser={currentUser}
           onClose={() => setSelectedId(null)}
@@ -928,12 +953,14 @@ function Toolbar({
   activeFilterCount,
   labels,
   agents,
+  switcher,
 }: {
   filters: Filters;
   setFilters: React.Dispatch<React.SetStateAction<Filters>>;
   activeFilterCount: number;
   labels: { id: string; name: string; color: string }[];
   agents: AgentLite[];
+  switcher?: React.ReactNode;
 }) {
   function toggleSet(key: "priorities" | "labelIds", value: string) {
     setFilters((f) => {
@@ -945,6 +972,7 @@ function Toolbar({
 
   return (
     <div className="flex items-center gap-2 px-4 pb-3 md:px-6 lg:px-8">
+      {switcher}
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
         <input
