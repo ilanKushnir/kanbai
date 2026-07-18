@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { broadcast, dispatchWebhook } from "@/lib/webhooks";
-import { ticketInclude, serializeTicket } from "@/lib/serialize";
+import { ticketInclude, serializeTicket, type TicketWithRelations, type UserLite } from "@/lib/serialize";
 import { HttpError } from "@/lib/api";
 import { onMutation } from "@/lib/snapshots";
 import { parseSubStates } from "@/lib/substates";
@@ -17,6 +17,24 @@ function isUniqueNumberError(e: unknown): boolean {
     (e as { code?: string }).code === "P2002" &&
     JSON.stringify((e as { meta?: unknown }).meta ?? "").includes("number")
   );
+}
+
+/**
+ * Serialize a mutated ticket with its human assignee resolved to a real name.
+ * Board loads pass the full workspace-member map to serializeTicket; mutation
+ * responses only carry one ticket, so look up just its assignee (otherwise the
+ * assignee falls back to the "Someone" placeholder).
+ */
+async function serializeTicketWithAssignee(t: TicketWithRelations) {
+  let usersById: Map<string, UserLite> | undefined;
+  if (t.assigneeType === "user" && t.assigneeUserId) {
+    const u = await db.user.findUnique({
+      where: { id: t.assigneeUserId },
+      select: { id: true, name: true, avatarUrl: true },
+    });
+    if (u) usersById = new Map([[u.id, u]]);
+  }
+  return serializeTicket(t, usersById);
 }
 
 async function loadTicket(id: string) {
@@ -211,7 +229,7 @@ export async function createTicket(
     throw new HttpError(409, "Could not allocate a ticket number; please retry");
   })();
 
-  const serialized = serializeTicket(ticket);
+  const serialized = await serializeTicketWithAssignee(ticket);
   await logActivity({
     actor,
     action: "ticket.created",
@@ -300,7 +318,7 @@ export async function updateTicket(
   }
 
   const updated = await db.ticket.update({ where: { id: ticketId }, data, include: ticketInclude });
-  const serialized = serializeTicket(updated);
+  const serialized = await serializeTicketWithAssignee(updated);
 
   await logActivity({ actor, action: "ticket.updated", boardId: board.id, ticketId });
   await broadcast(board.workspaceId, "ticket.updated", { ticket: serialized }, { actor });
@@ -410,7 +428,7 @@ export async function moveTicket(
   }
 
   const updated = await loadTicket(ticketId);
-  const serialized = serializeTicket(updated);
+  const serialized = await serializeTicketWithAssignee(updated);
 
   await logActivity({
     actor,

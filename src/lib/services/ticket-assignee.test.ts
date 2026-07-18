@@ -149,6 +149,21 @@ test("agent actors are capped to their owner's fleet; workspace agents are not",
   assert.equal(dispatched.assignee?.id, seed.ilanBotId);
 });
 
+test("human assignees serialize with the user's real name on create and update", async () => {
+  const created = await createTicket(
+    { boardId: seed.boardId, title: "Named human", assigneeType: "user", assigneeUserId: seed.yuval.id },
+    seed.ilan,
+  );
+  assert.equal(created.assignee?.name, "Yuval");
+
+  const updated = await updateTicket(
+    created.id,
+    { assigneeType: "user", assigneeUserId: seed.yuval.id },
+    seed.ilan,
+  );
+  assert.equal(updated.assignee?.name, "Yuval");
+});
+
 test("agent assignees serialize with owner context; workspace agents without", async () => {
   const owned = await createTicket(
     { boardId: seed.boardId, title: "Owned display", assigneeType: "agent", assigneeAgentId: seed.yuvalBotId },
