@@ -42,6 +42,8 @@ type SnapTicket = {
   createdAt: string;
   labelIds: string[];
   comments: { id: string; authorType: string; authorId: string | null; authorName: string; body: string; createdAt: string }[];
+  // Optional: snapshots taken before subtasks existed won't carry this key.
+  subtasks?: { id: string; title: string; completed: boolean; position: number; createdByType: string; createdById: string | null; createdAt: string }[];
 };
 type SnapBoard = {
   id: string;
@@ -79,7 +81,11 @@ export async function captureWorkspaceBoards(workspaceId: string): Promise<{ boa
       tickets: {
         where: { deletedAt: null },
         orderBy: { position: "asc" },
-        include: { labels: { select: { labelId: true } }, comments: { orderBy: { createdAt: "asc" } } },
+        include: {
+          labels: { select: { labelId: true } },
+          comments: { orderBy: { createdAt: "asc" } },
+          subtasks: { orderBy: { position: "asc" } },
+        },
       },
     },
   });
@@ -133,6 +139,15 @@ export async function captureWorkspaceBoards(workspaceId: string): Promise<{ boa
           authorName: c.authorName,
           body: c.body,
           createdAt: c.createdAt.toISOString(),
+        })),
+        subtasks: t.subtasks.map((s) => ({
+          id: s.id,
+          title: s.title,
+          completed: s.completed,
+          position: s.position,
+          createdByType: s.createdByType,
+          createdById: s.createdById,
+          createdAt: s.createdAt.toISOString(),
         })),
       })),
     };
@@ -394,6 +409,22 @@ async function buildBoardRestoreOps(workspaceId: string, b: SnapBoard): Promise<
       t.labelIds
         .filter((lid) => b.labels.some((l) => l.id === lid))
         .map((labelId) => db.ticketLabel.create({ data: { ticketId: t.id, labelId } })),
+    ),
+    ...b.tickets.flatMap((t) =>
+      (t.subtasks ?? []).map((s) =>
+        db.subtask.create({
+          data: {
+            id: s.id,
+            ticketId: t.id,
+            title: s.title,
+            completed: s.completed,
+            position: s.position,
+            createdByType: s.createdByType,
+            createdById: s.createdById,
+            createdAt: new Date(s.createdAt),
+          },
+        }),
+      ),
     ),
     ...b.tickets.flatMap((t) =>
       t.comments.map((c) =>

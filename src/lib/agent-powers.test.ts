@@ -14,7 +14,7 @@ const docs = readFileSync("docs/AGENT_PROTOCOL.md", "utf8");
 test("Agents can soft-delete tickets (scoped, workspace-checked, restorable)", () => {
   assert.match(ticketRoute, /export const DELETE = handler/);
   assert.match(ticketRoute, /requireScope\(agent, "tickets:write"\)/);
-  assert.match(ticketRoute, /assertTicketInWorkspace\(ticketId, agent\.workspaceId\)/);
+  assert.match(ticketRoute, /assertAgentTicketAccess\(agent, ticketId\)/); // workspace-scoped AND capped to the agent owner’s boards
   assert.match(ticketRoute, /deleteTicket\(ticketId/); // soft-delete service (deletedAt), not a hard delete
 });
 

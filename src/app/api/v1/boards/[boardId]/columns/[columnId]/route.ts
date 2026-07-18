@@ -1,6 +1,6 @@
 import { handler, ok, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertBoardInWorkspace, assertColumnInBoard } from "@/lib/access";
+import { assertAgentBoardAccess, assertColumnInBoard } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { updateBoardColumnV1Schema } from "@/lib/validation";
 import { updateBoardColumn } from "@/lib/services/boards";
@@ -19,7 +19,7 @@ export const GET = handler(async (req: Request, { params }: Ctx) => {
   const agent = await requireAgent(req);
   requireScope(agent, "boards:read");
   const { boardId, columnId } = await params;
-  await assertBoardInWorkspace(boardId, agent.workspaceId);
+  await assertAgentBoardAccess(agent, boardId);
   await assertColumnInBoard(columnId, boardId, agent.workspaceId);
 
   const column = await db.column.findUnique({ where: { id: columnId } });
@@ -42,7 +42,7 @@ export const PATCH = handler(async (req: Request, { params }: Ctx) => {
   const agent = await requireAgent(req);
   requireScope(agent, "boards:write");
   const { boardId, columnId } = await params;
-  await assertBoardInWorkspace(boardId, agent.workspaceId);
+  await assertAgentBoardAccess(agent, boardId);
   await assertColumnInBoard(columnId, boardId, agent.workspaceId);
 
   const input = parse(updateBoardColumnV1Schema, await readJson(req));
@@ -64,7 +64,7 @@ export const DELETE = handler(async (req: Request, { params }: Ctx) => {
   const agent = await requireAgent(req);
   requireScope(agent, "boards:write");
   const { boardId, columnId } = await params;
-  await assertBoardInWorkspace(boardId, agent.workspaceId);
+  await assertAgentBoardAccess(agent, boardId);
   await assertColumnInBoard(columnId, boardId, agent.workspaceId);
 
   const count = await db.ticket.count({ where: { columnId } });

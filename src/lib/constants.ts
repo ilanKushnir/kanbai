@@ -51,7 +51,7 @@ export const API_VERSION = "v1";
  * without scraping the docs. Per-agent permissions are conveyed by `scopes`.
  */
 export const AGENT_CAPABILITIES = {
-  resources: ["boards", "columns", "tickets", "inbox", "notes", "comments", "members", "trash"],
+  resources: ["boards", "columns", "tickets", "subtasks", "inbox", "notes", "comments", "members", "trash"],
   lifecycle: {
     // Full status management: PATCH columnId/subState, POST /tickets/:id/move,
     // and the one-call POST /tickets/:id/done (board's done column).
@@ -69,6 +69,9 @@ export const AGENT_CAPABILITIES = {
     trashRestore: true,
     // PATCH /boards/{id} { archived } — the reversible "delete" for boards.
     boardArchive: true,
+    // Subtasks: GET/POST /tickets/{id}/subtasks, PATCH/DELETE …/subtasks/{id}
+    // (rename / toggle completed), POST …/subtasks/reorder with orderedIds.
+    subtasks: true,
   },
   boards: {
     // PATCH /boards/{id}: name, description, color, archived.

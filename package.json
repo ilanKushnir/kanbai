@@ -1,13 +1,13 @@
 {
   "name": "kanbai",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "DATABASE_URL='file:./test.db' KANBAI_KEY_PEPPER=test-pepper prisma db push --schema=prisma/schema.prisma --skip-generate --accept-data-loss && DATABASE_URL='file:./test.db' KANBAI_KEY_PEPPER=test-pepper tsx --test --test-reporter=spec 'src/{app,lib}/**/*.test.ts'",
+    "test": "DATABASE_URL='file:./test.db' KANBAI_KEY_PEPPER=test-pepper prisma db push --schema=prisma/schema.prisma --skip-generate --accept-data-loss && DATABASE_URL='file:./test.db' KANBAI_KEY_PEPPER=test-pepper tsx --test --test-concurrency=1 --test-reporter=spec 'src/{app,lib}/**/*.test.ts'",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",

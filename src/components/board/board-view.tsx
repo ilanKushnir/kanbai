@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { TicketCard } from "./ticket-card";
 import { TicketModal } from "./ticket-modal";
+import { Avatar } from "@/components/ui/avatar";
 import { Menu, MenuItem } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
@@ -65,6 +66,9 @@ import type { BoardData } from "@/lib/services/boards";
 import type { SerializedTicket } from "@/lib/serialize";
 
 type AgentLite = { id: string; name: string; color: string; kind: string };
+type MemberLite = { id: string; name: string; avatarUrl?: string | null };
+/** Assignee chosen in the add-card composer, before the ticket exists. */
+type NewAssignee = { type: "user" | "agent"; id: string; name: string; color?: string; kind?: string };
 type ColumnMeta = {
   id: string;
   name: string;
@@ -188,12 +192,14 @@ function buildContainers(board: BoardData): Record<string, string[]> {
 export function BoardView({
   board,
   agents: agentsProp,
+  members = [],
   currentUser,
   initialTicketId,
   returnTo,
 }: {
   board: BoardData;
   agents: AgentLite[];
+  members?: { id: string; name: string; avatarUrl?: string | null }[];
   currentUser?: { id: string; name: string } | null;
   initialTicketId?: string;
   returnTo?: "notes";
@@ -541,7 +547,7 @@ export function BoardView({
     void persistMove(ticketId, columnId, flat.indexOf(ticketId), targetSub);
   }
 
-  async function handleCreate(columnId: string, title: string) {
+  async function handleCreate(columnId: string, title: string, assignee?: NewAssignee | null) {
     // Optimistic: show the card instantly (rapid Enter-to-add-another entry),
     // swap in the real ticket when the server answers.
     const col = cols.find((c) => c.id === columnId);
@@ -561,9 +567,10 @@ export function BoardView({
       priority: "none",
       subState: sub,
       dueDate: null,
-      assignee: null,
+      assignee: assignee ?? null,
       createdBy: { type: "user", id: currentUser?.id ?? null },
       labels: [],
+      subtasks: [],
       commentCount: 0,
       comments: [],
       sourceNoteId: null,
@@ -576,7 +583,17 @@ export function BoardView({
     await tracked(async () => {
       try {
         const { ticket } = await api<{ ticket: SerializedTicket }>("/api/tickets", {
-          body: { boardId: board.id, columnId, title },
+          body: {
+            boardId: board.id,
+            columnId,
+            title,
+            ...(assignee
+              ? {
+                  assigneeType: assignee.type,
+                  ...(assignee.type === "user" ? { assigneeUserId: assignee.id } : { assigneeAgentId: assignee.id }),
+                }
+              : {}),
+          },
         });
         setTicketsById((m) => {
           const mm = { ...m, [ticket.id]: { ...ticket, subState: sub } };
@@ -858,9 +875,12 @@ export function BoardView({
               dragging={activeId != null}
               zonesActive={activeId != null && zoneColId === col.id}
               allColumns={cols}
+              members={members}
+              agents={agents}
+              currentUser={currentUser}
               onMoveTo={moveTicketTo}
               onCardClick={(id) => !id.startsWith("tmp-") && setSelectedId(id)}
-              onCreate={(title) => handleCreate(col.id, title)}
+              onCreate={(title, assignee) => handleCreate(col.id, title, assignee)}
               onRename={(name) => renameColumn(col.id, name)}
               onSetWip={(n) => setWip(col.id, n)}
               onSetStage={(s) => setStage(col.id, s)}
@@ -890,6 +910,7 @@ export function BoardView({
           columns={cols}
           labels={board.labels}
           agents={agents}
+          members={members}
           currentUser={currentUser}
           onClose={() => setSelectedId(null)}
           onUpdated={handleTicketUpdated}
@@ -1044,6 +1065,9 @@ function Column({
   dragging,
   zonesActive,
   allColumns,
+  members,
+  agents,
+  currentUser,
   onMoveTo,
   onCardClick,
   onCreate,
@@ -1066,9 +1090,12 @@ function Column({
   /** A drag is over this column → overlay its sub-state drop zones. */
   zonesActive: boolean;
   allColumns: ColumnMeta[];
+  members: MemberLite[];
+  agents: AgentLite[];
+  currentUser?: { id: string; name: string } | null;
   onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
   onCardClick: (id: string) => void;
-  onCreate: (title: string) => void;
+  onCreate: (title: string, assignee?: NewAssignee | null) => void;
   onRename: (name: string) => void;
   onSetWip: (n: number | null) => void;
   onSetStage: (stage: ColumnStage) => void;
@@ -1253,12 +1280,17 @@ function Column({
             {sections.reduce((n, s) => n + s.visibleIds.length, 0) === 0 && totalCount > 0 && (
               <p className="px-1 py-1.5 text-xs text-fg-subtle">No cards match the filter.</p>
             )}
-            <AddCard onCreate={onCreate} />
+            <AddCard onCreate={onCreate} members={members} agents={agents} currentUser={currentUser} />
           </div>
           {zonesActive && <SubStateZones colName={col.name} sections={sections} />}
         </div>
       ) : (
-        <Section {...sectionProps(sections[0])} fill overLimit={overLimit} footer={<AddCard onCreate={onCreate} />} />
+        <Section
+          {...sectionProps(sections[0])}
+          fill
+          overLimit={overLimit}
+          footer={<AddCard onCreate={onCreate} members={members} agents={agents} currentUser={currentUser} />}
+        />
       )}
     </div>
   );
@@ -1618,21 +1650,49 @@ function MoveMenu({
   );
 }
 
-function AddCard({ onCreate }: { onCreate: (title: string) => void }) {
+function AddCard({
+  onCreate,
+  members,
+  agents,
+  currentUser,
+}: {
+  onCreate: (title: string, assignee?: NewAssignee | null) => void;
+  members: MemberLite[];
+  agents: AgentLite[];
+  currentUser?: { id: string; name: string } | null;
+}) {
   const [adding, setAdding] = React.useState(false);
   const [value, setValue] = React.useState("");
+  // Chosen assignee sticks across rapid Enter-to-add-another entries.
+  const [assignee, setAssignee] = React.useState<NewAssignee | null>(null);
   const ref = React.useRef<HTMLTextAreaElement>(null);
 
   React.useEffect(() => {
     if (adding) ref.current?.focus();
   }, [adding]);
 
+  // Same rule as the ticket modal: board members are assignable, and the
+  // current user always appears (solo workspaces pass no members list).
+  const assignableUsers: MemberLite[] = React.useMemo(() => {
+    const list = [...members];
+    if (currentUser && !list.some((m) => m.id === currentUser.id)) list.unshift(currentUser);
+    return list;
+  }, [members, currentUser]);
+
   function submit(keepOpen: boolean) {
     const v = value.trim();
-    if (v) onCreate(v);
+    if (v) onCreate(v, assignee);
     setValue("");
-    if (!keepOpen) setAdding(false);
-    else ref.current?.focus();
+    if (!keepOpen) {
+      setAdding(false);
+      setAssignee(null);
+    } else ref.current?.focus();
+  }
+
+  function close() {
+    setValue("");
+    setAssignee(null);
+    setAdding(false);
   }
 
   if (!adding) {
@@ -1648,7 +1708,14 @@ function AddCard({ onCreate }: { onCreate: (title: string) => void }) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-2 shadow-card">
+    <div
+      className="rounded-xl border border-border bg-surface p-2 shadow-card"
+      // Save/close only when focus leaves the whole composer, so opening the
+      // assignee picker (rendered inside this container) doesn't submit.
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) submit(false);
+      }}
+    >
       <textarea
         ref={ref}
         dir="auto"
@@ -1659,16 +1726,83 @@ function AddCard({ onCreate }: { onCreate: (title: string) => void }) {
             e.preventDefault();
             submit(true); // save and keep adding for rapid capture
           }
-          if (e.key === "Escape") {
-            setValue("");
-            setAdding(false);
-          }
+          if (e.key === "Escape") close();
         }}
-        onBlur={() => submit(false)}
         rows={2}
         placeholder="What needs doing?  (Enter to add another)"
         className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-fg-subtle"
       />
+      {/* preventDefault on mousedown keeps the textarea focused while picking. */}
+      <div className="mt-1 flex items-center" onMouseDown={(e) => e.preventDefault()}>
+        <Menu
+          trigger={
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-xs font-medium text-fg-muted hover:bg-surface-2 cursor-pointer"
+              aria-label="Assign the new card"
+            >
+              {assignee ? (
+                <>
+                  <Avatar
+                    name={assignee.name}
+                    color={assignee.type === "agent" ? assignee.color : undefined}
+                    isAgent={assignee.type === "agent"}
+                    size={14}
+                  />
+                  <span className="max-w-[8rem] truncate">{assignee.name}</span>
+                </>
+              ) : (
+                <>
+                  <User className="h-3.5 w-3.5" />
+                  Assign
+                </>
+              )}
+            </button>
+          }
+          contentClassName="max-h-64 overflow-y-auto"
+        >
+          {(closeMenu) => (
+            <>
+              <MenuItem
+                active={!assignee}
+                onClick={() => {
+                  closeMenu();
+                  setAssignee(null);
+                }}
+              >
+                Unassigned
+              </MenuItem>
+              {assignableUsers.map((m) => (
+                <MenuItem
+                  key={m.id}
+                  active={assignee?.type === "user" && assignee.id === m.id}
+                  onClick={() => {
+                    closeMenu();
+                    setAssignee({ type: "user", id: m.id, name: m.name });
+                  }}
+                >
+                  <Avatar name={m.name} size={16} />
+                  {m.name}
+                  {m.id === currentUser?.id && <span className="text-[0.625rem] text-fg-subtle">you</span>}
+                </MenuItem>
+              ))}
+              {agents.map((a) => (
+                <MenuItem
+                  key={a.id}
+                  active={assignee?.type === "agent" && assignee.id === a.id}
+                  onClick={() => {
+                    closeMenu();
+                    setAssignee({ type: "agent", id: a.id, name: a.name, color: a.color, kind: a.kind });
+                  }}
+                >
+                  <Avatar name={a.name} color={a.color} isAgent size={16} />
+                  {a.name}
+                </MenuItem>
+              ))}
+            </>
+          )}
+        </Menu>
+      </div>
     </div>
   );
 }

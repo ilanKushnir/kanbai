@@ -1,6 +1,6 @@
 import { handler, ok } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertBoardInWorkspace } from "@/lib/access";
+import { assertAgentBoardAccess } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { updateBoardV1Schema } from "@/lib/validation";
 import { getBoardWithData } from "@/lib/services/boards";
@@ -15,6 +15,7 @@ export const GET = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "boards:read");
     const { boardId } = await params;
+    await assertAgentBoardAccess(agent, boardId);
     const board = await getBoardWithData(agent.workspaceId, { id: boardId });
     return ok({ board });
   },
@@ -31,7 +32,7 @@ export const PATCH = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "boards:write");
     const { boardId } = await params;
-    await assertBoardInWorkspace(boardId, agent.workspaceId);
+    await assertAgentBoardAccess(agent, boardId);
     const input = parse(updateBoardV1Schema, await readJson(req));
     await guardAgentSnapshot(agent.workspaceId, { id: agent.id, name: agent.name });
 

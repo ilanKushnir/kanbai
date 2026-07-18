@@ -4,9 +4,11 @@ import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { assertBoardAccess } from "@/lib/authz";
 import { getBoardWithData } from "@/lib/services/boards";
+import { boardAssigneeUsers } from "@/lib/services/board-members";
 import { BoardViewClient } from "@/components/board/board-view-client";
 import { ShareButton } from "@/components/board/share-button";
 import { BoardSettings } from "@/components/board/board-settings";
+import { BoardMembers } from "@/components/board/board-members";
 import { tone } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +52,9 @@ export default async function BoardPage({
     orderBy: { createdAt: "asc" },
   });
 
+  // Humans this board's tickets can be assigned to: managers + shared members.
+  const members = await boardAssigneeUsers(board.id);
+
   const total = board.columns.reduce((s, c) => s + c.tickets.length, 0);
   const t = tone(board.color);
 
@@ -67,17 +72,20 @@ export default async function BoardPage({
               public
             </span>
           )}
-          {ctx.isManager && (
-            <div className="ml-auto flex items-center gap-2">
-              <ShareButton boardId={board.id} isPublic={board.isPublic} publicId={board.publicId} />
-              <BoardSettings
-                boardId={board.id}
-                name={board.name}
-                description={board.description}
-                color={board.color}
-              />
-            </div>
-          )}
+          <div className="ml-auto flex items-center gap-2">
+            <BoardMembers boardId={board.id} boardName={board.name} />
+            {ctx.isManager && (
+              <>
+                <ShareButton boardId={board.id} isPublic={board.isPublic} publicId={board.publicId} />
+                <BoardSettings
+                  boardId={board.id}
+                  name={board.name}
+                  description={board.description}
+                  color={board.color}
+                />
+              </>
+            )}
+          </div>
         </div>
         {board.description && <p className="mt-1 text-sm text-fg-muted">{board.description}</p>}
       </header>
@@ -86,6 +94,7 @@ export default async function BoardPage({
         <BoardViewClient
           board={board}
           agents={agents}
+          members={members}
           currentUser={{ id: ctx.user.id, name: ctx.user.name }}
           initialTicketId={initialTicketId}
           returnTo={from === "notes" ? "notes" : undefined}

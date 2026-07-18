@@ -1,6 +1,6 @@
 import { handler, ok, created } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertBoardInWorkspace } from "@/lib/access";
+import { assertAgentBoardAccess } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { createColumnV1Schema } from "@/lib/validation";
 import { parseSubStates } from "@/lib/substates";
@@ -38,7 +38,7 @@ export const GET = handler(async (req: Request, { params }: Ctx) => {
   const agent = await requireAgent(req);
   requireScope(agent, "boards:read");
   const { boardId } = await params;
-  await assertBoardInWorkspace(boardId, agent.workspaceId);
+  await assertAgentBoardAccess(agent, boardId);
   const columns = await db.column.findMany({ where: { boardId }, orderBy: { position: "asc" } });
   return ok({ columns: columns.map(serializeColumn) });
 });
@@ -48,7 +48,7 @@ export const POST = handler(async (req: Request, { params }: Ctx) => {
   const agent = await requireAgent(req);
   requireScope(agent, "boards:write");
   const { boardId } = await params;
-  await assertBoardInWorkspace(boardId, agent.workspaceId);
+  await assertAgentBoardAccess(agent, boardId);
   const input = parse(createColumnV1Schema, await readJson(req));
   await guardAgentSnapshot(agent.workspaceId, { id: agent.id, name: agent.name });
 

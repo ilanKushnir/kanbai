@@ -144,6 +144,29 @@ export const createCommentSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
 });
 
+// ── Subtasks ──
+export const createSubtaskSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+});
+
+export const updateSubtaskSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    completed: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "Provide at least one field to update (title, completed).",
+  });
+
+export const reorderSubtasksSchema = z.object({
+  orderedIds: z.array(z.string()).min(1),
+});
+
+/** Board share management: set a member's access to one board (null revokes). */
+export const setBoardMemberAccessSchema = z.object({
+  level: z.enum(["view", "edit"]).nullable(),
+});
+
 export const updateColumnSchema = z.object({
   name: z.string().trim().min(1).max(40).optional(),
   wipLimit: z.number().int().min(1).max(99).nullable().optional(),
@@ -309,6 +332,7 @@ export const registerWebhookV1Schema = z.object({
 
 export const updateAgentSchema = z.object({
   name: z.string().trim().min(1).max(60).optional(),
+  ownerUserId: z.string().max(60).nullable().optional().or(z.literal("")),
   webhookUrl: z.url().nullable().optional().or(z.literal("")),
   webhookSecret: z.string().max(200).nullable().optional(),
   webhookActive: z.boolean().optional(),

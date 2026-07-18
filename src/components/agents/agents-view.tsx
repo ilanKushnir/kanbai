@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   TriangleAlert,
   BookOpen,
+  UserRound,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -65,7 +66,18 @@ function CopyBtn({ value, className }: { value: string; className?: string }) {
   );
 }
 
-export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; appUrl: string }) {
+type WorkspaceMemberLite = { id: string; name: string; email: string; role: string };
+
+export function AgentsView({
+  agents: initial,
+  members = [],
+  appUrl,
+}: {
+  agents: AgentFull[];
+  /** Workspace members an agent can be owned by (owner caps its board access). */
+  members?: WorkspaceMemberLite[];
+  appUrl: string;
+}) {
   const router = useRouter();
   const [agents, setAgents] = React.useState(initial);
   const [creating, setCreating] = React.useState(false);
@@ -153,6 +165,7 @@ export function AgentsView({ agents: initial, appUrl }: { agents: AgentFull[]; a
             <AgentCard
               key={a.id}
               agent={a}
+              members={members}
               appUrl={appUrl}
               now={now}
               onUpdate={update}
@@ -214,6 +227,7 @@ function Step({
 
 function AgentCard({
   agent,
+  members,
   appUrl,
   now,
   onUpdate,
@@ -221,6 +235,7 @@ function AgentCard({
   onDeleted,
 }: {
   agent: AgentFull;
+  members: WorkspaceMemberLite[];
   appUrl: string;
   now: number | null;
   onUpdate: (a: AgentFull) => void;
@@ -244,6 +259,7 @@ function AgentCard({
       });
       onUpdate({ ...agent, ...next, webhookSecret: next.webhookSecret ?? secret });
       if (tag === "save") toast({ title: "Webhook URL saved", variant: "success" });
+      if (tag === "owner") toast({ title: "Agent owner updated", variant: "success" });
     } catch (e) {
       toast({ title: "Update failed", description: e instanceof Error ? e.message : undefined, variant: "error" });
     } finally {
@@ -304,6 +320,7 @@ function AgentCard({
 
   const disabled = agent.status !== "active";
   const conn = now == null ? null : agentConnection(agent, now);
+  const owner = agent.ownerUserId ? members.find((m) => m.id === agent.ownerUserId) : null;
 
   return (
     <div className={cn("rounded-2xl border border-border bg-surface p-4 shadow-card", disabled && "opacity-70")}>
@@ -375,6 +392,57 @@ function AgentCard({
             <RefreshCw className={cn("h-3.5 w-3.5", busy === "rotate" && "animate-spin")} /> Rotate
           </Button>
         </div>
+      </Field>
+
+      {/* Owner */}
+      <Field icon={UserRound} label="Owner">
+        <Menu
+          trigger={
+            <button className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2 cursor-pointer">
+              {agent.ownerUserId ? (
+                <>
+                  <Avatar name={owner?.name ?? "?"} size={16} />
+                  {owner?.name ?? "Former member"}
+                </>
+              ) : (
+                "Workspace-wide (no owner)"
+              )}
+            </button>
+          }
+          contentClassName="max-h-64 overflow-y-auto"
+        >
+          {(close) => (
+            <>
+              <MenuItem
+                active={!agent.ownerUserId}
+                onClick={() => {
+                  close();
+                  if (agent.ownerUserId) patch({ ownerUserId: null }, "owner");
+                }}
+              >
+                Workspace-wide (no owner)
+              </MenuItem>
+              {members.map((m) => (
+                <MenuItem
+                  key={m.id}
+                  active={agent.ownerUserId === m.id}
+                  onClick={() => {
+                    close();
+                    if (agent.ownerUserId !== m.id) patch({ ownerUserId: m.id }, "owner");
+                  }}
+                >
+                  <Avatar name={m.name} size={16} />
+                  <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                  <span className="text-[0.625rem] text-fg-subtle">{m.role}</span>
+                </MenuItem>
+              ))}
+            </>
+          )}
+        </Menu>
+        <p className="mt-1.5 text-xs text-fg-subtle">
+          A user-owned agent only reaches the boards its owner can access (managers see all, members
+          need a board share). Workspace-wide agents reach every board.
+        </p>
       </Field>
 
       {/* Webhook URL */}

@@ -18,6 +18,7 @@ const BoardView = dynamic(() => import("./board-view").then((m) => m.BoardView),
 export function BoardViewClient(props: {
   board: BoardData;
   agents: AgentLite[];
+  members?: { id: string; name: string; avatarUrl?: string | null }[];
   currentUser?: { id: string; name: string } | null;
   initialTicketId?: string;
   returnTo?: "notes";

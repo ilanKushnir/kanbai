@@ -5,6 +5,7 @@ export const ticketInclude = {
   labels: { include: { label: true } },
   agent: true,
   comments: { orderBy: { createdAt: "asc" as const } },
+  subtasks: { orderBy: { position: "asc" as const } },
   column: { select: { id: true, name: true, isDone: true } },
 } satisfies Prisma.TicketInclude;
 
@@ -44,6 +45,13 @@ export function serializeTicket(t: TicketWithRelations, usersById?: Map<string, 
     assignee,
     createdBy: { type: t.createdByType, id: t.createdById },
     labels: t.labels.map((tl) => ({ id: tl.label.id, name: tl.label.name, color: tl.label.color })),
+    subtasks: t.subtasks.map((s) => ({
+      id: s.id,
+      title: s.title,
+      completed: s.completed,
+      position: s.position,
+      createdAt: s.createdAt.toISOString(),
+    })),
     commentCount: t.comments.length,
     comments: t.comments.map((c) => ({
       id: c.id,

@@ -37,6 +37,8 @@ export type AgentFull = {
   kind: string;
   color: string;
   status: string; // active | disabled
+  /** Owning user — caps the agent's board access to that user's boards. Null = workspace-wide. */
+  ownerUserId: string | null;
   apiKeyPrefix: string | null;
   apiKeyLast4: string | null;
   hasKey: boolean;

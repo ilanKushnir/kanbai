@@ -30,6 +30,7 @@ model User {
   boardAccess    BoardAccess[]
   sentInvites    Invite[]          @relation("InviteSender")
   ownedWorkspaces Workspace[]      @relation("WorkspaceOwner")
+  ownedAgents    Agent[]           @relation("AgentOwner")
 }
 
 model Session {
@@ -201,6 +202,7 @@ model Ticket {
   agent    Agent?       @relation(fields: [assigneeAgentId], references: [id])
   labels   TicketLabel[]
   comments Comment[]
+  subtasks Subtask[]
   sourceNote Note?      @relation("NoteToTicket", fields: [sourceNoteId], references: [id])
 
   @@unique([boardId, number])
@@ -225,6 +227,23 @@ model TicketLabel {
   label    Label  @relation(fields: [labelId], references: [id], onDelete: Cascade)
 
   @@id([ticketId, labelId])
+}
+
+/// A checklist item inside a ticket. Ordered by `position` within its ticket.
+model Subtask {
+  id            String   @id @default(cuid())
+  ticketId      String
+  title         String
+  completed     Boolean  @default(false)
+  position      Int      @default(0)
+  createdByType String   @default("user") // "user" | "agent"
+  createdById   String?  // user/agent id (no FK — mirrors Comment.authorId)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
 }
 
 model Comment {
@@ -292,6 +311,11 @@ model Agent {
   color       String   @default("iris")
   status      String   @default("active") // active | disabled
 
+  // Optional owning user. When set, the agent's board/ticket access is capped
+  // to what this user can see (managers see all; members need BoardAccess).
+  // Null = legacy workspace-wide agent.
+  ownerUserId String?
+
   // API key (for the agent → Kanbai). Only the hash is stored.
   apiKeyHash   String?  @unique
   apiKeyPrefix String?  // e.g. "kbai_live_a1b2" for display
@@ -308,6 +332,7 @@ model Agent {
   createdAt DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerUser User?     @relation("AgentOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   tickets   Ticket[]
   notes     Note[]
   deliveries WebhookDelivery[]

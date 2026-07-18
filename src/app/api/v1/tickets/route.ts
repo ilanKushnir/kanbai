@@ -1,6 +1,6 @@
 import { handler, created, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertBoardInWorkspace } from "@/lib/access";
+import { assertAgentBoardAccess } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { createTicketV1Schema } from "@/lib/validation";
 import { createTicket } from "@/lib/services/tickets";
@@ -18,7 +18,7 @@ export const POST = handler(async (req: Request) => {
   const agent = await requireAgent(req);
   requireScope(agent, "tickets:write");
   const input = parse(createTicketV1Schema, await readJson(req));
-  await assertBoardInWorkspace(input.boardId, agent.workspaceId);
+  await assertAgentBoardAccess(agent, input.boardId);
   // Snapshot before ANY write this session — including the label find-or-create
   // below — so a restore can fully undo agent-created labels too.
   await guardAgentSnapshot(agent.workspaceId, { id: agent.id, name: agent.name });

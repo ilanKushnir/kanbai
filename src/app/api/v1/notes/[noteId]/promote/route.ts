@@ -1,6 +1,6 @@
 import { handler, created, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertBoardInWorkspace } from "@/lib/access";
+import { assertAgentBoardAccess } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { promoteNoteV1Schema } from "@/lib/validation";
 import { getWorkspaceNote, fulfillNote } from "@/lib/services/notes";
@@ -38,7 +38,7 @@ export const POST = handler(
     if (note.ticket) throw new HttpError(409, "Note already sorted into a ticket");
 
     const input = parse(promoteNoteV1Schema, await readJson(req));
-    await assertBoardInWorkspace(input.boardId, agent.workspaceId);
+    await assertAgentBoardAccess(agent, input.boardId);
     // Snapshot before ANY write this session — label creation included — so a
     // restore can fully undo the promotion.
     await guardAgentSnapshot(agent.workspaceId, { id: agent.id, name: agent.name });

@@ -1,5 +1,6 @@
 import { handler, ok, created } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
+import { agentBoardWhere } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { createBoardV1Schema } from "@/lib/validation";
 import { createBoardWithStructure } from "@/lib/services/boards";
@@ -14,7 +15,8 @@ export const GET = handler(async (req: Request) => {
   requireScope(agent, "boards:read");
 
   const boards = await db.board.findMany({
-    where: { workspaceId: agent.workspaceId, archived: false },
+    // Owner-mapped agents only see the boards their owning user can access.
+    where: { ...(await agentBoardWhere(agent)), archived: false },
     orderBy: { position: "asc" },
     include: {
       labels: { select: { id: true, name: true, color: true } },

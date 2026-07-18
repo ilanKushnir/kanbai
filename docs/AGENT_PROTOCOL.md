@@ -184,6 +184,11 @@ POST   /tickets/{id}/move      # move to column + position          scope: ticke
 POST   /tickets/{id}/done      # close: move to the done column     scope: tickets:write
 DELETE /tickets/{id}           # soft-delete → 30-day trash         scope: tickets:write
 POST   /tickets/{id}/comments  # add a comment (as the agent)       scope: comments:write
+GET    /tickets/{id}/subtasks             # list the ticket's subtasks    scope: tickets:read
+POST   /tickets/{id}/subtasks             # add a subtask                 scope: tickets:write
+PATCH  /tickets/{id}/subtasks/{subId}     # rename / toggle completed     scope: tickets:write
+DELETE /tickets/{id}/subtasks/{subId}     # remove a subtask              scope: tickets:write
+POST   /tickets/{id}/subtasks/reorder     # reorder (full orderedIds)     scope: tickets:write
 ```
 
 **Create a ticket**
@@ -263,6 +268,37 @@ curl -X DELETE https://your-kanbai.app/api/v1/tickets/tkt_123 \
   -H "Authorization: Bearer $KANBAI_KEY"
 # → { ok: true, restorableFor: "30 days" }
 ```
+
+**Subtasks** — an ordered checklist inside a ticket. Every write returns the
+full ticket (with `subtasks:[{id,title,completed,position,createdAt}]`) so you
+always have the fresh state:
+
+```bash
+# Add a subtask
+curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/subtasks \
+  -H "Authorization: Bearer $KANBAI_KEY" \
+  -H "content-type: application/json" \
+  -d '{ "title": "Write the failing test" }'
+
+# Complete it
+curl -X PATCH https://your-kanbai.app/api/v1/tickets/tkt_123/subtasks/sub_1 \
+  -H "Authorization: Bearer $KANBAI_KEY" \
+  -H "content-type: application/json" \
+  -d '{ "completed": true }'
+
+# Reorder — send EVERY subtask id in the desired order (a partial or stale
+# list is rejected with 422 so racing writers can't drop items)
+curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/subtasks/reorder \
+  -H "Authorization: Bearer $KANBAI_KEY" \
+  -H "content-type: application/json" \
+  -d '{ "orderedIds": ["sub_2", "sub_1"] }'
+```
+
+**Board access cap.** An agent can be tied to an owning user (its
+`ownerUserId`, set by a human in Kanbai). Such an agent only sees and edits
+the boards its owner can access — `GET /boards` filters the list, and any
+board/ticket outside that access answers `404`. Agents without an owner keep
+workspace-wide access.
 
 ### Inbox (the "sort" queue)
 

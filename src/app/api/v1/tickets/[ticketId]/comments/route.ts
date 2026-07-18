@@ -1,6 +1,6 @@
 import { handler, created } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertTicketInWorkspace } from "@/lib/access";
+import { assertAgentTicketAccess } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { createCommentSchema } from "@/lib/validation";
 import { addComment } from "@/lib/services/tickets";
@@ -12,7 +12,7 @@ export const POST = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "comments:write");
     const { ticketId } = await params;
-    await assertTicketInWorkspace(ticketId, agent.workspaceId);
+    await assertAgentTicketAccess(agent, ticketId);
     const { body } = parse(createCommentSchema, await readJson(req));
     const comment = await addComment(ticketId, body, { type: "agent", id: agent.id, name: agent.name });
     return created({

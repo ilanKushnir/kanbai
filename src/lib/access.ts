@@ -1,8 +1,65 @@
 import { db } from "./db";
 import { HttpError } from "./api";
 
-// Workspace-scoped guards — used by the AGENT API (agents have full
-// access to everything in their workspace; no per-board restriction).
+// Workspace-scoped guards — used by the AGENT API. Agents without an owning
+// user see everything in their workspace; agents with `ownerUserId` set are
+// capped to the boards that user can access (managers → all, members → their
+// BoardAccess grants).
+
+type AgentPrincipal = { workspaceId: string; ownerUserId?: string | null };
+
+/**
+ * The board ids an agent may act on, or null meaning "every board in its
+ * workspace" (legacy agent with no owner, or an owner who is a manager).
+ * An owner who left the workspace yields [] — no access at all.
+ */
+export async function agentAccessibleBoardIds(agent: AgentPrincipal): Promise<string[] | null> {
+  if (!agent.ownerUserId) return null;
+  const membership = await db.workspaceMember.findFirst({
+    where: { workspaceId: agent.workspaceId, userId: agent.ownerUserId },
+    select: { role: true },
+  });
+  if (!membership) return [];
+  if (membership.role === "owner" || membership.role === "admin") return null;
+  const grants = await db.boardAccess.findMany({
+    where: { userId: agent.ownerUserId, board: { workspaceId: agent.workspaceId } },
+    select: { boardId: true },
+  });
+  return grants.map((g) => g.boardId);
+}
+
+/** Prisma `where` fragment limiting boards to the agent's effective access. */
+export async function agentBoardWhere(agent: AgentPrincipal) {
+  const ids = await agentAccessibleBoardIds(agent);
+  return ids === null ? { workspaceId: agent.workspaceId } : { workspaceId: agent.workspaceId, id: { in: ids } };
+}
+
+/** Board must be in the agent's workspace AND within its effective access (404 either way — don't leak existence). */
+export async function assertAgentBoardAccess(agent: AgentPrincipal, boardId: string) {
+  await assertBoardInWorkspace(boardId, agent.workspaceId);
+  const ids = await agentAccessibleBoardIds(agent);
+  if (ids !== null && !ids.includes(boardId)) throw new HttpError(404, "Board not found");
+}
+
+export async function assertAgentTicketAccess(agent: AgentPrincipal, ticketId: string) {
+  const ticket = await db.ticket.findUnique({ where: { id: ticketId }, select: { boardId: true } });
+  if (!ticket) throw new HttpError(404, "Ticket not found");
+  try {
+    await assertAgentBoardAccess(agent, ticket.boardId);
+  } catch {
+    throw new HttpError(404, "Ticket not found");
+  }
+}
+
+export async function assertAgentColumnAccess(agent: AgentPrincipal, columnId: string) {
+  const col = await db.column.findUnique({ where: { id: columnId }, select: { boardId: true } });
+  if (!col) throw new HttpError(404, "Column not found");
+  try {
+    await assertAgentBoardAccess(agent, col.boardId);
+  } catch {
+    throw new HttpError(404, "Column not found");
+  }
+}
 
 export async function assertBoardInWorkspace(boardId: string, workspaceId: string) {
   const board = await db.board.findUnique({ where: { id: boardId }, select: { workspaceId: true } });

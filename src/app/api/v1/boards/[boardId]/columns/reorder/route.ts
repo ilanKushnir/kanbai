@@ -1,6 +1,6 @@
 import { handler, ok, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertBoardInWorkspace } from "@/lib/access";
+import { assertAgentBoardAccess } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { reorderColumnsV1Schema } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
@@ -15,7 +15,7 @@ export const POST = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "boards:write");
     const { boardId } = await params;
-    await assertBoardInWorkspace(boardId, agent.workspaceId);
+    await assertAgentBoardAccess(agent, boardId);
     const { orderedIds } = parse(reorderColumnsV1Schema, await readJson(req));
 
     const cols = await db.column.findMany({ where: { boardId }, select: { id: true } });

@@ -1,6 +1,6 @@
 import { handler, ok } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertTicketInWorkspace } from "@/lib/access";
+import { assertAgentTicketAccess } from "@/lib/access";
 import { moveTicketToDone } from "@/lib/services/tickets";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export const POST = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "tickets:write");
     const { ticketId } = await params;
-    await assertTicketInWorkspace(ticketId, agent.workspaceId);
+    await assertAgentTicketAccess(agent, ticketId);
     const ticket = await moveTicketToDone(ticketId, { type: "agent", id: agent.id, name: agent.name });
     return ok({ ticket });
   },

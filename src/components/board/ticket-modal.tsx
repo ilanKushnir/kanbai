@@ -12,6 +12,10 @@ import {
   NotebookPen,
   Check,
   CircleCheck,
+  ListChecks,
+  Plus,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -30,12 +34,14 @@ import type { SerializedTicket } from "@/lib/serialize";
 type ColumnMeta = { id: string; name: string; isDone: boolean; subStates: string[] };
 type LabelLite = { id: string; name: string; color: string };
 type AgentLite = { id: string; name: string; color: string; kind: string };
+type MemberLite = { id: string; name: string; avatarUrl?: string | null };
 
 export function TicketModal({
   ticket,
   columns,
   labels,
   agents,
+  members = [],
   currentUser,
   onClose,
   onUpdated,
@@ -46,6 +52,8 @@ export function TicketModal({
   columns: ColumnMeta[];
   labels: LabelLite[];
   agents: AgentLite[];
+  /** Everyone who can see this board (managers + shared members) — assignable. */
+  members?: MemberLite[];
   currentUser?: { id: string; name: string } | null;
   onClose: () => void;
   onUpdated: (t: SerializedTicket) => void;
@@ -147,6 +155,14 @@ export function TicketModal({
     next.has(id) ? next.delete(id) : next.add(id);
     patch({ labelIds: [...next] });
   }
+
+  // Assignable humans: everyone the board is shared with; make sure the
+  // current user always appears (solo workspaces pass no members list).
+  const assignableUsers: MemberLite[] = React.useMemo(() => {
+    const list = [...members];
+    if (currentUser && !list.some((m) => m.id === currentUser.id)) list.unshift(currentUser);
+    return list;
+  }, [members, currentUser]);
 
   return (
     <Modal open onClose={handleClose} size="lg" hideClose>
@@ -354,18 +370,20 @@ export function TicketModal({
               >
                 Unassigned
               </MenuItem>
-              {currentUser && (
+              {assignableUsers.map((m) => (
                 <MenuItem
-                  active={t.assignee?.type === "user"}
+                  key={m.id}
+                  active={t.assignee?.type === "user" && t.assignee.id === m.id}
                   onClick={() => {
                     close();
-                    patch({ assigneeType: "user", assigneeUserId: currentUser.id });
+                    patch({ assigneeType: "user", assigneeUserId: m.id });
                   }}
                 >
-                  <Avatar name={currentUser.name} size={16} />
-                  {currentUser.name}
+                  <Avatar name={m.name} size={16} />
+                  {m.name}
+                  {m.id === currentUser?.id && <span className="text-[0.625rem] text-fg-subtle">you</span>}
                 </MenuItem>
-              )}
+              ))}
               {agents.map((a) => (
                 <MenuItem
                   key={a.id}
@@ -446,6 +464,9 @@ export function TicketModal({
         )}
       </div>
 
+      {/* Subtasks */}
+      <SubtasksSection ticket={t} onTicket={apply} />
+
       {/* Comments / activity */}
       <div className="mt-5">
         <div className="mb-2 text-xs font-medium text-fg-muted">
@@ -490,5 +511,187 @@ export function TicketModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function SubtasksSection({
+  ticket: t,
+  onTicket,
+}: {
+  ticket: SerializedTicket;
+  onTicket: (next: SerializedTicket) => void;
+}) {
+  const { toast } = useToast();
+  const [newTitle, setNewTitle] = React.useState("");
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [editTitle, setEditTitle] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  const subtasks = t.subtasks;
+  const done = subtasks.filter((s) => s.completed).length;
+
+  async function call(path: string, options?: { method?: string; body?: unknown }) {
+    setBusy(true);
+    try {
+      const { ticket: next } = await api<{ ticket: SerializedTicket }>(path, options);
+      onTicket(next);
+    } catch (e) {
+      toast({ title: "Couldn't update subtasks", description: e instanceof Error ? e.message : undefined, variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function add() {
+    const title = newTitle.trim();
+    if (!title || busy) return;
+    setNewTitle("");
+    await call(`/api/tickets/${t.id}/subtasks`, { body: { title } });
+  }
+
+  function toggle(id: string, completed: boolean) {
+    void call(`/api/tickets/${t.id}/subtasks/${id}`, { method: "PATCH", body: { completed } });
+  }
+
+  function saveTitle(id: string) {
+    const title = editTitle.trim();
+    setEditingId(null);
+    const current = subtasks.find((s) => s.id === id);
+    if (!title || !current || title === current.title) return;
+    void call(`/api/tickets/${t.id}/subtasks/${id}`, { method: "PATCH", body: { title } });
+  }
+
+  function remove(id: string) {
+    void call(`/api/tickets/${t.id}/subtasks/${id}`, { method: "DELETE" });
+  }
+
+  function move(id: string, dir: -1 | 1) {
+    const ids = subtasks.map((s) => s.id);
+    const from = ids.indexOf(id);
+    const to = from + dir;
+    if (from === -1 || to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    void call(`/api/tickets/${t.id}/subtasks/reorder`, { body: { orderedIds: ids } });
+  }
+
+  return (
+    <div className="mt-4">
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted">
+        <ListChecks className="h-3.5 w-3.5" /> Subtasks
+        {subtasks.length > 0 && (
+          <span className="text-fg-subtle">
+            {done}/{subtasks.length}
+          </span>
+        )}
+      </div>
+
+      {subtasks.length > 0 && (
+        <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+          <div
+            className="h-full rounded-full bg-success transition-all"
+            style={{ width: `${Math.round((done / subtasks.length) * 100)}%` }}
+          />
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {subtasks.map((s, i) => (
+          <div
+            key={s.id}
+            dir="auto"
+            className="group flex items-center gap-2 rounded-lg border border-transparent px-1.5 py-1 transition-colors hover:border-border hover:bg-surface-2/40"
+          >
+            <button
+              onClick={() => toggle(s.id, !s.completed)}
+              disabled={busy}
+              aria-label={s.completed ? "Mark incomplete" : "Mark complete"}
+              className={cn(
+                "grid h-5 w-5 shrink-0 place-items-center rounded-md border transition-colors cursor-pointer",
+                s.completed
+                  ? "border-success bg-success text-success-fg"
+                  : "border-border hover:border-success",
+              )}
+            >
+              {s.completed && <Check className="h-3.5 w-3.5" />}
+            </button>
+
+            {editingId === s.id ? (
+              <input
+                dir="auto"
+                autoFocus
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onBlur={() => saveTitle(s.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveTitle(s.id);
+                  if (e.key === "Escape") setEditingId(null);
+                }}
+                className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-0.5 text-sm outline-none focus:border-primary"
+              />
+            ) : (
+              <button
+                dir="auto"
+                onClick={() => {
+                  setEditingId(s.id);
+                  setEditTitle(s.title);
+                }}
+                className={cn(
+                  "min-w-0 flex-1 truncate text-left text-sm cursor-text",
+                  s.completed ? "text-fg-subtle line-through" : "text-fg",
+                )}
+              >
+                {s.title}
+              </button>
+            )}
+
+            <div className="flex shrink-0 items-center gap-0.5 opacity-60 transition-opacity group-hover:opacity-100">
+              <button
+                onClick={() => move(s.id, -1)}
+                disabled={busy || i === 0}
+                aria-label="Move up"
+                className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle hover:bg-surface-2 hover:text-fg disabled:opacity-30 cursor-pointer"
+              >
+                <ChevronUp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => move(s.id, 1)}
+                disabled={busy || i === subtasks.length - 1}
+                aria-label="Move down"
+                className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle hover:bg-surface-2 hover:text-fg disabled:opacity-30 cursor-pointer"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => remove(s.id)}
+                disabled={busy}
+                aria-label="Delete subtask"
+                className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle hover:bg-danger-soft hover:text-danger cursor-pointer"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-1.5 flex items-center gap-2">
+        <input
+          dir="auto"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder="Add a subtask…"
+          className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm outline-none placeholder:text-fg-subtle focus:border-primary focus:ring-2 focus:ring-primary/20"
+        />
+        <Button variant="secondary" size="icon" onClick={add} disabled={!newTitle.trim() || busy} aria-label="Add subtask">
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
   );
 }

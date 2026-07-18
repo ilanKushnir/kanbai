@@ -1,6 +1,6 @@
 import { handler, ok } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertTicketInWorkspace } from "@/lib/access";
+import { assertAgentTicketAccess } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { updateTicketSchema } from "@/lib/validation";
 import { updateTicket, deleteTicket } from "@/lib/services/tickets";
@@ -15,7 +15,7 @@ export const GET = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "tickets:read");
     const { ticketId } = await params;
-    await assertTicketInWorkspace(ticketId, agent.workspaceId);
+    await assertAgentTicketAccess(agent, ticketId);
     const ticket = await db.ticket.findUnique({ where: { id: ticketId }, include: ticketInclude });
     if (!ticket) throw new HttpError(404, "Ticket not found");
     return ok({ ticket: serializeTicket(ticket) });
@@ -27,7 +27,7 @@ export const PATCH = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "tickets:write");
     const { ticketId } = await params;
-    await assertTicketInWorkspace(ticketId, agent.workspaceId);
+    await assertAgentTicketAccess(agent, ticketId);
     const input = parse(updateTicketSchema, await readJson(req));
     const ticket = await updateTicket(ticketId, input, { type: "agent", id: agent.id, name: agent.name });
     return ok({ ticket });
@@ -41,7 +41,7 @@ export const DELETE = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "tickets:write");
     const { ticketId } = await params;
-    await assertTicketInWorkspace(ticketId, agent.workspaceId);
+    await assertAgentTicketAccess(agent, ticketId);
     await deleteTicket(ticketId, { type: "agent", id: agent.id, name: agent.name });
     return ok({ ok: true, restorableFor: "30 days" });
   },

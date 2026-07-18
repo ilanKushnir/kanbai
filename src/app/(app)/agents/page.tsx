@@ -18,12 +18,22 @@ export default async function AgentsPage() {
     include: { deliveries: { orderBy: { createdAt: "desc" }, take: 6 } },
   });
 
+  // Workspace members an agent can be owned by (owner caps its board access).
+  const members = (
+    await db.workspaceMember.findMany({
+      where: { workspaceId: ctx.workspace.id },
+      include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { user: { name: "asc" } },
+    })
+  ).map((m) => ({ id: m.user.id, name: m.user.name, email: m.user.email, role: m.role }));
+
   const data: AgentFull[] = agents.map((a) => ({
     id: a.id,
     name: a.name,
     kind: a.kind,
     color: a.color,
     status: a.status,
+    ownerUserId: a.ownerUserId,
     apiKeyPrefix: a.apiKeyPrefix,
     apiKeyLast4: a.apiKeyLast4,
     hasKey: !!a.apiKeyPrefix,
@@ -45,5 +55,5 @@ export default async function AgentsPage() {
     })),
   }));
 
-  return <AgentsView agents={data} appUrl={process.env.NEXT_PUBLIC_APP_URL ?? ""} />;
+  return <AgentsView agents={data} members={members} appUrl={process.env.NEXT_PUBLIC_APP_URL ?? ""} />;
 }

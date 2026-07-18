@@ -11,6 +11,7 @@ export function serializeAgent(a: {
   kind: string;
   color: string;
   status: string;
+  ownerUserId: string | null;
   apiKeyPrefix: string | null;
   apiKeyLast4: string | null;
   webhookUrl: string | null;
@@ -26,6 +27,7 @@ export function serializeAgent(a: {
     kind: a.kind,
     color: a.color,
     status: a.status,
+    ownerUserId: a.ownerUserId,
     hasKey: !!a.apiKeyPrefix,
     apiKeyPrefix: a.apiKeyPrefix,
     apiKeyLast4: a.apiKeyLast4,
@@ -84,9 +86,24 @@ export async function updateAgent(
     webhookActive: boolean;
     status: "active" | "disabled";
     scopes: string[];
+    ownerUserId: string | null;
   }>,
 ) {
   const data: Record<string, unknown> = {};
+  if (input.ownerUserId !== undefined) {
+    // The owning user caps the agent's board access to their own — they must
+    // belong to the agent's workspace. null returns the agent to workspace-wide.
+    if (input.ownerUserId) {
+      const existing = await db.agent.findUnique({ where: { id: agentId }, select: { workspaceId: true } });
+      if (!existing) throw new HttpError(404, "Agent not found");
+      const member = await db.workspaceMember.findFirst({
+        where: { workspaceId: existing.workspaceId, userId: input.ownerUserId },
+        select: { id: true },
+      });
+      if (!member) throw new HttpError(422, "Owner must be a member of this workspace");
+    }
+    data.ownerUserId = input.ownerUserId || null;
+  }
   if (input.name !== undefined) data.name = input.name;
   if (input.webhookUrl !== undefined) data.webhookUrl = input.webhookUrl || null;
   if (input.webhookSecret !== undefined) data.webhookSecret = input.webhookSecret || null;
