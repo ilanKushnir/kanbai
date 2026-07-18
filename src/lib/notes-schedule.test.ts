@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  addDays,
   buildSchedule,
   compareSectionNotes,
   defaultCollapsedKeys,
@@ -193,6 +194,32 @@ test("defaultCollapsedKeys opens only Today on a fresh load", () => {
   // bucket — starts collapsed.
   for (const key of ["general", "this_week", "next_week", "later_this_month", "next_month", "long_term"]) {
     assert.equal(collapsed.has(key), true, `${key} should start collapsed`);
+  }
+});
+
+test("late in a month the schedule omits later_this_month — consumers must treat it as optional", () => {
+  // 2026-07-18 is a Saturday. With a Sunday week start the day slots roll
+  // forward through Jul 24, so next week ends Jul 31 and the "later this
+  // month" range is empty — buildSchedule omits the section entirely. The UI
+  // must not assume it exists (it crashed on exactly this schedule).
+  const schedule = buildSchedule(new Date(2026, 6, 18, 10, 0, 0), 0);
+  assert.equal(
+    schedule.sections.some((s) => s.kind === "later_this_month"),
+    false,
+    "later_this_month should be omitted when next week reaches the month boundary",
+  );
+
+  // Every other kind is still guaranteed present — the UI may rely on those.
+  for (const kind of ["general", "today", "next_week", "next_month", "long_term"]) {
+    assert.ok(schedule.sections.some((s) => s.kind === kind), `${kind} must always exist`);
+  }
+
+  // And no scheduledDay classifies into the missing section: every day for the
+  // next two months lands in a container that actually exists.
+  const keys = new Set(schedule.sections.map((s) => s.key));
+  for (let i = 0; i <= 62; i++) {
+    const key = schedule.classify(ymd(addDays(new Date(2026, 6, 18), i)));
+    assert.ok(keys.has(key), `day +${i} classified into missing section "${key}"`);
   }
 });
 

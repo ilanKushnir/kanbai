@@ -979,7 +979,9 @@ export function NotesView({
   const unsorted = sectionByKind("general");
   const today = sectionByKind("today");
   const nextWeek = sectionByKind("next_week");
-  const laterThisMonth = sectionByKind("later_this_month");
+  // Unlike the other buckets, "Later this month" is omitted near a month
+  // boundary (see buildSchedule) — look it up without asserting presence.
+  const laterThisMonth = schedule.sections.find((s) => s.kind === "later_this_month");
   const nextMonth = sectionByKind("next_month");
   const longTerm = sectionByKind("long_term");
 
@@ -1141,7 +1143,7 @@ export function NotesView({
           )}
 
           {block(nextWeek)}
-          {block(laterThisMonth, { variant: "quiet" })}
+          {laterThisMonth && block(laterThisMonth, { variant: "quiet" })}
           {block(nextMonth)}
           {block(longTerm, { variant: "quiet" })}
         </div>
