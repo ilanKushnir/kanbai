@@ -1,6 +1,5 @@
 import { AppShell } from "@/components/app-shell";
 import { ToastProvider } from "@/components/ui/toast";
-import { ServiceWorkerRegister } from "@/components/sw-register";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { boardWhereForContext } from "@/lib/authz";
@@ -49,7 +48,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <ToastProvider>
-      <ServiceWorkerRegister />
       <AppShell
         boards={boards}
         userName={ctx.user.name}

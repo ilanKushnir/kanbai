@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ServiceWorkerRegister } from "@/components/sw-register";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -63,6 +64,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <Script id="kanbai-theme-no-flash" strategy="beforeInteractive">
           {themeScript}
         </Script>
+        {/* In the root layout (not the (app) group) so /login also installs the
+            worker that recovers clients stuck on the Cloudflare-cached /sw.js. */}
+        <ServiceWorkerRegister />
         {children}
       </body>
     </html>
