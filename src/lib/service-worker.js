@@ -89,7 +89,13 @@ self.addEventListener("fetch", (event) => {
           return res;
         })
         .catch(async () => {
-          const cached = (await caches.match(req)) || (await caches.match("/login"));
+          // Serve only clean cached copies: workers ≤ v0.7.6 stored followed
+          // redirects under page URLs, and WebKit fails a navigation served such
+          // a response ("Response served by service worker has redirections" —
+          // "This page couldn't load" in iOS standalone). Guard reads, not just
+          // writes, so a poisoned legacy entry degrades to the fallbacks below.
+          const safe = (res) => (isCacheable(res) ? res : undefined);
+          const cached = safe(await caches.match(req)) || safe(await caches.match("/login"));
           return (
             cached ||
             new Response(
