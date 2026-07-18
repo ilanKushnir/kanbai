@@ -45,9 +45,9 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   ]);
 
   const title = isWorkspace ? `Join ${workspace?.name ?? "a workspace"}` : "Create your Kanbai account";
-  const subtitle = `${inviter?.name ?? "Someone"} invited you${
-    isWorkspace ? ` as ${invite.role === "admin" ? "an admin" : "a member"}` : " to Kanbai"
-  }.`;
+  const subtitle = isWorkspace
+    ? `${inviter?.name ?? "Someone"} invited you to join as ${invite.role === "admin" ? "an admin" : "a member"}.`
+    : `${inviter?.name ?? "A system admin"} invited you to open a new Kanbai account.`;
 
   if (user) {
     if (isWorkspace) {
@@ -58,7 +58,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
       );
     }
     return (
-      <AuthShell title="You're already signed in" subtitle="Account invites are for new users.">
+      <AuthShell title="You're already signed in" subtitle="System account invites are for new users only.">
         <Link
           href="/"
           className="block w-full rounded-xl bg-primary px-4 py-2.5 text-center text-sm font-medium text-primary-fg hover:bg-primary-hover"
@@ -69,13 +69,25 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
     );
   }
 
+  // Workspace invites are for existing accounts only — sign in, then accept.
+  if (isWorkspace) {
+    return (
+      <AuthShell
+        title={title}
+        subtitle={`${subtitle} This invite is for an existing Kanbai account — sign in to accept it.`}
+      >
+        <AuthForm mode="login" submitLabel="Sign in to join" redirectTo={`/invite/${token}`} />
+      </AuthShell>
+    );
+  }
+
   return (
     <AuthShell title={title} subtitle={subtitle}>
       <AuthForm
         mode="signup"
         inviteToken={token}
         lockedEmail={invite.email ?? undefined}
-        submitLabel={isWorkspace ? "Join workspace" : "Create account"}
+        submitLabel="Create account"
       />
     </AuthShell>
   );

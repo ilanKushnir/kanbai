@@ -489,7 +489,7 @@ past the 30-day window is gone (`404`).
 
 ```
 GET    /members               # list workspace members (map assignees)   scope: members:read
-POST   /members               # create/add a user to this workspace      scope: members:write
+POST   /members               # add an EXISTING user to this workspace   scope: members:write
 PATCH  /members/{userId}      # change role and/or per-board access      scope: members:write
 DELETE /members/{userId}      # remove from THIS workspace (membership only)  scope: members:write
 ```
@@ -500,16 +500,17 @@ DELETE /members/{userId}      # remove from THIS workspace (membership only)  sc
 every ticket survive intact, and `POST /members` with the same email restores
 access. The workspace **owner** can never be changed or removed (`403`).
 
-`POST /members` creates the user if their email is new (returns a one-time
-`tempPassword` so you can onboard them) and adds them to the workspace:
+`POST /members` adds an **existing** Kanbai account to the workspace by email.
+It never creates accounts — an unknown email returns `422 unknown_email` (only a
+system admin can invite new accounts via a system invite):
 
 ```bash
 curl -X POST https://your-kanbai.app/api/v1/members \
   -H "Authorization: Bearer $KANBAI_KEY" \
   -H "content-type: application/json" \
-  -d '{ "email":"jo@example.com", "name":"Jo", "role":"member",
+  -d '{ "email":"jo@example.com", "role":"member",
         "boardAccess":[{"boardId":"brd_123","level":"edit"}] }'
-# → { userId, email, created: true, tempPassword: "…" }
+# → { userId, email }
 ```
 
 ---

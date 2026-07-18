@@ -4,7 +4,7 @@ import { signupSchema } from "@/lib/validation";
 import { hashPassword } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 import { createWorkspaceForUser } from "@/lib/services/workspaces";
-import { findValidInvite, applyWorkspaceInvite, markInviteAccepted } from "@/lib/services/invites";
+import { findValidInvite, redeemSystemInviteSignup } from "@/lib/services/invites";
 import { db } from "@/lib/db";
 
 export const POST = handler(async (req: Request) => {
@@ -22,16 +22,13 @@ export const POST = handler(async (req: Request) => {
       throw new HttpError(400, "This invite was issued for a different email address.", "invite_email_mismatch");
     }
 
-    const user = await db.user.create({
-      data: { email, name: input.name, passwordHash: hashPassword(input.password), systemRole: "user" },
+    // Only system-level account invites can register a new account; a workspace
+    // invite is rejected inside redeemSystemInviteSignup (sign in to accept it).
+    const user = await redeemSystemInviteSignup(invite, {
+      email,
+      name: input.name,
+      passwordHash: hashPassword(input.password),
     });
-
-    if (invite.kind === "account") {
-      await createWorkspaceForUser(user.id, `${input.name}'s Workspace`);
-      await markInviteAccepted(invite.id, user.id);
-    } else {
-      await applyWorkspaceInvite(invite, user.id);
-    }
     await createSession(user.id);
     return created({ ok: true });
   }

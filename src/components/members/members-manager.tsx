@@ -151,9 +151,7 @@ function InviteItem({ invite }: { invite: InviteRow }) {
       <Link2 className="h-4 w-4 shrink-0 text-fg-subtle" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">{invite.email || "Anyone with the link"}</div>
-        <div className="text-xs text-fg-subtle">
-          {invite.kind === "account" ? "New account invite" : `Join as ${invite.role}`}
-        </div>
+        <div className="text-xs text-fg-subtle">Workspace invite · join as {invite.role}</div>
       </div>
       <Button size="sm" variant="outline" onClick={copy}>
         {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
@@ -227,7 +225,6 @@ function toBoardAccessArray(access: Record<string, AccessLevel>) {
 function InviteModal({ boards, onClose }: { boards: BoardLite[]; onClose: () => void }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [kind, setKind] = React.useState<"workspace" | "account">("workspace");
   const [email, setEmail] = React.useState("");
   const [role, setRole] = React.useState<"member" | "admin">("member");
   const [access, setAccess] = React.useState<Record<string, AccessLevel>>({});
@@ -236,15 +233,14 @@ function InviteModal({ boards, onClose }: { boards: BoardLite[]; onClose: () => 
   const [copied, setCopied] = React.useState(false);
 
   async function create() {
-    if (busy) return;
+    if (busy || !email.trim()) return;
     setBusy(true);
     try {
       const { token } = await api<{ token: string }>("/api/members/invite", {
         body: {
-          kind,
-          email: email.trim() || undefined,
+          email: email.trim(),
           role,
-          boardAccess: kind === "workspace" && role === "member" ? toBoardAccessArray(access) : undefined,
+          boardAccess: role === "member" ? toBoardAccessArray(access) : undefined,
         },
       });
       setCreatedToken(token);
@@ -272,7 +268,7 @@ function InviteModal({ boards, onClose }: { boards: BoardLite[]; onClose: () => 
   }
 
   return (
-    <Modal open onClose={onClose} title="Invite someone" size="md">
+    <Modal open onClose={onClose} title="Invite to workspace" size="md">
       {createdToken ? (
         <div className="space-y-3">
           <div className="flex items-start gap-2 rounded-xl bg-success-soft px-3 py-2 text-sm">
@@ -291,80 +287,56 @@ function InviteModal({ boards, onClose }: { boards: BoardLite[]; onClose: () => 
         </div>
       ) : (
         <div className="space-y-4">
-          <div>
-            <Label>Invite type</Label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setKind("workspace")}
-                className={cn(
-                  "rounded-xl border p-3 text-left text-sm transition-colors cursor-pointer",
-                  kind === "workspace" ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
-                )}
-              >
-                <div className="font-medium">Join this workspace</div>
-                <div className="mt-0.5 text-xs text-fg-subtle">Collaborate on your boards.</div>
-              </button>
-              <button
-                onClick={() => setKind("account")}
-                className={cn(
-                  "rounded-xl border p-3 text-left text-sm transition-colors cursor-pointer",
-                  kind === "account" ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
-                )}
-              >
-                <div className="font-medium">Their own account</div>
-                <div className="mt-0.5 text-xs text-fg-subtle">A separate workspace they own.</div>
-              </button>
-            </div>
-          </div>
+          <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs text-fg-muted">
+            Workspace invites are for people who <span className="font-medium">already have a Kanbai account</span>.
+            New accounts can only be invited by a system admin (system account invite).
+          </p>
 
           <div>
-            <Label htmlFor="invite-email">Email (optional)</Label>
+            <Label htmlFor="invite-email">Email of an existing Kanbai user</Label>
             <Input
               id="invite-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Locks the invite to this address"
+              placeholder="their-account@example.com"
+              required
             />
           </div>
 
-          {kind === "workspace" && (
-            <>
-              <div>
-                <Label>Role</Label>
-                <div className="inline-flex overflow-hidden rounded-lg border border-border text-sm">
-                  {(["member", "admin"] as const).map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => setRole(r)}
-                      className={cn(
-                        "px-3 py-1.5 capitalize transition-colors cursor-pointer",
-                        role === r ? "bg-primary text-primary-fg" : "text-fg-muted hover:bg-surface-2",
-                      )}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-1 text-xs text-fg-subtle">
-                  {role === "admin"
-                    ? "Admins manage all boards, members, and agents."
-                    : "Members only see the boards you grant below."}
-                </p>
-              </div>
+          <div>
+            <Label>Role</Label>
+            <div className="inline-flex overflow-hidden rounded-lg border border-border text-sm">
+              {(["member", "admin"] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRole(r)}
+                  className={cn(
+                    "px-3 py-1.5 capitalize transition-colors cursor-pointer",
+                    role === r ? "bg-primary text-primary-fg" : "text-fg-muted hover:bg-surface-2",
+                  )}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-fg-subtle">
+              {role === "admin"
+                ? "Admins manage all boards, members, and agents."
+                : "Members only see the boards you grant below."}
+            </p>
+          </div>
 
-              {role === "member" && (
-                <div>
-                  <Label>Board access</Label>
-                  <BoardAccessList boards={boards} access={access} setAccess={setAccess} />
-                </div>
-              )}
-            </>
+          {role === "member" && (
+            <div>
+              <Label>Board access</Label>
+              <BoardAccessList boards={boards} access={access} setAccess={setAccess} />
+            </div>
           )}
 
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" onClick={create} disabled={busy}>
+            <Button variant="primary" onClick={create} disabled={busy || !email.trim()}>
               <Plus className="h-4 w-4" /> {busy ? "Creating…" : "Create invite"}
             </Button>
           </div>

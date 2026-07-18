@@ -4,6 +4,7 @@ import * as React from "react";
 import { Users, Copy, Check, ShieldCheck, UserPlus } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -51,9 +52,9 @@ function SegAccess({
 }
 
 /**
- * Board-level sharing: who can see this board, at what level, and an invite
- * link that grants access to exactly this board (reuses workspace invite links
- * — no email infrastructure needed).
+ * Board-level sharing: who can see this board, at what level, and a workspace
+ * invite (existing Kanbai accounts only) that grants access to exactly this
+ * board. Board sharing never creates accounts.
  */
 export function BoardMembers({ boardId, boardName }: { boardId: string; boardName: string }) {
   const { toast } = useToast();
@@ -61,6 +62,7 @@ export function BoardMembers({ boardId, boardName }: { boardId: string; boardNam
   const [members, setMembers] = React.useState<BoardMemberRow[] | null>(null);
   const [canManage, setCanManage] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = React.useState("");
   const [inviteLevel, setInviteLevel] = React.useState<"view" | "edit">("edit");
   const [inviteBusy, setInviteBusy] = React.useState(false);
   const [inviteToken, setInviteToken] = React.useState<string | null>(null);
@@ -97,10 +99,11 @@ export function BoardMembers({ boardId, boardName }: { boardId: string; boardNam
   }
 
   async function createInvite() {
+    if (!inviteEmail.trim()) return;
     setInviteBusy(true);
     try {
       const { token } = await api<{ token: string }>("/api/members/invite", {
-        body: { kind: "workspace", role: "member", boardAccess: [{ boardId, level: inviteLevel }] },
+        body: { email: inviteEmail.trim(), role: "member", boardAccess: [{ boardId, level: inviteLevel }] },
       });
       setInviteToken(token);
     } catch (e) {
@@ -187,7 +190,7 @@ export function BoardMembers({ boardId, boardName }: { boardId: string; boardNam
             {canManage && (
               <div className="rounded-xl border border-dashed border-border p-3">
                 <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
-                  <UserPlus className="h-3.5 w-3.5" /> Invite someone to this board
+                  <UserPlus className="h-3.5 w-3.5" /> Invite an existing Kanbai user to this board
                 </div>
                 {inviteToken ? (
                   <div className="space-y-2">
@@ -204,24 +207,35 @@ export function BoardMembers({ boardId, boardName }: { boardId: string; boardNam
                     </p>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs">
-                      {(["view", "edit"] as const).map((v) => (
-                        <button
-                          key={v}
-                          onClick={() => setInviteLevel(v)}
-                          className={cn(
-                            "px-2.5 py-1 capitalize transition-colors cursor-pointer",
-                            inviteLevel === v ? "bg-primary text-primary-fg" : "text-fg-muted hover:bg-surface-2",
-                          )}
-                        >
-                          {v}
-                        </button>
-                      ))}
+                  <div className="space-y-2">
+                    <Input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder="Email of an existing Kanbai account"
+                    />
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs">
+                        {(["view", "edit"] as const).map((v) => (
+                          <button
+                            key={v}
+                            onClick={() => setInviteLevel(v)}
+                            className={cn(
+                              "px-2.5 py-1 capitalize transition-colors cursor-pointer",
+                              inviteLevel === v ? "bg-primary text-primary-fg" : "text-fg-muted hover:bg-surface-2",
+                            )}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                      <Button variant="secondary" size="sm" onClick={createInvite} disabled={inviteBusy || !inviteEmail.trim()}>
+                        {inviteBusy ? "Creating…" : "Create invite link"}
+                      </Button>
                     </div>
-                    <Button variant="secondary" size="sm" onClick={createInvite} disabled={inviteBusy}>
-                      {inviteBusy ? "Creating…" : "Create invite link"}
-                    </Button>
+                    <p className="text-xs text-fg-subtle">
+                      They must already have a Kanbai account — this joins them to the workspace with access to this board only.
+                    </p>
                   </div>
                 )}
               </div>

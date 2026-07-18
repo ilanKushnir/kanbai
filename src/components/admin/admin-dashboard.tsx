@@ -12,9 +12,15 @@ import {
   Trash2,
   ShieldCheck,
   MoreHorizontal,
+  UserPlus,
+  Link2,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Menu, MenuItem } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
@@ -31,17 +37,20 @@ type WorkspaceRow = {
   boards: number;
   createdAt: string;
 };
+type SystemInviteRow = { id: string; token: string; email: string | null; createdAt: string; expiresAt: string };
 
 export function AdminDashboard({
   currentUserId,
   stats,
   users,
   workspaces,
+  systemInvites,
 }: {
   currentUserId: string;
   stats: Stats;
   users: UserRow[];
   workspaces: WorkspaceRow[];
+  systemInvites: SystemInviteRow[];
 }) {
   const cards = [
     { label: "Users", value: stats.users, icon: Users },
@@ -72,6 +81,8 @@ export function AdminDashboard({
         })}
       </div>
 
+      <SystemInvites invites={systemInvites} />
+
       <section className="mb-8">
         <h2 className="mb-2 text-sm font-semibold">Workspaces</h2>
         <div className="overflow-hidden rounded-2xl border border-border bg-surface">
@@ -89,6 +100,110 @@ export function AdminDashboard({
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+/** System-level account invites — the only way a new person can register. */
+function SystemInvites({ invites }: { invites: SystemInviteRow[] }) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [email, setEmail] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  async function create() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api<{ token: string }>("/api/admin/invites", { body: { email: email.trim() || undefined } });
+      toast({ title: "System invite created", description: "Copy its link below to share it.", variant: "success" });
+      setEmail("");
+      router.refresh();
+    } catch (e) {
+      toast({ title: "Couldn't create invite", description: e instanceof Error ? e.message : undefined, variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mb-8">
+      <h2 className="mb-1 text-sm font-semibold">System account invites</h2>
+      <p className="mb-2 text-xs text-fg-subtle">
+        Let a new person open a Kanbai account (with their own workspace). Only system admins can issue these —
+        workspace invites are managed per-workspace and only work for existing accounts.
+      </p>
+      <div className="rounded-2xl border border-border bg-surface p-4">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email (optional — locks the invite to this address)"
+            className="flex-1"
+          />
+          <Button variant="primary" onClick={create} disabled={busy}>
+            <UserPlus className="h-4 w-4" /> {busy ? "Creating…" : "Create system invite"}
+          </Button>
+        </div>
+        {invites.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {invites.map((inv) => (
+              <SystemInviteItem key={inv.id} invite={inv} />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SystemInviteItem({ invite }: { invite: SystemInviteRow }) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [copied, setCopied] = React.useState(false);
+
+  async function copy() {
+    const link = `${window.location.origin}/invite/${invite.token}`;
+    if (!navigator.clipboard) {
+      toast({ title: "Copy this link manually", description: link, variant: "info" });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      toast({ title: "Couldn't copy — select the link to copy it", variant: "error" });
+    }
+  }
+
+  async function revoke() {
+    await api(`/api/admin/invites/${invite.id}`, { method: "DELETE" }).catch(() => {});
+    toast({ title: "System invite revoked" });
+    router.refresh();
+  }
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-dashed border-border px-3 py-2">
+      <Link2 className="h-4 w-4 shrink-0 text-fg-subtle" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm">{invite.email || "Anyone with the link"}</div>
+        <div suppressHydrationWarning className="text-xs text-fg-subtle">
+          System account invite · created {timeAgo(invite.createdAt)}
+        </div>
+      </div>
+      <Button size="sm" variant="outline" onClick={copy}>
+        {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? "Copied" : "Copy link"}
+      </Button>
+      <button
+        onClick={revoke}
+        className="grid h-8 w-8 place-items-center rounded-lg text-fg-subtle hover:bg-danger-soft hover:text-danger cursor-pointer"
+        aria-label="Revoke invite"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
     </div>
   );
 }

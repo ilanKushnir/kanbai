@@ -25,13 +25,18 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
-export const createInviteSchema = z.object({
-  kind: z.enum(["workspace", "account"]),
-  email: z.email().max(200).optional().or(z.literal("")),
+/** Workspace invite: targets an EXISTING account, so the email is required. */
+export const createWorkspaceInviteSchema = z.object({
+  email: z.email().max(200),
   role: z.enum(["admin", "member"]).optional(),
   boardAccess: z
     .array(z.object({ boardId: z.string(), level: z.enum(["view", "edit"]) }))
     .optional(),
+});
+
+/** System-level account invite (system admin only); email optionally locks it. */
+export const createSystemInviteSchema = z.object({
+  email: z.email().max(200).optional().or(z.literal("")),
 });
 
 export const updateMemberSchema = z.object({

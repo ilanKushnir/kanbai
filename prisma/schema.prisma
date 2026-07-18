@@ -104,6 +104,8 @@ model Invite {
   id          String   @id @default(cuid())
   token       String   @unique
   email       String?
+  // "workspace" = owner/admin invites an EXISTING account into a workspace;
+  // "account"   = SYSTEM-LEVEL invite (system admin only) that registers a new account.
   kind        String   @default("workspace") // "workspace" | "account"
   role        String   @default("member") // workspace role to grant: admin | member
   workspaceId String?

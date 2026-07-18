@@ -2,8 +2,8 @@ import { handler, ok, created } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
 import { parse, readJson } from "@/lib/parse";
 import { createMemberV1Schema } from "@/lib/validation";
-import { hashPassword, randomToken } from "@/lib/password";
 import { db } from "@/lib/db";
+import { HttpError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -20,27 +20,20 @@ export const GET = handler(async (req: Request) => {
   });
 });
 
-/** Create (or fetch) a user by email and add them to this workspace. */
+/** Add an EXISTING user to this workspace by email (never creates accounts). */
 export const POST = handler(async (req: Request) => {
   const agent = await requireAgent(req);
   requireScope(agent, "members:write");
   const input = parse(createMemberV1Schema, await readJson(req));
   const email = input.email.toLowerCase();
 
-  let user = await db.user.findUnique({ where: { email } });
-  let tempPassword: string | undefined;
-  let createdUser = false;
+  const user = await db.user.findUnique({ where: { email } });
   if (!user) {
-    tempPassword = randomToken().slice(0, 16);
-    user = await db.user.create({
-      data: {
-        email,
-        name: input.name ?? email.split("@")[0],
-        passwordHash: hashPassword(tempPassword),
-        systemRole: "user",
-      },
-    });
-    createdUser = true;
+    throw new HttpError(
+      422,
+      "No Kanbai account uses that email. Only a system admin can invite new accounts (system invite).",
+      "unknown_email",
+    );
   }
 
   await db.workspaceMember.upsert({
@@ -61,6 +54,5 @@ export const POST = handler(async (req: Request) => {
     }
   }
 
-  // tempPassword is returned ONCE for newly-created users so they can sign in.
-  return created({ userId: user.id, email: user.email, created: createdUser, ...(tempPassword ? { tempPassword } : {}) });
+  return created({ userId: user.id, email: user.email });
 });
