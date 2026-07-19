@@ -5,6 +5,13 @@ import test from "node:test";
 const myDayPage = readFileSync("src/app/(app)/my-day/page.tsx", "utf8");
 const doneButton = readFileSync("src/components/my-day/done-button.tsx", "utf8");
 
+test("My Day queries are scoped to tickets assigned to the current user", () => {
+  // Both the open-ticket and done-ticket queries must carry the assignee scope —
+  // unassigned tickets and tickets assigned to other users/agents are not "my day".
+  assert.match(myDayPage, /column: \{ isDone: false \}, deletedAt: null, \.\.\.myDayTicketScope\(ctx\.user\.id\)/);
+  assert.match(myDayPage, /column: \{ isDone: true \}, deletedAt: null, \.\.\.myDayTicketScope\(ctx\.user\.id\)/);
+});
+
 test("My Day focus note cards expose a Done action backed by the note done server action", () => {
   const noteCard = myDayPage.slice(myDayPage.indexOf("function FocusNoteCard"), myDayPage.indexOf("function DeckRow"));
   assert.match(myDayPage, /async function markMyDayNoteDone/);

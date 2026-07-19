@@ -16,6 +16,7 @@ import {
   buildMyDayQueue,
   countMyDayUnsortedNotes,
   getMyDayTicketBuckets,
+  myDayTicketScope,
   type MyDayDoneArchiveGroup,
   type MyDayFocusItem,
   type MyDayNote,
@@ -74,12 +75,12 @@ export default async function MyDayPage() {
 
   const [tickets, doneTickets, notes] = await Promise.all([
     db.ticket.findMany({
-      where: { board: boardScope, column: { isDone: false }, deletedAt: null },
+      where: { board: boardScope, column: { isDone: false }, deletedAt: null, ...myDayTicketScope(ctx.user.id) },
       include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true, columns: { where: { isDone: true }, orderBy: { position: "asc" }, select: { id: true } } } } },
       orderBy: { dueDate: "asc" },
     }),
     db.ticket.findMany({
-      where: { board: boardScope, column: { isDone: true }, deletedAt: null },
+      where: { board: boardScope, column: { isDone: true }, deletedAt: null, ...myDayTicketScope(ctx.user.id) },
       include: { ...ticketInclude, board: { select: { slug: true, name: true, color: true, columns: { where: { isDone: true }, orderBy: { position: "asc" }, select: { id: true } } } } },
       orderBy: { updatedAt: "desc" },
       take: 60,

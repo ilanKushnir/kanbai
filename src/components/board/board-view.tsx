@@ -611,7 +611,9 @@ export function BoardView({
                   assigneeType: assignee.type,
                   ...(assignee.type === "user" ? { assigneeUserId: assignee.id } : { assigneeAgentId: assignee.id }),
                 }
-              : {}),
+              : // Explicit "Unassigned": say so, or the server defaults the
+                // ticket onto the creator's plate.
+                { assigneeType: null }),
           },
         });
         setTicketsById((m) => {
@@ -1691,8 +1693,13 @@ function AddCard({
 }) {
   const [adding, setAdding] = React.useState(false);
   const [value, setValue] = React.useState("");
-  // Chosen assignee sticks across rapid Enter-to-add-another entries.
-  const [assignee, setAssignee] = React.useState<NewAssignee | null>(null);
+  // New cards land on the creator's own plate unless they pick someone else
+  // (or explicitly "Unassigned"). Chosen assignee sticks across rapid
+  // Enter-to-add-another entries.
+  const selfAssignee: NewAssignee | null = currentUser
+    ? { type: "user", id: currentUser.id, name: currentUser.name }
+    : null;
+  const [assignee, setAssignee] = React.useState<NewAssignee | null>(selfAssignee);
   const ref = React.useRef<HTMLTextAreaElement>(null);
 
   React.useEffect(() => {
@@ -1713,13 +1720,13 @@ function AddCard({
     setValue("");
     if (!keepOpen) {
       setAdding(false);
-      setAssignee(null);
+      setAssignee(selfAssignee);
     } else ref.current?.focus();
   }
 
   function close() {
     setValue("");
-    setAssignee(null);
+    setAssignee(selfAssignee);
     setAdding(false);
   }
 

@@ -178,7 +178,19 @@ export async function createTicket(
   }
 
   const labelIds = await boardLabelIds(input.labelIds ?? [], board);
-  const assignee = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId, actor);
+  // A human creating a ticket takes it by default: with no assignee input at
+  // all, the ticket lands on the creator's own plate. An explicit
+  // `assigneeType: null` still means "unassigned", and agent/system actors
+  // keep explicit-only assignment (v1 agents must never inherit a human).
+  const defaultToActor =
+    actor.type === "user" &&
+    actor.id != null &&
+    input.assigneeType === undefined &&
+    input.assigneeUserId === undefined &&
+    input.assigneeAgentId === undefined;
+  const assignee = defaultToActor
+    ? await resolveAssignee(board, "user", actor.id, null, actor)
+    : await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId, actor);
 
   const last = await db.ticket.findFirst({
     where: { columnId },

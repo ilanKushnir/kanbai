@@ -30,6 +30,15 @@ export type MyDayFocusItem<TTicket extends MyDayTicket = MyDayTicket, TNote exte
   | { kind: "ticket"; id: string; ticket: TTicket; urgent: boolean }
   | { kind: "note"; id: string; note: TNote; urgent: false };
 
+/**
+ * Prisma where-fragment scoping My Day to the user's own plate: only tickets
+ * explicitly assigned to that human. Unassigned tickets and tickets assigned
+ * to other users or to agents belong to boards, not to this user's day.
+ */
+export function myDayTicketScope(userId: string) {
+  return { assigneeType: "user", assigneeUserId: userId } as const;
+}
+
 function dayBounds(now: Date) {
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const endToday = startToday + 86400000 - 1;

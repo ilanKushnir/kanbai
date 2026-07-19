@@ -26,6 +26,15 @@ test("handleCreate sends the chosen assignee with the create call", () => {
   assert.match(boardView, /assignee: assignee \?\? null/);
 });
 
+test("AddCard defaults the assignee to the current user; explicit Unassigned is sent as null", () => {
+  // New cards land on the creator's plate unless they pick someone else.
+  assert.match(boardView, /const selfAssignee: NewAssignee \| null = currentUser/);
+  assert.match(boardView, /useState<NewAssignee \| null>\(selfAssignee\)/);
+  // Picking "Unassigned" must reach the server as an explicit null, or the
+  // service-level creator default would override the choice.
+  assert.match(boardView, /\{ assigneeType: null \}/);
+});
+
 test("the create endpoint accepts an assignee at creation", () => {
   const parsed = createTicketSchema.safeParse({
     boardId: "brd_1",
