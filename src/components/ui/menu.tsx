@@ -1,9 +1,15 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
-/** Minimal popover menu with click-outside + escape handling. */
+/**
+ * Minimal popover menu with click-outside + escape handling. The content
+ * renders through a body portal with fixed positioning so it can escape
+ * overflow-hidden ancestors (rounded list cards, scroll containers) and
+ * stacking contexts — it layers above the z-50 modal.
+ */
 export function Menu({
   trigger,
   children,
@@ -18,38 +24,79 @@ export function Menu({
   contentClassName?: string;
 }) {
   const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
+  const anchorRef = React.useRef<HTMLDivElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [pos, setPos] = React.useState<React.CSSProperties | null>(null);
   const close = React.useCallback(() => setOpen(false), []);
+
+  // Measure the trigger and the rendered menu, then pin the portal content to
+  // the viewport. Runs before paint, so the pre-measure hidden frame never
+  // shows. Flips above the trigger when the viewport runs out below (openUp).
+  React.useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const anchor = anchorRef.current;
+    const content = contentRef.current;
+    if (!anchor || !content) return;
+    const r = anchor.getBoundingClientRect();
+    const gap = 6;
+    const h = content.offsetHeight;
+    const openUp = r.bottom + gap + h > window.innerHeight && r.top - gap - h > 0;
+    setPos({
+      position: "fixed",
+      ...(openUp ? { bottom: window.innerHeight - r.top + gap } : { top: r.bottom + gap }),
+      ...(align === "end"
+        ? { right: Math.max(8, window.innerWidth - r.right) }
+        : { left: Math.max(8, Math.min(r.left, window.innerWidth - content.offsetWidth - 8)) }),
+    });
+  }, [open, align]);
 
   React.useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (anchorRef.current?.contains(t) || contentRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    // Fixed positioning is measured at open time — close instead of drifting
+    // when any ancestor scrolls (capture catches nested scroll containers).
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && contentRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
     return () => {
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
     };
   }, [open]);
 
   return (
-    <div ref={ref} className={cn("relative", className)}>
+    <div ref={anchorRef} className={cn("relative", className)}>
       <div onClick={() => setOpen((o) => !o)}>{trigger}</div>
-      {open && (
-        <div
-          role="menu"
-          className={cn(
-            "absolute z-40 mt-1.5 min-w-[11rem] rounded-xl border border-border bg-surface p-1 shadow-lg animate-slide-down-fade",
-            align === "end" ? "right-0" : "left-0",
-            contentClassName,
-          )}
-        >
-          {typeof children === "function" ? children(close) : children}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={contentRef}
+            role="menu"
+            style={pos ?? { position: "fixed", visibility: "hidden" }}
+            className={cn(
+              "z-[80] min-w-[11rem] rounded-xl border border-border bg-surface p-1 shadow-lg animate-slide-down-fade",
+              contentClassName,
+            )}
+          >
+            {typeof children === "function" ? children(close) : children}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

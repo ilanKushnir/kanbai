@@ -45,6 +45,19 @@ test("composer controls keep ≥36px hit targets on mobile", () => {
   assert.match(dayChip, /\bh-9\b/);
 });
 
+test("hidden submit button collapses out of layout so the expand button hugs the card edge", () => {
+  // opacity alone kept the invisible "Add Note" button's width, floating the
+  // expand button away from the right edge on mobile — width must collapse too
+  assert.match(composer, /max-w-0/);
+  assert.match(composer, /px-0/);
+  // cancel the flex gap so the expand button sits flush when submit is hidden
+  assert.match(composer, /-ml-1\.5/);
+  assert.match(composer, /sm:-ml-2/);
+  // the visible state restores width and padding
+  assert.match(composer, /max-w-40/);
+  assert.match(composer, /px-3\.5/);
+});
+
 test("Cmd/Ctrl+Enter submits, covering the expanded composer", () => {
   assert.match(composer, /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === "Enter"/);
   assert.match(composer, /submitDraft\(\)/);

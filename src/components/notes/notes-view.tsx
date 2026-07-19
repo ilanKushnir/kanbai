@@ -1083,8 +1083,12 @@ export function NotesView({
               disabled={transcribing}
               title={transcribing ? "Transcribing…" : undefined}
               className={cn(
-                "kb-composer-submit inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold cursor-pointer transition-all md:h-8 md:px-3",
-                draft.trim() || transcribing ? "opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95",
+                "kb-composer-submit inline-flex h-9 items-center gap-1.5 overflow-hidden rounded-lg text-sm font-semibold cursor-pointer transition-all md:h-8",
+                // when hidden it must also leave the layout (max-w + gap-cancelling
+                // margin), or its reserved width floats the expand button off the edge
+                draft.trim() || transcribing
+                  ? "max-w-40 px-3.5 opacity-100 scale-100 md:px-3"
+                  : "pointer-events-none max-w-0 px-0 opacity-0 scale-95 -ml-1.5 sm:-ml-2",
                 transcribing && "cursor-not-allowed opacity-60",
               )}
             >
