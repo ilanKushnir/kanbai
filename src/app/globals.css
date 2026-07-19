@@ -323,6 +323,41 @@ body {
   border-color: color-mix(in oklab, var(--stage-done) 14%, transparent);
 }
 
+/* ── Notes composer — the page's primary capture surface ─────────────────────
+   The one element that wears the brand hairline: an iris → aqua gradient edge
+   drawn on the border box beneath an opaque surface layer, so it reads as a
+   crafted edge rather than a glassy overlay. At rest it's a whisper mixed into
+   the normal border color; focus sharpens the gradient and adds a soft iris
+   halo, so the capture area visibly "wakes up" without moving anything.      */
+.kb-composer {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--color-surface), var(--color-surface)) padding-box,
+    linear-gradient(
+        135deg,
+        color-mix(in oklab, var(--primary) 42%, var(--color-border)),
+        var(--color-border) 45%,
+        color-mix(in oklab, var(--accent) 34%, var(--color-border))
+      )
+      border-box;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease;
+}
+.kb-composer:focus-within {
+  background:
+    linear-gradient(var(--color-surface), var(--color-surface)) padding-box,
+    linear-gradient(
+        135deg,
+        color-mix(in oklab, var(--primary) 88%, var(--color-border)),
+        color-mix(in oklab, var(--primary) 34%, var(--color-border)) 45%,
+        color-mix(in oklab, var(--accent) 70%, var(--color-border))
+      )
+      border-box;
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--primary) 16%, transparent),
+    var(--shadow-md);
+}
+
 /* Markdown rendering */
 .md { font-size: 0.95rem; line-height: 1.6; color: var(--color-fg); word-break: break-word; }
 .md > :first-child { margin-top: 0; }
