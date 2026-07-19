@@ -401,6 +401,18 @@ export function NotesView({
   }, [schedule.todayYmd, draftDay]);
 
   const [expanded, setExpanded] = React.useState(false);
+  const composerRef = React.useRef<HTMLDivElement>(null);
+  // Expanding is an invitation to write — hand focus (back) to the textarea so
+  // the grown canvas is immediately usable; shrink leaves focus on the toggle.
+  function toggleExpanded() {
+    const opening = !expanded;
+    setExpanded(opening);
+    if (opening) {
+      requestAnimationFrame(() =>
+        composerRef.current?.querySelector("textarea")?.focus({ preventScroll: true }),
+      );
+    }
+  }
   const dictateBase = React.useRef("");
   const dictation = useDictation((text) => {
     setDraft((dictateBase.current ? dictateBase.current + " " : "") + text);
@@ -1020,6 +1032,7 @@ export function NotesView({
 
       {/* Composer — the primary capture surface */}
       <div
+        ref={composerRef}
         className="kb-composer rounded-[1.35rem] p-3.5 sm:p-4"
         onKeyDown={(e) => {
           // Cmd/Ctrl+Enter submits from anywhere in the composer — the expanded
@@ -1040,7 +1053,9 @@ export function NotesView({
           className={cn(
             // text-base (16px) on mobile so iOS Safari doesn't zoom the page on focus
             "min-h-10 px-1 text-base font-medium leading-relaxed md:min-h-8 md:text-[0.95rem]",
-            expanded && "min-h-40",
+            // md:min-h-40 too — otherwise the base md:min-h-8 wins the cascade
+            // and desktop "Expand" never actually grows the canvas
+            expanded && "min-h-40 md:min-h-40",
           )}
         />
         <div className="mt-3 flex items-center justify-between gap-2">
@@ -1054,7 +1069,7 @@ export function NotesView({
                 title={dictation.listening ? "Stop dictation" : "Dictate"}
                 aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
                 className={cn(
-                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer md:h-8",
+                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 cursor-pointer md:h-8",
                   dictation.listening
                     ? "animate-pulse-soft bg-danger px-2.5 text-white"
                     : "kb-composer-icon-button w-9 justify-center md:w-8",
@@ -1068,15 +1083,16 @@ export function NotesView({
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             {expanded && (
-              <span className="kb-composer-hint hidden text-[0.6875rem] sm:inline">Ctrl/⌘+Enter adds</span>
+              <span className="kb-composer-hint hidden text-[0.6875rem] sm:inline animate-fade-in">Ctrl/⌘+Enter adds</span>
             )}
             <button
-              onClick={() => setExpanded((e) => !e)}
+              onClick={toggleExpanded}
               title={expanded ? "Shrink" : "Expand for a longer note"}
               aria-label={expanded ? "Shrink composer" : "Expand composer"}
-              className="kb-composer-icon-button inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors cursor-pointer md:h-8 md:w-8"
+              aria-expanded={expanded}
+              className="kb-composer-icon-button inline-flex h-9 w-9 items-center justify-center rounded-lg transition-all active:scale-95 cursor-pointer md:h-8 md:w-8"
             >
-              {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              {expanded ? <Minimize2 className="h-4 w-4 animate-icon-pop" /> : <Maximize2 className="h-4 w-4 animate-icon-pop" />}
             </button>
             <button
               onClick={submitDraft}
@@ -1138,7 +1154,7 @@ export function NotesView({
                 {weekCount > 0 && <span className="text-xs font-medium text-fg-subtle">{weekCount}</span>}
               </button>
               {weekOpen && (
-                <div className="mt-1 space-y-0.5 border-l border-border/60 pl-2">
+                <div className="mt-1 space-y-0.5 border-l border-border/60 pl-2 animate-fade-in">
                   {daySections.map((s) => {
                     const ids = (containers[s.key] ?? []).filter(matchId);
                     return (
@@ -1484,7 +1500,8 @@ function NoteSectionBlock({
       )}
 
       {open && (
-        <div className={cn(sub ? "pl-1" : "pb-1 pl-1.5")}>
+        // opacity-only reveal — transforms here would skew dnd-kit's measurements
+        <div className={cn("animate-fade-in", sub ? "pl-1" : "pb-1 pl-1.5")}>
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>
             <div className="mt-0.5">
               {ids.map((id) => {

@@ -19,6 +19,16 @@
 :root {
   --radius: 0.875rem;
 
+  /* Motion — one shared voice: quick to start, long expo-out settle.
+     fast  → micro feedback (presses, icon swaps)
+     base  → hovers, small reveals, menus
+     slow  → layout-size changes (composer expand, sheets) */
+  --motion-fast: 140ms;
+  --motion-base: 200ms;
+  --motion-slow: 300ms;
+  --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-out-emph: cubic-bezier(0.16, 1, 0.3, 1);
+
   /* Brand */
   --iris-50:  #eef0ff;
   --iris-100: #e0e3ff;
@@ -264,6 +274,9 @@ body {
 @keyframes scale-in { from { opacity: 0; transform: scale(0.97) translateY(4px) } to { opacity: 1; transform: scale(1) translateY(0) } }
 @keyframes slide-up { from { opacity: 0; transform: translateY(100%) } to { opacity: 1; transform: translateY(0) } }
 @keyframes slide-down-fade { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes slide-up-fade { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
+/* Icon swap inside a toggle button (expand ⇄ shrink, pin, etc.) */
+@keyframes icon-pop { from { opacity: 0; transform: scale(0.7) } to { opacity: 1; transform: scale(1) } }
 @keyframes pulse-soft { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(0.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
 @keyframes check-pop { 0% { transform: scale(0.6); opacity: 0 } 60% { transform: scale(1.15) } 100% { transform: scale(1); opacity: 1 } }
@@ -284,12 +297,14 @@ body {
 }
 
 .animate-fade-in { animation: fade-in 0.18s ease-out both; }
-.animate-scale-in { animation: scale-in 0.16s cubic-bezier(0.16,1,0.3,1) both; }
-.animate-slide-up { animation: slide-up 0.26s cubic-bezier(0.16,1,0.3,1) both; }
-.animate-slide-down-fade { animation: slide-down-fade 0.16s ease-out both; }
+.animate-scale-in { animation: scale-in 0.16s var(--ease-out-emph) both; }
+.animate-slide-up { animation: slide-up 0.26s var(--ease-out-emph) both; }
+.animate-slide-down-fade { animation: slide-down-fade 0.16s var(--ease-out-soft) both; }
+.animate-slide-up-fade { animation: slide-up-fade 0.16s var(--ease-out-soft) both; }
+.animate-icon-pop { animation: icon-pop var(--motion-fast) var(--ease-out-emph) both; }
 .animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
-.animate-toast-in { animation: toast-in 0.22s cubic-bezier(0.16,1,0.3,1) both; }
-.animate-check-pop { animation: check-pop 0.32s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-toast-in { animation: toast-in 0.22s var(--ease-out-emph) both; }
+.animate-check-pop { animation: check-pop 0.32s var(--ease-out-emph) both; }
 .animate-ai-handoff { animation: ai-handoff 0.9s ease-out both; }
 .animate-done-slide { animation: done-slide 0.46s cubic-bezier(0.22,1,0.36,1) both; transform-origin: 50% 50%; }
 .animate-confetti-pop { animation: confetti-pop 0.7s ease-out both; }
@@ -303,7 +318,14 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+  }
 }
 
 /* Card drag affordance */
@@ -419,6 +441,9 @@ body {
   color: #fbfaff;
   caret-color: var(--aqua-400);
   text-shadow: 0 1px 0 rgb(0 0 0 / 0.18);
+  /* Expand/shrink animates the min-height floor only — the inline height that
+     AutoGrow sets while typing stays instant, so keystrokes never feel laggy. */
+  transition: min-height var(--motion-slow) var(--ease-out-emph);
 }
 .kb-composer textarea::placeholder {
   color: color-mix(in oklab, #ffffff 68%, var(--iris-200));

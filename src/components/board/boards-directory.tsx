@@ -136,7 +136,7 @@ function BoardCard({
     <div className="group relative">
       <Link
         href={`/boards/${b.slug}`}
-        className="relative block overflow-hidden rounded-2xl border border-border bg-surface p-5 shadow-card transition-all hover:border-border-strong hover:shadow-md"
+        className="relative block overflow-hidden rounded-2xl border border-border bg-surface p-5 shadow-card transition-all hover:border-border-strong hover:shadow-md hover:-translate-y-px active:translate-y-0"
       >
         <span className="absolute inset-x-0 top-0 h-1" style={{ background: t.dot }} />
         <div className="flex items-center gap-2.5 pr-10">

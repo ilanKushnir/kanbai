@@ -179,7 +179,8 @@ export function WeekView({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 md:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
+        {/* keyed by week so paging re-enters with a quiet fade */}
+        <div key={weekStart} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7 animate-fade-in">
           {days.map((d) => {
             const isToday = d.ymd === todayYmd;
             const isPast = d.ymd < todayYmd;

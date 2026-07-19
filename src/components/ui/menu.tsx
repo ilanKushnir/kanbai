@@ -89,7 +89,11 @@ export function Menu({
             role="menu"
             style={pos ?? { position: "fixed", visibility: "hidden" }}
             className={cn(
-              "z-[80] min-w-[11rem] rounded-xl border border-border bg-surface p-1 shadow-lg animate-slide-down-fade",
+              "z-[80] min-w-[11rem] rounded-xl border border-border bg-surface p-1 shadow-lg",
+              // Enter from the trigger's edge: pos carries `bottom` when the menu
+              // flipped above it (openUp). The class settles before first paint —
+              // pos lands in a pre-paint layout effect.
+              pos && "bottom" in pos ? "animate-slide-up-fade" : "animate-slide-down-fade",
               contentClassName,
             )}
           >
