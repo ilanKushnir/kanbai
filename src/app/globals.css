@@ -6,11 +6,15 @@
 /*
   Kanbai design tokens
   ────────────────────
-  Palette: "serious & young"
-  - Ink/slate neutrals for the serious, focused base
-  - Iris (indigo-violet) as the primary brand color
-  - Aqua (cyan) as the energetic young accent
+  Palette: "deep ink, vivid iris"
+  - Indigo-tinted ink neutrals (never flat gray) with a clear step between
+    canvas → panel → raised surfaces, so structure reads without borders shouting
+  - Iris (indigo-violet) as the primary brand color, run one notch deeper and
+    more saturated than pastel so it reads committed, not washed
+  - Aqua (cyan) as the energetic accent
   - Emerald / Amber / Rose for status semantics
+  - Chip tones and priority colors are theme-aware variables so labels stay
+    punchy on dark and legible on light from one source of truth
 */
 :root {
   --radius: 0.875rem;
@@ -31,20 +35,20 @@
   --aqua-500: #15bcd6;
   --aqua-600: #0e97ad;
 
-  /* Light theme */
-  --bg:           #f7f8fb;
-  --bg-subtle:    #eef0f5;
+  /* Light theme — deeper canvas so white cards actually pop, inkier text */
+  --bg:           #f2f3f8;
+  --bg-subtle:    #e9ebf3;
   --surface:      #ffffff;
-  --surface-2:    #f4f5f9;
-  --surface-3:    #eceef4;
-  --border:       #e5e7ef;
-  --border-strong:#d3d6e2;
-  --fg:           #11131a;
-  --fg-muted:     #5c6173;
-  --fg-subtle:    #8b90a3;
+  --surface-2:    #f2f3f9;
+  --surface-3:    #e8eaf4;
+  --border:       #dde0eb;
+  --border-strong:#c6cbdd;
+  --fg:           #101322;
+  --fg-muted:     #4d5470;
+  --fg-subtle:    #767d9b;
 
-  --primary:      var(--iris-500);
-  --primary-hover:var(--iris-600);
+  --primary:      var(--iris-600);
+  --primary-hover:var(--iris-700);
   --primary-fg:   #ffffff;
   --primary-soft: var(--iris-50);
   --primary-soft-fg: var(--iris-700);
@@ -52,15 +56,15 @@
   --accent:       var(--aqua-500);
   --accent-fg:    #06343c;
 
-  --success: #0ea96b;
+  --success: #0b9e63;
   --success-fg: #ffffff;
-  --success-soft: #d8f6e8;
-  --warning: #d98a00;
-  --warning-soft: #fcefcf;
-  --danger:  #e23d59;
-  --danger-soft: #fbe0e6;
+  --success-soft: #d5f5e5;
+  --warning: #c87c02;
+  --warning-soft: #fbedca;
+  --danger:  #dc3355;
+  --danger-soft: #fbdde4;
 
-  --ring: var(--iris-400);
+  --ring: var(--iris-500);
 
   /* Column stage color language (board columns): intake is misty & unfocused,
      backlog neutral aqua-slate, active carries the brand iris, done is a softer
@@ -69,48 +73,82 @@
   --stage-backlog: #0e97ad;
   --stage-active:  var(--iris-500);
   --stage-done:    var(--iris-600);
+  /* The wash that fills the done column: light lavender on light, deep iris on dark. */
+  --stage-done-tint: var(--iris-100);
 
-  --shadow-sm: 0 1px 2px 0 rgb(17 19 26 / 0.05);
-  --shadow-md: 0 4px 16px -4px rgb(17 19 26 / 0.10), 0 2px 6px -2px rgb(17 19 26 / 0.06);
-  --shadow-lg: 0 16px 48px -12px rgb(17 19 26 / 0.20);
-  --shadow-card: 0 1px 2px rgb(17 19 26 / 0.04), 0 1px 3px rgb(17 19 26 / 0.06);
+  /* Chip tones (labels, board colors, due chips) — bg / fg / dot per tone.
+     fg targets ≥4:1 on the chip bg; dots stay saturated for identity. */
+  --tone-slate-bg: rgba(100,116,139,0.15);  --tone-slate-fg: #52607b;  --tone-slate-dot: #64748b;
+  --tone-iris-bg: rgba(91,69,240,0.12);     --tone-iris-fg: #4f3bdd;   --tone-iris-dot: #6d5dfb;
+  --tone-aqua-bg: rgba(14,151,173,0.13);    --tone-aqua-fg: #096b7c;   --tone-aqua-dot: #15bcd6;
+  --tone-emerald-bg: rgba(13,158,99,0.14);  --tone-emerald-fg: #087146; --tone-emerald-dot: #0ea96b;
+  --tone-amber-bg: rgba(217,138,0,0.16);    --tone-amber-fg: #8a5808;   --tone-amber-dot: #d98a00;
+  --tone-rose-bg: rgba(220,51,85,0.12);     --tone-rose-fg: #c42a4b;   --tone-rose-dot: #e23d59;
+  --tone-violet-bg: rgba(139,92,246,0.13);  --tone-violet-fg: #7040e0;  --tone-violet-dot: #8b5cf6;
+  --tone-blue-bg: rgba(47,143,237,0.13);    --tone-blue-fg: #1d6cc0;   --tone-blue-dot: #2f8fed;
+
+  /* Ticket priority (dots + card left-edge accents) */
+  --priority-low:    #64748b;
+  --priority-medium: #2e7ce0;
+  --priority-high:   #c97501;
+  --priority-urgent: #dc3355;
+
+  --shadow-sm: 0 1px 2px 0 rgb(16 19 34 / 0.06);
+  --shadow-md: 0 4px 16px -4px rgb(16 19 34 / 0.12), 0 2px 6px -2px rgb(16 19 34 / 0.07);
+  --shadow-lg: 0 16px 48px -12px rgb(16 19 34 / 0.22);
+  --shadow-card: 0 1px 2px rgb(16 19 34 / 0.05), 0 1px 3px rgb(16 19 34 / 0.07);
 }
 
 .dark {
-  --bg:           #0a0b10;
-  --bg-subtle:    #0e1018;
-  --surface:      #14161f;
-  --surface-2:    #1a1d28;
-  --surface-3:    #222634;
-  --border:       #262a38;
-  --border-strong:#343a4d;
-  --fg:           #f2f3f7;
-  --fg-muted:     #a3a8bd;
-  --fg-subtle:    #6e748c;
+  --bg:           #0b0d15;
+  --bg-subtle:    #10121d;
+  --surface:      #151928;
+  --surface-2:    #1c2134;
+  --surface-3:    #262c42;
+  --border:       #2b3049;
+  --border-strong:#3b4262;
+  --fg:           #f3f4fa;
+  --fg-muted:     #aeb4cd;
+  --fg-subtle:    #7d85a6;
 
   --primary:      var(--iris-400);
   --primary-hover:var(--iris-300);
-  --primary-fg:   #0a0b10;
-  --primary-soft: #1c1b3a;
-  --primary-soft-fg: #c6cbff;
+  --primary-fg:   #0b0d15;
+  --primary-soft: #232051;
+  --primary-soft-fg: #cdd1ff;
 
   --accent:       var(--aqua-400);
   --accent-fg:    #04282e;
 
-  --success: #2fd896;
+  --success: #32da98;
   --success-fg: #06301f;
-  --success-soft: #0f2e22;
-  --warning: #f0b73e;
-  --warning-soft: #2e2410;
-  --danger:  #ff6b82;
-  --danger-soft: #2e131a;
+  --success-soft: #0e3324;
+  --warning: #f3bb47;
+  --warning-soft: #332812;
+  --danger:  #ff6f86;
+  --danger-soft: #331521;
 
   --ring: var(--iris-400);
 
-  --stage-intake:  #6e748c;
+  --stage-intake:  #7d85a6;
   --stage-backlog: #34d6ee;
   --stage-active:  var(--iris-400);
   --stage-done:    var(--iris-300);
+  --stage-done-tint: var(--iris-700);
+
+  --tone-slate-bg: rgba(148,163,184,0.16);  --tone-slate-fg: #aab4c9;  --tone-slate-dot: #8b98ae;
+  --tone-iris-bg: rgba(131,127,251,0.21);   --tone-iris-fg: #b6b9ff;   --tone-iris-dot: #918eff;
+  --tone-aqua-bg: rgba(52,214,238,0.16);    --tone-aqua-fg: #72e0f3;   --tone-aqua-dot: #34d6ee;
+  --tone-emerald-bg: rgba(47,216,150,0.16); --tone-emerald-fg: #66e3af; --tone-emerald-dot: #2fd896;
+  --tone-amber-bg: rgba(240,183,62,0.17);   --tone-amber-fg: #f3c866;   --tone-amber-dot: #f0b73e;
+  --tone-rose-bg: rgba(255,111,134,0.17);   --tone-rose-fg: #ff92a4;   --tone-rose-dot: #ff6f86;
+  --tone-violet-bg: rgba(167,139,250,0.18); --tone-violet-fg: #c4b3fd;  --tone-violet-dot: #a78bfa;
+  --tone-blue-bg: rgba(96,165,250,0.17);    --tone-blue-fg: #90c2fb;   --tone-blue-dot: #60a5fa;
+
+  --priority-low:    #8b98ae;
+  --priority-medium: #5aa3f7;
+  --priority-high:   #f5a83c;
+  --priority-urgent: #ff6f86;
 
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
   --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.4);
@@ -278,49 +316,61 @@ body {
    active  — brand-tinted hairline + slightly elevated ("this is the focus")
    done    — softly violet-filled: completed, elegant, still Kanbai purple    */
 .kb-col-intake {
-  background: color-mix(in oklab, var(--color-surface-2) 34%, transparent);
+  background: color-mix(in oklab, var(--color-surface-2) 42%, transparent);
   border-style: dashed;
-  border-color: color-mix(in oklab, var(--color-border) 80%, transparent);
+  border-color: color-mix(in oklab, var(--color-border) 85%, transparent);
 }
-.kb-col-intake:not(:hover):not(:focus-within) { opacity: 0.88; }
+.kb-col-intake:not(:hover):not(:focus-within) { opacity: 0.9; }
 .kb-col-intake { transition: opacity 0.2s ease, background 0.2s ease; }
 .kb-col-backlog {
-  background: color-mix(in oklab, var(--color-surface-2) 52%, transparent);
-  border-color: transparent;
+  background: color-mix(in oklab, var(--color-surface-2) 68%, transparent);
+  border-color: color-mix(in oklab, var(--color-border) 45%, transparent);
 }
 .kb-col-active {
-  background: color-mix(in oklab, var(--color-surface-2) 76%, transparent);
-  border-color: color-mix(in oklab, var(--stage-active) 22%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--stage-active) 7%, transparent), transparent 42%),
+    color-mix(in oklab, var(--color-surface-2) 90%, transparent);
+  border-color: color-mix(in oklab, var(--stage-active) 32%, transparent);
   box-shadow:
-    inset 0 1.5px 0 color-mix(in oklab, var(--stage-active) 35%, transparent),
+    inset 0 1.5px 0 color-mix(in oklab, var(--stage-active) 48%, transparent),
     var(--shadow-sm);
 }
 .kb-col-done {
   background:
-    linear-gradient(180deg, color-mix(in oklab, var(--iris-100) 34%, transparent), transparent 58%),
-    color-mix(in oklab, var(--primary-soft) 56%, var(--color-surface) 44%);
-  border-color: color-mix(in oklab, var(--stage-done) 20%, transparent);
+    linear-gradient(180deg, color-mix(in oklab, var(--stage-done-tint) 42%, transparent), transparent 58%),
+    color-mix(in oklab, var(--primary-soft) 62%, var(--color-surface) 38%);
+  border-color: color-mix(in oklab, var(--stage-done) 26%, transparent);
   box-shadow:
-    inset 0 1px 0 color-mix(in oklab, var(--iris-200) 45%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--stage-done) 40%, transparent),
     var(--shadow-sm);
 }
 /* Sub-state bands inside a stage-typed column: same language, quieter. */
 .kb-band-intake {
-  background: color-mix(in oklab, var(--color-surface-2) 28%, transparent);
+  background: color-mix(in oklab, var(--color-surface-2) 34%, transparent);
   border-style: dashed;
-  border-color: color-mix(in oklab, var(--color-border) 65%, transparent);
+  border-color: color-mix(in oklab, var(--color-border) 70%, transparent);
 }
 .kb-band-backlog {
-  background: color-mix(in oklab, var(--color-surface-2) 44%, transparent);
-  border-color: color-mix(in oklab, var(--color-border) 55%, transparent);
+  background: color-mix(in oklab, var(--color-surface-2) 55%, transparent);
+  border-color: color-mix(in oklab, var(--color-border) 60%, transparent);
 }
 .kb-band-active {
-  background: color-mix(in oklab, var(--color-surface-2) 62%, transparent);
-  border-color: color-mix(in oklab, var(--stage-active) 16%, transparent);
+  background: color-mix(in oklab, var(--color-surface-2) 75%, transparent);
+  border-color: color-mix(in oklab, var(--stage-active) 22%, transparent);
 }
 .kb-band-done {
-  background: color-mix(in oklab, var(--primary-soft) 48%, transparent);
-  border-color: color-mix(in oklab, var(--stage-done) 14%, transparent);
+  background: color-mix(in oklab, var(--primary-soft) 56%, transparent);
+  border-color: color-mix(in oklab, var(--stage-done) 18%, transparent);
+}
+
+/* "Today" bucket (week view / day groupings): the one place on a calendar
+   surface that carries the brand — iris-washed with a crisp top hairline. */
+.kb-today {
+  background: color-mix(in oklab, var(--primary-soft) 55%, var(--color-surface) 45%);
+  border-color: color-mix(in oklab, var(--color-primary) 45%, transparent);
+  box-shadow:
+    inset 0 1.5px 0 color-mix(in oklab, var(--color-primary) 55%, transparent),
+    var(--shadow-sm);
 }
 
 /* ── Notes composer — the page's primary capture surface ─────────────────────
@@ -333,9 +383,10 @@ body {
   overflow: hidden;
   isolation: isolate;
   color: #f8f7ff;
-  border: 1px solid color-mix(in oklab, var(--iris-300) 36%, transparent);
+  border: 1px solid color-mix(in oklab, var(--iris-300) 42%, transparent);
   background:
-    radial-gradient(circle at 12% 0%, color-mix(in oklab, var(--iris-400) 36%, transparent), transparent 34%),
+    radial-gradient(circle at 12% 0%, color-mix(in oklab, var(--iris-400) 42%, transparent), transparent 36%),
+    radial-gradient(circle at 100% 100%, color-mix(in oklab, var(--aqua-500) 14%, transparent), transparent 42%),
     linear-gradient(145deg, #2a1765 0%, #211052 52%, #171033 100%);
   box-shadow:
     0 18px 44px -24px color-mix(in oklab, var(--iris-500) 72%, black),

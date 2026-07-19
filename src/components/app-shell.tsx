@@ -74,9 +74,9 @@ export function AppShell({
   }, [paletteOpen]);
 
   return (
-    <div className="flex h-dvh min-h-dvh overflow-hidden">
+    <div className="flex h-dvh min-h-dvh overflow-hidden bg-bg">
       {/* ── Desktop sidebar ───────────────────────────── */}
-      <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-surface/60 backdrop-blur-sm">
+      <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-surface">
         <div className="px-4 h-16 flex items-center">
           <Link href="/boards" className="flex items-center">
             <Logo />
@@ -86,11 +86,11 @@ export function AppShell({
         <div className="px-3 mb-2">
           <button
             onClick={() => setPaletteOpen(true)}
-            className="flex w-full items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2 text-sm text-fg-subtle transition-colors hover:bg-surface-2 hover:text-fg-muted cursor-pointer"
+            className="flex w-full items-center gap-2 rounded-lg border border-border bg-surface-2/70 px-3 py-2 text-sm text-fg-subtle transition-colors hover:bg-surface-2 hover:text-fg-muted cursor-pointer"
           >
             <Search className="h-4 w-4" />
             <span>Search…</span>
-            <kbd className="ml-auto rounded border border-border bg-surface px-1.5 py-0.5 text-[0.625rem]">⌘K</kbd>
+            <kbd className="ml-auto rounded border border-border bg-surface px-1.5 py-0.5 text-[0.625rem] text-fg-muted">⌘K</kbd>
           </button>
         </div>
 
@@ -167,7 +167,7 @@ export function AppShell({
       {/* ── Main column ───────────────────────────── */}
       <div className="flex-1 flex min-h-0 flex-col min-w-0">
         {/* Mobile top bar */}
-        <header className="md:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface/80 backdrop-blur-md px-4">
+        <header className="md:hidden sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between border-b border-border bg-surface/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md">
           <Logo markClassName="h-7 w-7" />
           <div className="flex items-center gap-1.5">
             <button
@@ -185,7 +185,7 @@ export function AppShell({
       </div>
 
       {/* ── Mobile bottom nav ───────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-surface/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-surface/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
         <div className="grid grid-cols-5">
           {MOBILE_NAV.map((item) => {
             const Icon = item.icon;

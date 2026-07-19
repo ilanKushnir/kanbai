@@ -114,8 +114,8 @@ export const BOARD_COLORS = ["iris", "aqua", "emerald", "amber", "rose", "violet
 
 export const PRIORITY_META: Record<Priority, { label: string; color: string; rank: number }> = {
   none: { label: "None", color: "var(--color-fg-subtle)", rank: 0 },
-  low: { label: "Low", color: "#64748b", rank: 1 },
-  medium: { label: "Medium", color: "#2f8fed", rank: 2 },
-  high: { label: "High", color: "#f59e0b", rank: 3 },
-  urgent: { label: "Urgent", color: "#e23d59", rank: 4 },
+  low: { label: "Low", color: "var(--priority-low)", rank: 1 },
+  medium: { label: "Medium", color: "var(--priority-medium)", rank: 2 },
+  high: { label: "High", color: "var(--priority-high)", rank: 3 },
+  urgent: { label: "Urgent", color: "var(--priority-urgent)", rank: 4 },
 };

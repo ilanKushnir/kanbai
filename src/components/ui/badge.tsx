@@ -1,17 +1,22 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-/** Soft chip colors keyed by palette name (used for labels & board colors). */
-export const TONES: Record<string, { bg: string; fg: string; dot: string }> = {
-  slate: { bg: "rgba(100,116,139,0.14)", fg: "#64748b", dot: "#64748b" },
-  iris: { bg: "rgba(109,93,251,0.14)", fg: "#6d5dfb", dot: "#6d5dfb" },
-  aqua: { bg: "rgba(21,188,214,0.16)", fg: "#0e97ad", dot: "#15bcd6" },
-  emerald: { bg: "rgba(14,169,107,0.15)", fg: "#0ea96b", dot: "#0ea96b" },
-  amber: { bg: "rgba(217,138,0,0.16)", fg: "#b87400", dot: "#d98a00" },
-  rose: { bg: "rgba(226,61,89,0.14)", fg: "#e23d59", dot: "#e23d59" },
-  violet: { bg: "rgba(139,92,246,0.15)", fg: "#8b5cf6", dot: "#8b5cf6" },
-  blue: { bg: "rgba(47,143,237,0.14)", fg: "#2f8fed", dot: "#2f8fed" },
-};
+/**
+ * Soft chip colors keyed by palette name (used for labels & board colors).
+ * Each tone resolves through theme-aware CSS variables (globals.css) so chips
+ * stay saturated on dark surfaces and deep enough for contrast on light ones.
+ */
+const TONE_NAMES = ["slate", "iris", "aqua", "emerald", "amber", "rose", "violet", "blue"] as const;
+export const TONES: Record<string, { bg: string; fg: string; dot: string }> = Object.fromEntries(
+  TONE_NAMES.map((name) => [
+    name,
+    { bg: `var(--tone-${name}-bg)`, fg: `var(--tone-${name}-fg)`, dot: `var(--tone-${name}-dot)` },
+  ]),
+);
+// Semantic aliases used by callers ("Up next", "Note" chips); "default" keeps
+// the quiet slate look, "primary" carries the brand.
+TONES.default = TONES.slate;
+TONES.primary = TONES.iris;
 
 export function Badge({
   children,

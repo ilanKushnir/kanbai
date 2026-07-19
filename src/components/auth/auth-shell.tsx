@@ -14,7 +14,7 @@ export function AuthShell({
   footer?: React.ReactNode;
 }) {
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-10">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-bg px-4 pb-10 pt-[calc(2.5rem+env(safe-area-inset-top))]">
       {/* ambient brand glow */}
       <div
         aria-hidden

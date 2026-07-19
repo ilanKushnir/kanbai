@@ -190,7 +190,7 @@ export function WeekView({
                 aria-label={d.date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
                 className={cn(
                   "flex min-h-[7rem] flex-col gap-1.5 rounded-2xl border p-2 xl:min-h-[14rem]",
-                  isToday ? "border-primary/40 bg-primary-soft/30" : "border-border bg-surface-2/50",
+                  isToday ? "kb-today" : "border-border bg-surface-2/60",
                   isPast && !isToday && "opacity-75",
                 )}
               >
@@ -208,7 +208,7 @@ export function WeekView({
                   </span>
                   {isToday && <span className="sr-only">(today)</span>}
                   {dayTickets.length > 0 && (
-                    <span className="ml-auto rounded-full bg-surface-2 px-1.5 py-0.5 text-[0.625rem] font-medium tabular-nums text-fg-subtle">
+                    <span className="ml-auto rounded-full bg-surface-3 px-1.5 py-0.5 text-[0.625rem] font-medium tabular-nums text-fg-muted">
                       {dayTickets.length}
                     </span>
                   )}

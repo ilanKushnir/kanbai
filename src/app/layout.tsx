@@ -20,13 +20,13 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-touch-icon.png",
   },
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Kanbai" },
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Kanbai" },
 };
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f7f8fb" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0b10" },
+    { media: "(prefers-color-scheme: light)", color: "#f2f3f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0d15" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -44,7 +44,7 @@ const themeScript = `
     var t = localStorage.getItem('kanbai-theme');
     var d = t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
     if (d) document.documentElement.classList.add('dark');
-    var c = d ? '#0a0b10' : '#f7f8fb';
+    var c = d ? '#0b0d15' : '#f2f3f8';
     document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
       m.setAttribute('content', c);
     });
