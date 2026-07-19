@@ -11,13 +11,22 @@ const composer = notesView.slice(
 );
 const dayChip = notesView.slice(notesView.indexOf("function DayChip"));
 
-test("composer wears the branded kb-composer surface with a focus-within state", () => {
+test("composer wears an inverted elevated purple capture surface with a focus-within state", () => {
   assert.match(composer, /kb-composer/);
   const css = globalsCss.slice(globalsCss.indexOf(".kb-composer"));
+  assert.match(css, /linear-gradient\(145deg, #2a1765/);
   assert.match(css, /\.kb-composer:focus-within/);
-  // Edge + halo are token-driven (theme-aware), not hardcoded colors.
-  assert.match(css, /color-mix\(in oklab, var\(--primary\)/);
-  assert.match(css, /color-mix\(in oklab, var\(--accent\)/);
+  assert.match(css, /var\(--aqua-400\)/);
+  assert.match(css, /0 24px 58px -26px/);
+});
+
+test("composer controls are tuned for the inverted purple panel", () => {
+  assert.match(composer, /kb-composer-icon-button/);
+  assert.match(composer, /kb-composer-submit/);
+  assert.match(dayChip, /kb-composer-day-chip/);
+  const css = globalsCss.slice(globalsCss.indexOf(".kb-composer"));
+  assert.match(css, /\.kb-composer textarea::placeholder/);
+  assert.match(css, /\.kb-composer-submit/);
 });
 
 test("composer textarea is 16px on mobile so iOS Safari doesn't zoom on focus", () => {

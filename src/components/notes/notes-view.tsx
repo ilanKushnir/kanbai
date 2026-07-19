@@ -1020,7 +1020,7 @@ export function NotesView({
 
       {/* Composer — the primary capture surface */}
       <div
-        className="kb-composer rounded-2xl p-3"
+        className="kb-composer rounded-[1.35rem] p-3.5 sm:p-4"
         onKeyDown={(e) => {
           // Cmd/Ctrl+Enter submits from anywhere in the composer — the expanded
           // textarea keeps plain Enter for new lines.
@@ -1039,11 +1039,11 @@ export function NotesView({
           placeholder={expanded ? "Write it all out…  Enter makes a new line" : "Jot something down…  Try - [ ] a checklist"}
           className={cn(
             // text-base (16px) on mobile so iOS Safari doesn't zoom the page on focus
-            "min-h-9 px-1 text-base leading-relaxed caret-primary md:min-h-7 md:text-[0.95rem]",
+            "min-h-10 px-1 text-base font-medium leading-relaxed md:min-h-8 md:text-[0.95rem]",
             expanded && "min-h-40",
           )}
         />
-        <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="mt-3 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
             {dictation.supported && (
               <button
@@ -1054,10 +1054,10 @@ export function NotesView({
                 title={dictation.listening ? "Stop dictation" : "Dictate"}
                 aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
                 className={cn(
-                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer md:h-8",
+                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer md:h-8",
                   dictation.listening
                     ? "animate-pulse-soft bg-danger px-2.5 text-white"
-                    : "w-9 justify-center bg-surface-2 text-fg-muted hover:text-fg md:w-8",
+                    : "kb-composer-icon-button w-9 justify-center md:w-8",
                 )}
               >
                 <Mic className="h-4 w-4" />
@@ -1068,13 +1068,13 @@ export function NotesView({
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             {expanded && (
-              <span className="hidden text-[0.6875rem] text-fg-subtle sm:inline">Ctrl/⌘+Enter adds</span>
+              <span className="kb-composer-hint hidden text-[0.6875rem] sm:inline">Ctrl/⌘+Enter adds</span>
             )}
             <button
               onClick={() => setExpanded((e) => !e)}
               title={expanded ? "Shrink" : "Expand for a longer note"}
               aria-label={expanded ? "Shrink composer" : "Expand composer"}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary-soft text-primary transition-colors hover:bg-primary/20 cursor-pointer md:h-8 md:w-8"
+              className="kb-composer-icon-button inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors cursor-pointer md:h-8 md:w-8"
             >
               {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </button>
@@ -1083,7 +1083,7 @@ export function NotesView({
               disabled={transcribing}
               title={transcribing ? "Transcribing…" : undefined}
               className={cn(
-                "inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-fg hover:bg-primary-hover cursor-pointer transition-all md:h-8 md:px-3",
+                "kb-composer-submit inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold cursor-pointer transition-all md:h-8 md:px-3",
                 draft.trim() || transcribing ? "opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95",
                 transcribing && "cursor-not-allowed opacity-60",
               )}
@@ -1094,11 +1094,11 @@ export function NotesView({
           </div>
         </div>
         {dictation.status && (
-          <div className="mt-2 text-xs text-fg-subtle">
+          <div className="kb-composer-status mt-2 text-xs">
             {dictation.status}
             {dictation.progress > 0 && dictation.progress < 100 && (
-              <span className="ml-2 inline-block h-1.5 w-24 overflow-hidden rounded-full bg-surface-2 align-middle">
-                <span className="block h-full rounded-full bg-primary transition-all" style={{ width: `${dictation.progress}%` }} />
+              <span className="kb-composer-progress ml-2 inline-block h-1.5 w-24 overflow-hidden rounded-full align-middle">
+                <span className="block h-full rounded-full transition-all" style={{ width: `${dictation.progress}%` }} />
               </span>
             )}
           </div>
@@ -1976,7 +1976,7 @@ function DayChip({
   return (
     <Menu
       trigger={
-        <button className="inline-flex h-9 items-center gap-1 rounded-lg bg-surface-2 px-2.5 text-xs font-medium text-fg-muted hover:text-fg cursor-pointer md:h-8">
+        <button className="kb-composer-day-chip inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-xs font-semibold cursor-pointer md:h-8">
           <CalendarClock className="h-3.5 w-3.5" />
           {current.label}
           <ChevronDown className="h-3 w-3" />
