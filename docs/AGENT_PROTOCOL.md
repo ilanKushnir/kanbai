@@ -564,9 +564,9 @@ agent can react in real time instead of polling. Two ways to register it:
 ### Self-setup (Agent → Kanbai)
 
 ```
-GET  /api/v1/agent/webhook        # current webhook status (url, active, signed)
-POST /api/v1/agent/webhook        # register/update url, active, optional secret
-POST /api/v1/agent/webhook/test   # fire a `ping` to your own URL to verify
+GET  /api/v1/agent/webhook        # current webhook status (url, active, signed, secretFingerprint, events)
+POST /api/v1/agent/webhook        # register/update url, active, optional secret + events
+POST /api/v1/agent/webhook/test   # fire a `ping` to your own URL and get the delivery outcome
 ```
 
 No extra scope is required — an agent may always manage its own webhook. Prefer an
@@ -577,27 +577,44 @@ No extra scope is required — an agent may always manage its own webhook. Prefe
 curl -X POST https://your-kanbai.app/api/v1/agent/webhook \
   -H "Authorization: Bearer $KANBAI_KEY" \
   -H "content-type: application/json" \
-  -d '{ "url": "http://10.0.0.7:8080/kanbai/webhook" }'
-# → { "webhook": { "url": "...", "active": true, "configured": true,
-#                  "signed": false, "status": "unsigned" } }
+  -d '{ "url": "http://10.0.0.7:8080/kanbai/webhook", "secret": "<your-signing-secret>" }'
+# → { "webhook": { "url": "...", "active": true, "configured": true, "signed": true,
+#                  "secretFingerprint": "ab12cd34", "events": "*", "status": "signed" } }
 
-# Verify with a self-test ping
+# Verify with a self-test ping — waits for YOUR response and reports it back
 curl -X POST https://your-kanbai.app/api/v1/agent/webhook/test \
   -H "Authorization: Bearer $KANBAI_KEY"
-# → { "deliveryId": "..." }
+# → { "deliveryId": "...",
+#     "result": { "status": "failed", "statusCode": 401,
+#                 "error": "HTTP 401 — invalid signature · not retried (terminal response)",
+#                 "attempts": 1, "signed": true, "durationMs": 42 },
+#     "secretFingerprint": "ab12cd34" }   # sha256(secret) first 8 hex — never the secret
 ```
 
-`secret` is optional in the register body (signing is recommended, not required):
-include a value to sign callbacks, send `""`/`null` to clear it, or omit it to keep
-the current secret. `active:false` pauses delivery without forgetting the URL.
+`secret` is optional in the register body (min 8 chars): include a value to sign
+callbacks with **your** secret, send `""`/`null` to clear it (unsigned), or omit it
+to keep the current one. `events` is an optional array of event names to subscribe
+to (default: everything). `active:false` pauses delivery without forgetting the URL.
 
-### Signing is optional but recommended
+### Signing — sync the secret or you'll see 401s
 
-If a signing secret is configured (here or in **Agents → Signing secret**), Kanbai
-HMAC-signs every payload and sends `X-Kanbai-Signature` (see below). If **no** secret
-is set, callbacks are still delivered **unsigned** — they carry no signature header,
-so accept them only on a trusted/internal listener path. A secret gives you
-spoofing/misroute protection for a small operational cost; prefer it.
+**Every agent is created with an auto-generated signing secret**, so deliveries are
+signed from day one with a value only Kanbai knows. If your verifier uses a
+*different* secret, every delivery fails with 401 (terminal — not retried). Fix it
+one of two ways:
+
+- copy Kanbai's secret (**Agents → Signing secret → copy**) into the agent's config, or
+- register the agent's own secret via the `secret` field above — Kanbai signs with it from then on.
+
+To detect a mismatch without exchanging secrets, compare **fingerprints** — the
+first 8 hex chars of `sha256(secret)`. Kanbai reports its fingerprint in
+`GET /agent/webhook` and in every test-ping result; compute the same from the
+secret you hold and compare.
+
+If **no** secret is set (cleared explicitly), callbacks are delivered **unsigned** —
+they carry no signature header, so accept them only on a trusted/internal listener
+path. A secret gives you spoofing/misroute protection for a small operational cost;
+prefer it.
 
 ### Events
 
@@ -621,8 +638,12 @@ agent with a webhook **except the agent that caused the event** — you never
 receive an echo of your own writes, so an agent can't loop on its own changes.
 Targeted events (`note.queued`, `note.sorted`, `ticket.assigned`) go only to the
 relevant agent, and are likewise suppressed when that agent is itself the actor.
-Subscribe to the event types you care about and ignore the rest — every event is
-typed via `X-Kanbai-Event` and the `event` field for easy filtering.
+
+Per-agent **event subscriptions** filter what is delivered: the default is
+everything (`"*"`, including event types added later), or an explicit list chosen
+in **Agents → Events it receives** / the `events` field on registration. `ping`
+is always delivered so test pings keep working. Every event is also typed via
+`X-Kanbai-Event` and the `event` field for easy client-side filtering.
 
 ### Request headers
 

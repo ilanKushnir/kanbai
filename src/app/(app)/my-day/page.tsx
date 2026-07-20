@@ -139,7 +139,9 @@ export default async function MyDayPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-24 pt-6 md:px-6 md:pb-8 md:pt-8">
-      <header className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_23rem] lg:items-stretch">
+      {/* The header's right track mirrors the body grid below (20rem + gap-6)
+          so the momentum chart sits flush over the "On deck" aside. */}
+      <header className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-6 lg:items-stretch">
         {/* The day's command surface: same inverted-iris capture language as
             the Notes composer, restated as "here is your plan". */}
         <div className="kb-day-hero flex flex-col rounded-3xl p-5 md:p-6">

@@ -40,6 +40,7 @@ export default async function AgentsPage() {
     webhookUrl: a.webhookUrl,
     webhookSecret: a.webhookSecret,
     webhookActive: a.webhookActive,
+    webhookEvents: a.webhookEvents,
     scopes: a.scopes.split(",").filter(Boolean),
     lastSeenAt: a.lastSeenAt?.toISOString() ?? null,
     createdAt: a.createdAt.toISOString(),

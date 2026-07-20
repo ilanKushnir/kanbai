@@ -329,6 +329,9 @@ model Agent {
   // Signing secret the USER sets; Kanbai signs payloads, the agent verifies.
   webhookSecret String?
   webhookActive Boolean @default(true)
+  // Event subscriptions: "*" = every event, else a comma list of WEBHOOK_EVENTS.
+  // "ping" is always delivered so Send test works regardless of the selection.
+  webhookEvents String  @default("*")
 
   scopes    String   @default("boards:read,boards:write,tickets:read,tickets:write,inbox:read,inbox:write,notes:read,notes:write")
   lastSeenAt DateTime?

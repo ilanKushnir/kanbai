@@ -241,3 +241,37 @@ test("every section's drop day classifies back into that same section, all year,
     }
   }
 });
+
+test("coarse buckets carry real landing-date sublabels so drops are predictable", () => {
+  // Mid-month: later_this_month exists and every coarse bucket shows its dates.
+  const schedule = buildSchedule(new Date(2026, 5, 10), 0); // Wed Jun 10, 2026
+  const byKey = new Map(schedule.sections.map((s) => [s.key, s]));
+  assert.ok(byKey.get("next_week")?.sublabel?.includes("–"), "next_week shows its date range");
+  assert.ok(byKey.get("later_this_month")?.sublabel?.includes("–"), "later_this_month shows its date range");
+  assert.match(byKey.get("next_month")?.sublabel ?? "", /^from /);
+  assert.match(byKey.get("long_term")?.sublabel ?? "", /^from /);
+});
+
+test("every future day classifies into a section that exists (no scheduling gaps)", () => {
+  // Sweep todays across month boundaries and week positions; every day in the
+  // next ~4 months must land in a rendered section. This is the guard against
+  // a dead zone between Next week and Next month.
+  const starts = [
+    new Date(2026, 0, 1),
+    new Date(2026, 5, 10),
+    new Date(2026, 5, 28),
+    new Date(2026, 6, 31),
+    new Date(2026, 11, 30),
+  ];
+  for (const start of starts) {
+    for (const weekStartsOn of [0, 1]) {
+      const schedule = buildSchedule(start, weekStartsOn);
+      const keys = new Set(schedule.sections.map((s) => s.key));
+      for (let i = 0; i <= 120; i++) {
+        const day = ymd(addDays(start, i));
+        const key = schedule.classify(day);
+        assert.ok(keys.has(key), `day ${day} (today=${ymd(start)}) classified into missing section ${key}`);
+      }
+    }
+  }
+});

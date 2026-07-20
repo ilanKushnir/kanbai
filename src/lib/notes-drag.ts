@@ -35,6 +35,27 @@ export function sectionDisplay(opts: {
   return { open: !collapsedKeys.has(key), mode: "rows" };
 }
 
+/**
+ * Auto-scroll while dragging: how far to scroll this frame for a pointer at
+ * `pointerY` in a viewport `viewportH` tall. 0 outside the edge zones; inside,
+ * speed ramps from a gentle crawl at the zone's inner edge to `maxSpeed` at the
+ * screen edge (eased, so precision near targets and reach across long lists —
+ * a fixed slow step made mobile triage feel stuck). Pure for tests.
+ */
+export function autoScrollStep(
+  pointerY: number,
+  viewportH: number,
+  { margin = 110, minSpeed = 4, maxSpeed = 26 }: { margin?: number; minSpeed?: number; maxSpeed?: number } = {},
+): number {
+  const topDepth = margin - pointerY;
+  const bottomDepth = pointerY - (viewportH - margin);
+  const depth = Math.max(topDepth, bottomDepth);
+  if (depth <= 0 || viewportH <= 2 * margin) return 0;
+  const t = Math.min(1, depth / margin);
+  const speed = Math.round(minSpeed + (maxSpeed - minSpeed) * t * t);
+  return topDepth > bottomDepth ? -speed : speed;
+}
+
 /** The container key holding `id` — or `id` itself when it names a container. */
 export function containerOf(map: Record<string, string[]>, id: string): string | null {
   if (id in map) return id;

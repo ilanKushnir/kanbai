@@ -49,12 +49,25 @@ test("Dragging over a sub-stated column overlays equal-height drop zones for eac
   assert.match(boardView, /zoneKey != null && activeContainer !== zoneKey/);
 });
 
-test("Dense sub-state bands collapse behind a per-band batched Show more toggle", () => {
+test("Dense sub-state bands collapse behind a per-band batched Show older toggle", () => {
   assert.match(boardView, /const SUBSTATE_VISIBLE_LIMIT = \d+/);
   assert.match(boardView, /visibleNewestFirstIds/);
   assert.match(boardView, /nextVisibleCount/);
-  assert.match(boardView, /Show \{Math\.min\(hidden, visibleLimit\)\} more/);
+  assert.match(boardView, /Show \{Math\.min\(hidden, visibleLimit\)\} older/);
   assert.match(boardView, /Show fewer/);
+});
+
+test("Older cards stream in from the bottom via a scroll sentinel, paused during drags", () => {
+  // The reveal control sits BELOW the cards and an IntersectionObserver rooted
+  // at the column's scroll container auto-loads the next batch near the bottom.
+  assert.match(boardView, /ref=\{sentinelRef\}/);
+  assert.match(boardView, /new IntersectionObserver/);
+  assert.match(boardView, /closest\("\[data-col-scroll\]"\)/);
+  assert.match(boardView, /hidden <= 0 \|\| dragging/); // stable list while a card is held
+  // Sentinel + button render AFTER the SortableContext card list.
+  const cards = boardView.indexOf("</SortableContext>");
+  const sentinel = boardView.indexOf("ref={sentinelRef}");
+  assert.ok(cards !== -1 && sentinel !== -1 && sentinel > cards);
 });
 
 test("Server keeps a column grouped by sub-state band so column-wide positions stay valid", () => {

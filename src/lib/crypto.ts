@@ -28,6 +28,15 @@ export function generateWebhookSecret() {
 }
 
 /**
+ * Short non-reversible identifier for a signing secret (first 8 hex chars of
+ * its SHA-256). Both sides can compare fingerprints to detect a secret
+ * mismatch — the #1 cause of 401s — without ever exchanging the secret itself.
+ */
+export function secretFingerprint(secret: string) {
+  return crypto.createHash("sha256").update(secret).digest("hex").slice(0, 8);
+}
+
+/**
  * Sign `${timestamp}.${rawBody}` with HMAC-SHA256.
  * The agent recomputes this with the same secret to verify authenticity.
  */

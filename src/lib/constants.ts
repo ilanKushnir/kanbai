@@ -89,8 +89,9 @@ export const AGENT_CAPABILITIES = {
   },
   webhook: {
     selfRegister: true, // POST /api/v1/agent/webhook with the agent's bearer key
-    test: true, // POST /api/v1/agent/webhook/test fires a ping to itself
+    test: true, // POST /api/v1/agent/webhook/test fires a ping to itself and reports the outcome
     signing: "optional", // HMAC SHA-256 — recommended, not required
+    eventFilter: true, // per-agent event subscriptions ("events" on registration; ping always on)
   },
 } as const;
 

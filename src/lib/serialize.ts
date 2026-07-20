@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma";
 import { toRichHtml } from "@/lib/sanitize";
+import { secretFingerprint } from "@/lib/crypto";
 
 export const ticketInclude = {
   labels: { include: { label: true } },
@@ -139,6 +140,7 @@ export function serializeWebhookStatus(a: {
   webhookUrl: string | null;
   webhookActive: boolean;
   webhookSecret: string | null;
+  webhookEvents?: string;
 }) {
   const configured = !!a.webhookUrl;
   const signed = !!a.webhookSecret;
@@ -147,6 +149,11 @@ export function serializeWebhookStatus(a: {
     active: a.webhookActive,
     configured,
     signed,
+    // Short hash of the signing secret (never the secret). Compare with your
+    // own sha256(secret).slice(0,8) to detect a mismatch — the usual 401 cause.
+    secretFingerprint: a.webhookSecret ? secretFingerprint(a.webhookSecret) : null,
+    // "*" = all events; otherwise a comma list. "ping" is always delivered.
+    events: a.webhookEvents ?? "*",
     // Human-readable status mirroring the Agents UI labels.
     status: !configured ? "not_configured" : !a.webhookActive ? "disabled" : signed ? "signed" : "unsigned",
   };

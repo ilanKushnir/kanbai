@@ -113,7 +113,17 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
   const firstOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const firstPastNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 1);
 
-  sections.push({ key: "next_week", label: "Next week", day: ymd(startNextWeek), kind: "next_week" });
+  // Coarse buckets carry their real landing dates as sublabels, so both the
+  // resting header and the mid-drag landing band say exactly where a note goes.
+  const md = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+  sections.push({
+    key: "next_week",
+    label: "Next week",
+    sublabel: `${md(startNextWeek)} – ${md(addDays(startNextWeek, 6))}`,
+    day: ymd(startNextWeek),
+    kind: "next_week",
+  });
   // "Later this month" only exists while there are days between the end of next
   // week and the next month boundary — late in a month its drop range is empty,
   // and a drop would classify into a DIFFERENT section (the note seemed to
@@ -121,16 +131,30 @@ export function buildSchedule(now: Date, weekStartsOn = 0): Schedule {
   // 1st can still fall inside this/next week, so its drop day is the first day
   // that clears both windows — every section's day classifies back to itself.
   if (ymd(firstPastNextWeek) < ymd(firstOfNextMonth)) {
+    const lastOfThisMonth = addDays(firstOfNextMonth, -1);
     sections.push({
       key: "later_this_month",
       label: "Later this month",
+      sublabel: `${md(firstPastNextWeek)} – ${md(lastOfThisMonth)}`,
       day: ymd(firstPastNextWeek),
       kind: "later_this_month",
     });
   }
   const nextMonthDay = ymd(firstOfNextMonth) > ymd(firstPastNextWeek) ? ymd(firstOfNextMonth) : ymd(firstPastNextWeek);
-  sections.push({ key: "next_month", label: "Next month", day: nextMonthDay, kind: "next_month" });
-  sections.push({ key: "long_term", label: "Long term", day: ymd(firstPastNextMonth), kind: "long_term" });
+  sections.push({
+    key: "next_month",
+    label: "Next month",
+    sublabel: `from ${md(parseYmd(nextMonthDay))}`,
+    day: nextMonthDay,
+    kind: "next_month",
+  });
+  sections.push({
+    key: "long_term",
+    label: "Long term",
+    sublabel: `from ${md(firstPastNextMonth)}`,
+    day: ymd(firstPastNextMonth),
+    kind: "long_term",
+  });
 
   const endThisWeekYmd = ymd(addDays(today, daySlotCount));
   const firstPastNextWeekYmd = ymd(firstPastNextWeek);

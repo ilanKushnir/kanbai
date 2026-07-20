@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS, NOTE_BUCKETS } from "./constants";
+import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS, NOTE_BUCKETS, WEBHOOK_EVENTS } from "./constants";
 import { COLUMN_STAGES } from "./column-stage";
 import { isAvatarColor } from "./avatar-colors";
 
@@ -342,14 +342,19 @@ export const registerWebhookV1Schema = z.object({
   url: z.url().max(2000).nullable().optional().or(z.literal("")),
   active: z.boolean().optional(),
   secret: z.string().min(8).max(200).nullable().optional().or(z.literal("")),
+  /** Event subscription list; omit to keep current ("*" = everything by default). */
+  events: z.array(z.enum(WEBHOOK_EVENTS)).optional(),
 });
 
 export const updateAgentSchema = z.object({
   name: z.string().trim().min(1).max(60).optional(),
   ownerUserId: z.string().max(60).nullable().optional().or(z.literal("")),
   webhookUrl: z.url().nullable().optional().or(z.literal("")),
-  webhookSecret: z.string().max(200).nullable().optional(),
+  // Signing secrets shorter than 8 chars are trivially guessable — reject them
+  // rather than sign with a weak key. null clears (unsigned).
+  webhookSecret: z.string().min(8).max(200).nullable().optional(),
   webhookActive: z.boolean().optional(),
+  webhookEvents: z.array(z.enum(WEBHOOK_EVENTS)).optional(),
   status: z.enum(["active", "disabled"]).optional(),
   scopes: z.array(z.enum(ALL_SCOPES)).optional(),
 });

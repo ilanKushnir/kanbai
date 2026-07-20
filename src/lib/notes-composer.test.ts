@@ -62,3 +62,35 @@ test("Cmd/Ctrl+Enter submits, covering the expanded composer", () => {
   assert.match(composer, /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === "Enter"/);
   assert.match(composer, /submitDraft\(\)/);
 });
+
+test("composer focus is a single aqua halo — no stacked violet+aqua double ring", () => {
+  const focus = globalsCss.slice(
+    globalsCss.indexOf(".kb-composer:focus-within"),
+    globalsCss.indexOf(".kb-composer-field"),
+  );
+  assert.doesNotMatch(focus, /0 0 0 6px/); // the old second ring
+  assert.doesNotMatch(focus, /0 0 0 3px color-mix\(in oklab, var\(--iris-400\)/); // the old clashing violet ring
+  assert.match(focus, /0 0 0 3px color-mix\(in oklab, var\(--aqua-400\)/);
+});
+
+test("composer has an inset writing well that brightens on focus", () => {
+  assert.match(composer, /kb-composer-field/);
+  assert.match(globalsCss, /\.kb-composer-field \{/);
+  assert.match(globalsCss, /\.kb-composer:focus-within \.kb-composer-field/);
+});
+
+test("composer offers compact markdown formatting instead of syntax in the placeholder", () => {
+  assert.match(composer, /role="toolbar"/);
+  assert.match(composer, /applyFormat\(kind\)/);
+  for (const kind of ["bold", "italic", "checklist", "code", "quote"]) {
+    assert.ok(composer.includes(`"${kind}"`), `toolbar exposes ${kind}`);
+  }
+  assert.doesNotMatch(composer, /Jot something down/);
+  // Cmd/Ctrl+B and +I formatting chords
+  assert.match(composer, /e\.key === "b" \|\| e\.key === "i"/);
+});
+
+test("Enter continues checklists/bullets in the composer and the inline note editor", () => {
+  assert.match(notesView, /continueListOnEnter/);
+  assert.match(notesView, /listContinuation/);
+});

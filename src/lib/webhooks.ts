@@ -1,6 +1,9 @@
 import { db } from "./db";
 import { signWebhook, randomId } from "./crypto";
+import { isSubscribed } from "./webhook-events";
 import type { WebhookEvent } from "./constants";
+
+export { isSubscribed };
 
 /** Who triggered the event — used to avoid echoing an agent's own actions back to it. */
 export type WebhookActor = { type: "user" | "agent" | "system"; id?: string | null; name?: string };
@@ -11,6 +14,23 @@ export type DispatchOptions = {
    * itself (its own actor/source events), so it doesn't churn on its own writes.
    */
   actor?: WebhookActor | null;
+  /**
+   * Await the delivery and get its final outcome (used by "Send test" so the
+   * UI can show the receiver's actual response). Normal event fan-out stays
+   * fire-and-forget.
+   */
+  wait?: boolean;
+};
+
+/** Final outcome of one delivery — what "Send test" reports back to the UI. */
+export type DeliveryResult = {
+  deliveryId: string;
+  status: "success" | "failed";
+  statusCode?: number;
+  error: string | null;
+  attempts: number;
+  signed: boolean;
+  durationMs: number;
 };
 
 /**
@@ -20,10 +40,8 @@ export type DispatchOptions = {
  * Rules today:
  *   • Never deliver an event back to the agent that caused it (no self-echo).
  *
- * This is the single seam where future per-agent event subscriptions would
- * plug in (e.g. an Agent.eventSubscriptions column gating by event type). Until
- * the data model carries subscriptions, agents simply ignore event types they
- * don't care about on their end; this keeps that decision in one place.
+ * Per-agent event subscriptions are applied separately (see {@link isSubscribed})
+ * where the agent record is in hand.
  */
 export function shouldDeliver(agentId: string, _event: WebhookEvent, opts?: DispatchOptions): boolean {
   const actor = opts?.actor;
@@ -40,6 +58,20 @@ export function shouldDeliver(agentId: string, _event: WebhookEvent, opts?: Disp
  */
 export function isRetryableStatus(status: number): boolean {
   return status === 429 || status >= 500;
+}
+
+/**
+ * Trim a receiver's error response down to something storable/showable. The
+ * body usually says WHY a delivery was rejected ("invalid signature", "stale
+ * timestamp"), which is exactly what the user needs to debug a 401.
+ * Control characters are flattened to spaces so log lines stay single-line.
+ */
+export function snippetOf(text: string, max = 300): string {
+  const printable = Array.from(text, (ch) => {
+    const c = ch.charCodeAt(0);
+    return c < 32 || c === 127 ? " " : ch;
+  }).join("");
+  return printable.replace(/ {2,}/g, " ").trim().slice(0, max);
 }
 
 /**
@@ -61,11 +93,12 @@ export async function dispatchWebhook(
   event: WebhookEvent,
   data: unknown,
   opts?: DispatchOptions,
-) {
+): Promise<DeliveryResult | string | undefined> {
   if (!shouldDeliver(agentId, event, opts)) return;
 
   const agent = await db.agent.findUnique({ where: { id: agentId } });
   if (!agent || !agent.webhookUrl || !agent.webhookActive || agent.status !== "active") return;
+  if (!isSubscribed(agent.webhookEvents, event)) return;
 
   // Signing is optional. With a secret we HMAC the payload; without one we send
   // it unsigned (never sign with an empty key — an HMAC keyed with "" proves
@@ -86,6 +119,9 @@ export async function dispatchWebhook(
     data: { agentId: agent.id, event, payload: body, signature, status: "pending" },
   });
 
+  if (opts?.wait) {
+    return deliver(agent.webhookUrl, body, event, timestamp, signature, delivery.id, signed);
+  }
   void deliver(agent.webhookUrl, body, event, timestamp, signature, delivery.id, signed);
   return delivery.id;
 }
@@ -99,10 +135,19 @@ async function deliver(
   deliveryId: string,
   signed: boolean,
   maxAttempts = 3,
-) {
+): Promise<DeliveryResult> {
+  const started = Date.now();
   let attempt = 0;
   let lastErr: string | undefined;
   let statusCode: number | undefined;
+
+  const finish = async (status: "success" | "failed", error: string | null): Promise<DeliveryResult> => {
+    await db.webhookDelivery.update({
+      where: { id: deliveryId },
+      data: { status, statusCode: statusCode ?? null, attempts: attempt, error },
+    });
+    return { deliveryId, status, statusCode, error, attempts: attempt, signed, durationMs: Date.now() - started };
+  };
 
   while (attempt < maxAttempts) {
     attempt++;
@@ -123,26 +168,15 @@ async function deliver(
       });
       statusCode = res.status;
       if (res.ok) {
-        await db.webhookDelivery.update({
-          where: { id: deliveryId },
-          data: { status: "success", statusCode, attempts: attempt, error: null },
-        });
-        return;
+        return finish("success", null);
       }
-      lastErr = `HTTP ${res.status}`;
+      // The receiver's own words are the best diagnostic — keep a short snippet.
+      const responseText = snippetOf(await res.text().catch(() => ""));
+      lastErr = responseText ? `HTTP ${res.status} — ${responseText}` : `HTTP ${res.status}`;
       // Terminal 4xx (bad request, auth, not-found, validation) won't recover on
       // replay — fail fast instead of burning the retry budget.
       if (!isRetryableStatus(res.status)) {
-        await db.webhookDelivery.update({
-          where: { id: deliveryId },
-          data: {
-            status: "failed",
-            statusCode,
-            attempts: attempt,
-            error: `${lastErr} — not retried (terminal response)`,
-          },
-        });
-        return;
+        return finish("failed", `${lastErr} · not retried (terminal response)`);
       }
     } catch (err) {
       // Network error / timeout — no status code, transient, so keep retrying.
@@ -152,10 +186,7 @@ async function deliver(
     if (attempt < maxAttempts) await sleep(400 * attempt);
   }
 
-  await db.webhookDelivery.update({
-    where: { id: deliveryId },
-    data: { status: "failed", statusCode, attempts: attempt, error: lastErr ?? "delivery failed" },
-  });
+  return finish("failed", lastErr ?? "delivery failed");
 }
 
 /**

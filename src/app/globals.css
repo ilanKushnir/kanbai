@@ -492,14 +492,31 @@ body {
   pointer-events: none;
   background: linear-gradient(180deg, rgb(255 255 255 / 0.10), transparent 42%);
 }
+/* Focus: ONE soft aqua halo (no stacked violet+aqua rings — the double ring
+   read as a border-inside-border clash) plus a deeper lift. The inner field
+   below carries the rest of the focus signal. */
 .kb-composer:focus-within {
   border-color: color-mix(in oklab, var(--aqua-400) 62%, var(--iris-200));
   box-shadow:
-    0 0 0 3px color-mix(in oklab, var(--iris-400) 28%, transparent),
-    0 0 0 6px color-mix(in oklab, var(--aqua-400) 12%, transparent),
+    0 0 0 3px color-mix(in oklab, var(--aqua-400) 18%, transparent),
     0 24px 58px -26px color-mix(in oklab, var(--iris-500) 88%, black),
     0 12px 30px -18px rgb(0 0 0 / 0.78),
     inset 0 1px 0 rgb(255 255 255 / 0.20);
+}
+/* The inset writing well: makes the panel legible as an INPUT at rest without
+   extra chrome, and brightens gently when writing starts. */
+.kb-composer-field {
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 0.07);
+  border: 1px solid rgb(255 255 255 / 0.10);
+  box-shadow: inset 0 1.5px 3px rgb(0 0 0 / 0.22);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+.kb-composer:focus-within .kb-composer-field {
+  background: rgb(255 255 255 / 0.10);
+  border-color: color-mix(in oklab, var(--aqua-400) 40%, rgb(255 255 255 / 0.16));
 }
 .kb-composer textarea {
   color: #fbfaff;
@@ -529,6 +546,18 @@ body {
   color: #ffffff;
   background: rgb(255 255 255 / 0.18);
   border-color: rgb(255 255 255 / 0.20);
+}
+/* Formatting chips: quieter than the action buttons — borderless until hover
+   so the bar stays a whisper under the field, not a second toolbar. */
+.kb-composer-format-button {
+  color: color-mix(in oklab, #ffffff 76%, var(--iris-100));
+  background: transparent;
+  border: 1px solid transparent;
+}
+.kb-composer-format-button:hover {
+  color: #ffffff;
+  background: rgb(255 255 255 / 0.14);
+  border-color: rgb(255 255 255 / 0.14);
 }
 .kb-composer-submit {
   color: #160d36;

@@ -48,6 +48,11 @@ import {
   Maximize2,
   Minimize2,
   Ticket,
+  Bold,
+  Italic,
+  ListChecks,
+  Code,
+  TextQuote,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -61,7 +66,8 @@ import { enqueueOfflineMutation, getOfflineMutations, setOfflineMutations } from
 import { ticketHref } from "@/lib/links";
 import { cn } from "@/lib/utils";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
-import { containerOf, moveAcrossContainers, sectionDisplay } from "@/lib/notes-drag";
+import { autoScrollStep, containerOf, moveAcrossContainers, sectionDisplay } from "@/lib/notes-drag";
+import { wrapInline, toggleLinePrefix, continueListOnEnter } from "@/lib/markdown-shortcuts";
 import {
   buildSchedule,
   coarseBucket,
@@ -182,6 +188,8 @@ function AutoGrow({
   className,
   autoFocus,
   dir,
+  inputRef,
+  listContinuation,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -191,8 +199,13 @@ function AutoGrow({
   className?: string;
   autoFocus?: boolean;
   dir?: "ltr" | "rtl" | "auto";
+  /** Optional handle to the underlying textarea (for toolbar/selection edits). */
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>;
+  /** Enter on a "- [ ] " / "- " / "> " line continues it (Enter on an empty item exits). */
+  listContinuation?: boolean;
 }) {
   const ref = React.useRef<HTMLTextAreaElement>(null);
+  React.useImperativeHandle(inputRef, () => ref.current as HTMLTextAreaElement, []);
   const resize = React.useCallback(() => {
     const el = ref.current;
     if (!el) return;
@@ -226,7 +239,26 @@ function AutoGrow({
       }}
       onBlur={onBlur}
       onKeyDown={(e) => {
-        if (onSubmit && e.key === "Enter" && !e.shiftKey) {
+        if (e.key !== "Enter" || e.shiftKey || e.metaKey || e.ctrlKey) return;
+        // List continuation wins over submit: Enter extends a "- [ ] " line
+        // (Apple-Notes style) and an Enter on an empty item exits the list —
+        // so in submit-on-Enter mode the NEXT Enter sends the note.
+        if (listContinuation) {
+          const el = e.currentTarget;
+          if (el.selectionStart === el.selectionEnd) {
+            const next = continueListOnEnter(el.value, el.selectionStart);
+            if (next) {
+              e.preventDefault();
+              onChange(next.text);
+              requestAnimationFrame(() => {
+                el.setSelectionRange(next.start, next.end);
+                resize();
+              });
+              return;
+            }
+          }
+        }
+        if (onSubmit) {
           e.preventDefault();
           onSubmit();
         }
@@ -402,6 +434,27 @@ export function NotesView({
 
   const [expanded, setExpanded] = React.useState(false);
   const composerRef = React.useRef<HTMLDivElement>(null);
+  const composerInputRef = React.useRef<HTMLTextAreaElement>(null);
+
+  /** Toolbar/keyboard markdown formatting on the draft, keeping caret + focus. */
+  function applyFormat(kind: "bold" | "italic" | "code" | "checklist" | "quote") {
+    const el = composerInputRef.current;
+    const start = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? draft.length;
+    const next =
+      kind === "bold"
+        ? wrapInline(draft, start, end, "**")
+        : kind === "italic"
+          ? wrapInline(draft, start, end, "_")
+          : kind === "code"
+            ? wrapInline(draft, start, end, "`")
+            : toggleLinePrefix(draft, start, end, kind);
+    setDraft(next.text);
+    requestAnimationFrame(() => {
+      el?.focus({ preventScroll: true });
+      el?.setSelectionRange(next.start, next.end);
+    });
+  }
   // Expanding is an invitation to write — hand focus (back) to the textarea so
   // the grown canvas is immediately usable; shrink leaves focus on the toggle.
   function toggleExpanded() {
@@ -952,10 +1005,12 @@ export function NotesView({
     };
     const tick = () => {
       if (pointerY != null) {
-        const margin = 88;
-        const max = window.innerHeight;
-        if (pointerY < margin) window.scrollBy({ top: -14, behavior: "auto" });
-        else if (pointerY > max - margin) window.scrollBy({ top: 14, behavior: "auto" });
+        // visualViewport tracks the REAL visible height on mobile (browser
+        // chrome, keyboard); speed ramps toward the screen edge so long triage
+        // lists are reachable while drops near the zone edge stay precise.
+        const viewportH = window.visualViewport?.height ?? window.innerHeight;
+        const step = autoScrollStep(pointerY, viewportH);
+        if (step !== 0) window.scrollBy({ top: step, behavior: "auto" });
       }
       frame = requestAnimationFrame(tick);
     };
@@ -1040,24 +1095,61 @@ export function NotesView({
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
             e.preventDefault();
             submitDraft();
+            return;
+          }
+          // The two formatting chords everyone's fingers already know.
+          if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === "b" || e.key === "i")) {
+            e.preventDefault();
+            applyFormat(e.key === "b" ? "bold" : "italic");
           }
         }}
       >
-        <AutoGrow
-          value={draft}
-          onChange={setDraft}
-          onSubmit={expanded ? undefined : submitDraft}
-          autoFocus={composeFocus}
-          dir="auto"
-          placeholder={expanded ? "Write it all out…  Enter makes a new line" : "Jot something down…  Try - [ ] a checklist"}
-          className={cn(
-            // text-base (16px) on mobile so iOS Safari doesn't zoom the page on focus
-            "min-h-10 px-1 text-base font-medium leading-relaxed md:min-h-8 md:text-[0.95rem]",
-            // md:min-h-40 too — otherwise the base md:min-h-8 wins the cascade
-            // and desktop "Expand" never actually grows the canvas
-            expanded && "min-h-40 md:min-h-40",
-          )}
-        />
+        {/* The inset field makes the panel instantly read as an input — one
+            quiet well on the iris surface, brightening slightly on focus. */}
+        <div className="kb-composer-field px-2.5 py-2">
+          <AutoGrow
+            value={draft}
+            onChange={setDraft}
+            onSubmit={expanded ? undefined : submitDraft}
+            autoFocus={composeFocus}
+            dir="auto"
+            inputRef={composerInputRef}
+            listContinuation
+            placeholder={expanded ? "Write it all out…  Enter makes a new line" : "Capture a thought…"}
+            className={cn(
+              // text-base (16px) on mobile so iOS Safari doesn't zoom the page on focus
+              "min-h-10 text-base font-medium leading-relaxed md:min-h-8 md:text-[0.95rem]",
+              // md:min-h-40 too — otherwise the base md:min-h-8 wins the cascade
+              // and desktop "Expand" never actually grows the canvas
+              expanded && "min-h-40 md:min-h-40",
+            )}
+          />
+        </div>
+        {/* Compact markdown bar — appears once there's something to format (or
+            room to write), instead of spelling out syntax in the placeholder. */}
+        {(expanded || draft.trim().length > 0) && (
+          <div className="mt-2 flex items-center gap-1 animate-fade-in" role="toolbar" aria-label="Formatting">
+            {(
+              [
+                { kind: "bold", icon: Bold, label: "Bold (⌘B)" },
+                { kind: "italic", icon: Italic, label: "Italic (⌘I)" },
+                { kind: "checklist", icon: ListChecks, label: "Checklist" },
+                { kind: "code", icon: Code, label: "Inline code" },
+                { kind: "quote", icon: TextQuote, label: "Quote" },
+              ] as const
+            ).map(({ kind, icon: Icon, label }) => (
+              <button
+                key={kind}
+                onClick={() => applyFormat(kind)}
+                title={label}
+                aria-label={label}
+                className="kb-composer-format-button inline-flex h-8 w-8 items-center justify-center rounded-lg transition-all active:scale-95 cursor-pointer md:h-7 md:w-7"
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            ))}
+          </div>
+        )}
         <div className="mt-3 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
             {dictation.supported && (
@@ -1905,6 +1997,7 @@ function NoteRow({
             onChange={setBody}
             autoFocus
             dir="auto"
+            listContinuation
             onBlur={() => {
               setEditing(false);
               onSaveBody(body);

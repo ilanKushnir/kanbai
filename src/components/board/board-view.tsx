@@ -1303,7 +1303,7 @@ function Column({
 
       {subStated ? (
         <div className={cn("relative flex min-h-0 flex-1 flex-col", overLimit && "rounded-2xl ring-1 ring-danger/30")}>
-          <div className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-1", overLimit && "p-0.5")}>
+          <div data-col-scroll className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-1", overLimit && "p-0.5")}>
             {sections.map((s) => (
               <Section key={s.key} {...sectionProps(s)} label={s.sub ?? undefined} count={s.allIds.length} />
             ))}
@@ -1368,6 +1368,12 @@ function Section({
   const dense = isDenseSection(ids.length, visibleLimit, COLLAPSE_SLACK);
   const [visibleCount, setVisibleCount] = React.useState(visibleLimit);
   const clampedVisibleCount = Math.min(visibleCount, Math.max(ids.length, visibleLimit));
+  const sentinelRef = React.useRef<HTMLDivElement | null>(null);
+
+  const loadMore = React.useCallback(
+    () => setVisibleCount((count) => nextVisibleCount(count, ids.length, visibleLimit)),
+    [ids.length, visibleLimit],
+  );
 
   // Newer cards append at the end of the section; present them first. Dense
   // sections reveal older cards in batches per section/sub-state, not all at once.
@@ -1375,9 +1381,26 @@ function Section({
   const hidden = dense ? Math.max(0, ids.length - shown.length) : 0;
   const empty = ids.length === 0;
 
+  // Stream older cards in as the bottom sentinel scrolls into view. The IO root
+  // is the column's own scroll container so the pre-load margin applies where
+  // the clipping actually happens; paused mid-drag to keep the list stable.
+  React.useEffect(() => {
+    const el = sentinelRef.current;
+    if (hidden <= 0 || dragging || !el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) loadMore();
+      },
+      { root: el.closest("[data-col-scroll]"), rootMargin: "0px 0px 160px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hidden, dragging, loadMore]);
+
   return (
     <div
       ref={setNodeRef}
+      data-col-scroll={fill ? "" : undefined}
       className={cn(
         "flex flex-col gap-2 rounded-2xl border transition-colors",
         // The column's stage sets its surface: intake dashed & faded, backlog
@@ -1401,24 +1424,6 @@ function Section({
         </div>
       )}
 
-      {hidden > 0 && (
-        <button
-          onClick={() => setVisibleCount((count) => nextVisibleCount(count, ids.length, visibleLimit))}
-          className="rounded-lg px-2 py-1.5 text-start text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
-        >
-          Show {Math.min(hidden, visibleLimit)} more
-          {hidden > visibleLimit ? ` (${hidden} older)` : ""}
-        </button>
-      )}
-      {dense && hidden === 0 && (
-        <button
-          onClick={() => setVisibleCount(visibleLimit)}
-          className="rounded-lg px-2 py-1.5 text-start text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
-        >
-          Show fewer
-        </button>
-      )}
-
       <SortableContext items={shown} strategy={verticalListSortingStrategy}>
         {shown.map((tid) => {
           const t = ticketsById[tid];
@@ -1436,6 +1441,31 @@ function Section({
           );
         })}
       </SortableContext>
+
+      {/* Older cards live below the fold: scrolling near the bottom streams the
+          next batch in automatically (the sentinel), and the button stays as a
+          manual/keyboard fallback. Paused during drags so the list under a held
+          card never shifts. */}
+      {hidden > 0 && (
+        <>
+          <div ref={sentinelRef} aria-hidden className="h-px shrink-0" />
+          <button
+            onClick={loadMore}
+            className="rounded-lg px-2 py-1.5 text-start text-xs font-medium text-fg-muted hover:bg-surface-3 hover:text-fg cursor-pointer"
+          >
+            Show {Math.min(hidden, visibleLimit)} older
+            {hidden > visibleLimit ? ` (${hidden} left)` : ""}
+          </button>
+        </>
+      )}
+      {dense && hidden === 0 && (
+        <button
+          onClick={() => setVisibleCount(visibleLimit)}
+          className="rounded-lg px-2 py-1.5 text-start text-xs font-medium text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer"
+        >
+          Show fewer
+        </button>
+      )}
 
       {/* Plain columns show their own filter-empty message; sub-stated columns show
           one column-level message instead of repeating it per band. */}

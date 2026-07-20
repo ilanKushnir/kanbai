@@ -45,10 +45,26 @@ export type AgentFull = {
   webhookUrl: string | null;
   webhookSecret: string | null;
   webhookActive: boolean;
+  /** "*" = all events, else a comma list of subscribed event names. */
+  webhookEvents: string;
   scopes: string[];
   lastSeenAt: string | null;
   createdAt: string;
   deliveries: DeliveryT[];
+};
+
+/** Outcome of a "Send test" delivery, as returned by POST /api/agents/{id}/test. */
+export type TestSendResultT = {
+  result: {
+    deliveryId: string;
+    status: "success" | "failed";
+    statusCode?: number;
+    error: string | null;
+    attempts: number;
+    signed: boolean;
+    durationMs: number;
+  };
+  secretFingerprint: string | null;
 };
 
 /**

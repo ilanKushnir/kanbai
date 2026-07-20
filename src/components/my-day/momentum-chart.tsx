@@ -24,7 +24,7 @@ export function MomentumChart({ series }: { series: MyDayCompletionPoint[] }) {
   return (
     <section
       aria-label={`Momentum: ${windowTotal} items completed in the last ${series.length} days`}
-      className="flex flex-col rounded-3xl border border-border bg-surface p-4 shadow-card md:p-5"
+      className="flex flex-col rounded-3xl border border-border bg-surface p-3.5 shadow-card md:p-5"
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h2 className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
@@ -47,7 +47,9 @@ export function MomentumChart({ series }: { series: MyDayCompletionPoint[] }) {
         </span>
       </div>
 
-      <div className="mt-3 flex h-24 items-end gap-1 border-b border-border md:h-28">
+      {/* Phones get a low, wide strip — the trend still reads at 3.5rem and the
+          card stops crowding out the actual queue; desktop keeps the taller plot. */}
+      <div className="mt-2 flex h-14 items-end gap-1 border-b border-border md:mt-3 md:h-28">
         {series.map((p, i) => {
           const total = p.tickets + p.notes;
           const isToday = i === todayIndex;
@@ -125,7 +127,7 @@ export function MomentumChart({ series }: { series: MyDayCompletionPoint[] }) {
         ))}
       </div>
 
-      <p className="mt-2 text-xs text-fg-subtle">
+      <p className="mt-2 hidden text-xs text-fg-subtle md:block">
         {windowTotal === 0
           ? "Finished tickets and notes land here — close something out today."
           : bestIndex === todayIndex

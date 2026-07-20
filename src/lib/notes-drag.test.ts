@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { containerOf, moveAcrossContainers, sectionDisplay } from "@/lib/notes-drag";
+import { autoScrollStep, containerOf, moveAcrossContainers, sectionDisplay } from "@/lib/notes-drag";
 
 // ── sectionDisplay ────────────────────────────────────────────────────────────
 
@@ -99,4 +99,28 @@ test("moveAcrossContainers returns null for unknown ids and never mutates its in
   const before = JSON.stringify(m);
   moveAcrossContainers(m, "a", "today");
   assert.equal(JSON.stringify(m), before);
+});
+
+// ── autoScrollStep ────────────────────────────────────────────────────────────
+
+test("autoScrollStep is 0 in the middle of the viewport", () => {
+  assert.equal(autoScrollStep(400, 800), 0);
+  assert.equal(autoScrollStep(111, 800), 0); // just past the default 110px zone
+});
+
+test("autoScrollStep scrolls up near the top and down near the bottom", () => {
+  assert.ok(autoScrollStep(20, 800) < 0);
+  assert.ok(autoScrollStep(780, 800) > 0);
+});
+
+test("autoScrollStep ramps: deeper into the edge zone scrolls faster", () => {
+  const shallow = Math.abs(autoScrollStep(100, 800));
+  const deep = Math.abs(autoScrollStep(10, 800));
+  assert.ok(deep > shallow, `expected ${deep} > ${shallow}`);
+  // capped at maxSpeed even past the screen edge
+  assert.equal(Math.abs(autoScrollStep(-50, 800)), 26);
+});
+
+test("autoScrollStep disables itself on viewports too short for distinct zones", () => {
+  assert.equal(autoScrollStep(10, 200), 0); // e.g. keyboard up — zones would overlap
 });
