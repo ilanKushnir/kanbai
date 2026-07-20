@@ -492,9 +492,8 @@ body {
   pointer-events: none;
   background: linear-gradient(180deg, rgb(255 255 255 / 0.10), transparent 42%);
 }
-/* Focus: ONE soft aqua halo (no stacked violet+aqua rings — the double ring
-   read as a border-inside-border clash) plus a deeper lift. The inner field
-   below carries the rest of the focus signal. */
+/* Focus: ONE soft aqua halo/frame on the outer composer only — no nested
+   textarea/input focus rings or inner border choreography. */
 .kb-composer:focus-within {
   border-color: color-mix(in oklab, var(--aqua-400) 62%, var(--iris-200));
   box-shadow:
@@ -516,7 +515,6 @@ body {
 }
 .kb-composer:focus-within .kb-composer-field {
   background: rgb(255 255 255 / 0.10);
-  border-color: color-mix(in oklab, var(--aqua-400) 40%, rgb(255 255 255 / 0.16));
 }
 .kb-composer textarea {
   color: #fbfaff;
@@ -525,6 +523,9 @@ body {
   /* Expand/shrink animates the min-height floor only — the inline height that
      AutoGrow sets while typing stays instant, so keystrokes never feel laggy. */
   transition: min-height var(--motion-slow) var(--ease-out-emph);
+}
+.kb-composer :where(textarea, input):focus-visible {
+  outline: none;
 }
 .kb-composer textarea::placeholder {
   color: color-mix(in oklab, #ffffff 68%, var(--iris-200));
