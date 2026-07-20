@@ -15,6 +15,7 @@ export type BoardMember = {
   name: string;
   email: string;
   avatarUrl: string | null;
+  avatarColor: string | null;
   role: "owner" | "admin" | "member";
   /** Managers can't be revoked per-board — their access comes from the role. */
   implicit: boolean;
@@ -28,7 +29,7 @@ export async function listBoardMembers(boardId: string): Promise<BoardMember[]> 
   if (!board) throw new HttpError(404, "Board not found");
   const members = await db.workspaceMember.findMany({
     where: { workspaceId: board.workspaceId },
-    include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+    include: { user: { select: { id: true, name: true, email: true, avatarUrl: true, avatarColor: true } } },
     orderBy: { user: { name: "asc" } },
   });
   const grants = await db.boardAccess.findMany({ where: { boardId }, select: { userId: true, level: true } });
@@ -42,6 +43,7 @@ export async function listBoardMembers(boardId: string): Promise<BoardMember[]> 
       name: m.user.name,
       email: m.user.email,
       avatarUrl: m.user.avatarUrl,
+      avatarColor: m.user.avatarColor,
       role,
       implicit,
       level: implicit ? "edit" : levelByUser.get(m.user.id) ?? null,
@@ -54,7 +56,7 @@ export async function boardAssigneeUsers(boardId: string) {
   const members = await listBoardMembers(boardId);
   return members
     .filter((m) => m.implicit || m.level !== null)
-    .map((m) => ({ id: m.userId, name: m.name, avatarUrl: m.avatarUrl }));
+    .map((m) => ({ id: m.userId, name: m.name, avatarUrl: m.avatarUrl, avatarColor: m.avatarColor }));
 }
 
 /**

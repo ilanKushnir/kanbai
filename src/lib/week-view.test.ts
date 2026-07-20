@@ -6,8 +6,11 @@ import {
   compareWeekTickets,
   dueDayOf,
   groupTicketsByWeekDay,
+  pagerSettleDelta,
   startOfWeek,
+  weekPagerStarts,
   weekRangeLabel,
+  weeksBetween,
   type WeekViewTicket,
 } from "@/lib/week-view";
 import { addDays, ymd } from "@/lib/notes-schedule";
@@ -124,6 +127,36 @@ test("a full-day sort is stable and journal-shaped (open by time, done at the bo
   const days = [ymd(new Date(2026, 6, 15))];
   const { byDay } = groupTicketsByWeekDay(dayTickets, days);
   assert.deepEqual(byDay["2026-07-15"].map((t) => t.id), ["open-9-high", "open-9-low", "open-17", "done-9"]);
+});
+
+test("weekPagerStarts surrounds the centered week with its neighbors", () => {
+  assert.deepEqual(weekPagerStarts("2026-07-13"), ["2026-07-06", "2026-07-13", "2026-07-20"]);
+  // Crosses month/year boundaries as plain calendar arithmetic.
+  assert.deepEqual(weekPagerStarts("2026-01-01"), ["2025-12-25", "2026-01-01", "2026-01-08"]);
+  // Each neighbor is itself a valid week start for the same weekday anchor.
+  const [prev, , next] = weekPagerStarts("2026-07-13");
+  assert.equal(ymd(startOfWeek(new Date(2026, 6, 8), 1)), prev);
+  assert.equal(ymd(startOfWeek(new Date(2026, 6, 22), 1)), next);
+});
+
+test("pagerSettleDelta maps a settled scroll offset to a week delta", () => {
+  const w = 390; // an iPhone-ish page width
+  assert.equal(pagerSettleDelta(0, w), -1); // rests on the previous-week panel
+  assert.equal(pagerSettleDelta(w, w), 0); // still centered
+  assert.equal(pagerSettleDelta(2 * w, w), 1); // rests on the next-week panel
+  // Snap positions are near-exact but not bit-perfect; nearest page wins.
+  assert.equal(pagerSettleDelta(w * 2 - 3, w), 1);
+  assert.equal(pagerSettleDelta(w + 4, w), 0);
+  // Degenerate layout (hidden pager) never navigates.
+  assert.equal(pagerSettleDelta(120, 0), 0);
+});
+
+test("weeksBetween counts whole weeks between week starts", () => {
+  assert.equal(weeksBetween("2026-07-13", "2026-07-13"), 0);
+  assert.equal(weeksBetween("2026-07-13", "2026-07-20"), 1);
+  assert.equal(weeksBetween("2026-07-13", "2026-06-29"), -2);
+  // Robust across DST-length weeks (local time drift under one day).
+  assert.equal(weeksBetween("2026-03-02", "2026-03-16"), 2);
 });
 
 test("week navigation by ±7 days lands on adjacent weeks", () => {

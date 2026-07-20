@@ -52,6 +52,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         boards={boards}
         userName={ctx.user.name}
         userEmail={ctx.user.email}
+        userAvatarUrl={ctx.user.avatarUrl}
+        userAvatarColor={ctx.user.avatarColor}
         isManager={ctx.isManager}
         isSystemAdmin={ctx.isSystemAdmin}
         workspaces={ctx.memberships.map((m) => ({

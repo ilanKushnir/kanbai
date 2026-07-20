@@ -4,7 +4,7 @@
 // day of its due instant, or in the "unscheduled" bucket when it has no due
 // date. Safe to import on both the client and the server.
 
-import { addDays, startOfDay, ymd } from "./notes-schedule";
+import { addDays, parseYmd, startOfDay, ymd } from "./notes-schedule";
 import { PRIORITY_META, type Priority } from "./constants";
 
 export type WeekDay = {
@@ -39,6 +39,31 @@ export function weekRangeLabel(days: WeekDay[]): string {
     day: "numeric",
   });
   return `${from} – ${to}, ${last.getFullYear()}`;
+}
+
+/**
+ * The three pager panels around a centered week: [previous, current, next]
+ * week-start days. The Week View scroll-snaps horizontally between these and
+ * re-centers after each settled page, so paging is always one panel deep.
+ */
+export function weekPagerStarts(weekStart: string): [string, string, string] {
+  const start = parseYmd(weekStart);
+  return [ymd(addDays(start, -7)), weekStart, ymd(addDays(start, 7))];
+}
+
+/**
+ * Where a settled pager scroll landed, as a week delta from the centered
+ * panel: -1 (previous week), 0 (still centered), or 1 (next week).
+ */
+export function pagerSettleDelta(scrollLeft: number, pageWidth: number): -1 | 0 | 1 {
+  if (pageWidth <= 0) return 0;
+  const page = Math.round(scrollLeft / pageWidth);
+  return Math.max(-1, Math.min(1, page - 1)) as -1 | 0 | 1;
+}
+
+/** Whole weeks from `fromWeekStart` to `toWeekStart` (both local "YYYY-MM-DD" week starts). */
+export function weeksBetween(fromWeekStart: string, toWeekStart: string): number {
+  return Math.round((parseYmd(toWeekStart).getTime() - parseYmd(fromWeekStart).getTime()) / (7 * 86400000));
 }
 
 export type WeekViewTicket = {

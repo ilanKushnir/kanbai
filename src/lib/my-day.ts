@@ -1,8 +1,11 @@
 import {
+  addDays,
   buildSchedule,
   compareSectionNotes,
   isSectionVisibleNote,
   noteSectionKey,
+  startOfDay,
+  ymd,
 } from "@/lib/notes-schedule";
 import { PRIORITY_META, type Priority } from "@/lib/constants";
 
@@ -146,6 +149,48 @@ export function buildMyDayQueue<TTicket extends MyDayTicket, TNote extends MyDay
   };
 }
 
+
+export type MyDayCompletionPoint = {
+  /** Local calendar day "YYYY-MM-DD". */
+  day: string;
+  /** Tickets completed on that day (moved to a done column). */
+  tickets: number;
+  /** Notes marked done on that day. */
+  notes: number;
+};
+
+/**
+ * Daily completion counts for the My Day momentum chart: a dense window of
+ * the last `days` local calendar days ending today (oldest first, no gaps),
+ * with tickets and notes counted separately so the chart can stack them.
+ */
+export function buildMyDayCompletionSeries<TTicket extends MyDayTicket, TNote extends MyDayNote>(input: {
+  now?: Date;
+  /** Completed tickets carrying `completedOn`. */
+  tickets: TTicket[];
+  notes: TNote[];
+  days?: number;
+}): MyDayCompletionPoint[] {
+  const now = input.now ?? new Date();
+  const count = Math.max(1, input.days ?? 14);
+  const first = addDays(startOfDay(now), -(count - 1));
+  const byDay = new Map<string, MyDayCompletionPoint>();
+  const series: MyDayCompletionPoint[] = [];
+  for (let i = 0; i < count; i++) {
+    const point = { day: ymd(addDays(first, i)), tickets: 0, notes: 0 };
+    byDay.set(point.day, point);
+    series.push(point);
+  }
+  for (const t of input.tickets) {
+    const point = t.completedOn ? byDay.get(t.completedOn) : undefined;
+    if (point) point.tickets++;
+  }
+  for (const n of input.notes) {
+    const point = n.doneOn ? byDay.get(n.doneOn) : undefined;
+    if (point) point.notes++;
+  }
+  return series;
+}
 
 export type MyDayDoneArchiveItem<TTicket extends MyDayTicket = MyDayTicket, TNote extends MyDayNote = MyDayNote> =
   | { kind: "ticket"; id: string; completedOn: string; ticket: TTicket }

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { ShieldCheck, LogOut } from "lucide-react";
+import { ShieldCheck, LogOut, Check } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { SettingsTabs } from "./settings-tabs";
 import { api } from "@/lib/client-api";
+import { AVATAR_COLORS, DEFAULT_AVATAR_COLOR } from "@/lib/avatar-colors";
+import { cn } from "@/lib/utils";
 
 type Props = {
   isManager: boolean;
@@ -18,6 +20,7 @@ type Props = {
     name: string;
     email: string;
     avatarUrl: string | null;
+    avatarColor: string | null;
     createdAt: string;
     isSystemAdmin: boolean;
     role: string;
@@ -32,6 +35,7 @@ export function AccountView({ isManager, user }: Props) {
   const [name, setName] = React.useState(user.name);
   const [email, setEmail] = React.useState(user.email);
   const [avatarUrl, setAvatarUrl] = React.useState(user.avatarUrl ?? "");
+  const [avatarColor, setAvatarColor] = React.useState(user.avatarColor ?? DEFAULT_AVATAR_COLOR);
   const [savingProfile, setSavingProfile] = React.useState(false);
 
   const [curPw, setCurPw] = React.useState("");
@@ -39,13 +43,21 @@ export function AccountView({ isManager, user }: Props) {
   const [confirmPw, setConfirmPw] = React.useState("");
   const [savingPw, setSavingPw] = React.useState(false);
 
-  const profileDirty = name !== user.name || email !== user.email || avatarUrl !== (user.avatarUrl ?? "");
+  const profileDirty =
+    name !== user.name ||
+    email !== user.email ||
+    avatarUrl !== (user.avatarUrl ?? "") ||
+    avatarColor !== (user.avatarColor ?? DEFAULT_AVATAR_COLOR);
 
   async function saveProfile() {
     if (!name.trim()) return toast({ title: "Name can't be empty", variant: "error" });
     setSavingProfile(true);
     try {
-      await api("/api/account", { method: "PATCH", body: { name: name.trim(), email, avatarUrl } });
+      await api("/api/account", {
+        method: "PATCH",
+        // The brand default is stored as null so future default changes apply.
+        body: { name: name.trim(), email, avatarUrl, avatarColor: avatarColor === DEFAULT_AVATAR_COLOR ? null : avatarColor },
+      });
       toast({ title: "Profile updated", variant: "success" });
       router.refresh();
     } catch (e) {
@@ -92,7 +104,7 @@ export function AccountView({ isManager, user }: Props) {
         <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Profile</h2>
         <div className="space-y-4 rounded-xl border border-border bg-surface p-4 shadow-card">
           <div className="flex items-center gap-3">
-            <Avatar name={name || user.name} src={avatarUrl || null} size={56} />
+            <Avatar name={name || user.name} src={avatarUrl || null} color={avatarColor} size={56} />
             <div className="text-sm text-fg-muted">
               <div className="font-medium text-fg">{user.workspaceName}</div>
               <div className="capitalize">{user.role} · member since {format(new Date(user.createdAt), "MMM yyyy")}</div>
@@ -122,6 +134,35 @@ export function AccountView({ isManager, user }: Props) {
               placeholder="https://…/photo.jpg"
             />
           </div>
+          <fieldset>
+            <legend className="block text-xs font-medium text-fg-muted mb-1.5">Avatar color</legend>
+            <div className="mt-1 flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Avatar color">
+              {AVATAR_COLORS.map((c) => {
+                const selected = avatarColor === c.value;
+                return (
+                  <button
+                    key={c.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    title={c.label}
+                    aria-label={c.label}
+                    onClick={() => setAvatarColor(c.value)}
+                    className={cn(
+                      "grid h-8 w-8 place-items-center rounded-full transition-transform cursor-pointer hover:scale-110",
+                      selected && "ring-2 ring-ring ring-offset-2 ring-offset-surface",
+                    )}
+                    style={{ background: `linear-gradient(135deg, ${c.value}, color-mix(in oklab, ${c.value} 78%, #000))` }}
+                  >
+                    {selected && <Check className="h-4 w-4 text-white" />}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-xs text-fg-subtle">
+              Shown behind your initials wherever you have no avatar image.
+            </p>
+          </fieldset>
           <div className="flex justify-end">
             <Button variant="primary" onClick={saveProfile} disabled={!profileDirty || savingProfile}>
               {savingProfile ? "Saving…" : "Save profile"}

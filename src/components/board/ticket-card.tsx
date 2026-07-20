@@ -13,7 +13,7 @@ export type TicketCardData = {
   dueDate: string | null;
   labels: { id: string; name: string; color: string }[];
   commentCount: number;
-  assignee: { type: "user" | "agent"; name: string; color?: string; ownerName?: string | null } | null;
+  assignee: { type: "user" | "agent"; name: string; color?: string; avatarUrl?: string | null; ownerName?: string | null } | null;
   sourceNoteId?: string | null;
 };
 
@@ -96,7 +96,8 @@ export function TicketCard({
           {ticket.assignee && (
             <Avatar
               name={ticket.assignee.name}
-              color={ticket.assignee.type === "agent" ? ticket.assignee.color : undefined}
+              color={ticket.assignee.color}
+              src={ticket.assignee.type === "user" ? ticket.assignee.avatarUrl : undefined}
               isAgent={ticket.assignee.type === "agent"}
               size={22}
               title={assigneeLabel(ticket.assignee)}

@@ -26,6 +26,8 @@ export function AppShell({
   boards,
   userName,
   userEmail,
+  userAvatarUrl,
+  userAvatarColor,
   isManager,
   isSystemAdmin,
   workspaces,
@@ -35,13 +37,15 @@ export function AppShell({
   boards: NavBoard[];
   userName: string;
   userEmail: string;
+  userAvatarUrl?: string | null;
+  userAvatarColor?: string | null;
   isManager: boolean;
   isSystemAdmin: boolean;
   workspaces: WorkspaceOption[];
   /** Notes + reflected tickets due today or overdue (the Notes nav badge). */
   notesDueCount: number;
 }) {
-  const userMenuProps = { userName, userEmail, isManager, isSystemAdmin, workspaces };
+  const userMenuProps = { userName, userEmail, userAvatarUrl, userAvatarColor, isManager, isSystemAdmin, workspaces };
   const pathname = usePathname();
   const router = useRouter();
   const [optimisticPath, setOptimisticPath] = React.useState<string | null>(null);

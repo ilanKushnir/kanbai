@@ -159,7 +159,7 @@ function BoardCard({
               <span className="flex items-center gap-1.5" title={shared.label} aria-label={shared.label}>
                 <span aria-hidden className="flex items-center -space-x-1.5">
                   {shared.avatars.map((u) => (
-                    <Avatar key={u.id} name={u.name} src={u.avatarUrl} size={20} className="ring-2 ring-surface" />
+                    <Avatar key={u.id} name={u.name} src={u.avatarUrl} color={u.avatarColor ?? undefined} size={20} className="ring-2 ring-surface" />
                   ))}
                 </span>
                 {shared.overflow > 0 && (

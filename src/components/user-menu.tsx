@@ -14,6 +14,8 @@ export type WorkspaceOption = { id: string; name: string; role: string; active: 
 export function UserMenu({
   userName,
   userEmail,
+  userAvatarUrl,
+  userAvatarColor,
   isSystemAdmin,
   workspaces,
   placement = "up",
@@ -21,6 +23,8 @@ export function UserMenu({
 }: {
   userName: string;
   userEmail: string;
+  userAvatarUrl?: string | null;
+  userAvatarColor?: string | null;
   isManager?: boolean; // accepted for compatibility (settings gating is server-side)
   isSystemAdmin: boolean;
   workspaces: WorkspaceOption[];
@@ -73,7 +77,7 @@ export function UserMenu({
           compact && "p-0",
         )}
       >
-        <Avatar name={userName} size={compact ? 30 : 28} />
+        <Avatar name={userName} src={userAvatarUrl} color={userAvatarColor ?? undefined} size={compact ? 30 : 28} />
         {!compact && (
           <>
             <div className="min-w-0 flex-1">

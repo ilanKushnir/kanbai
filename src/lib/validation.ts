@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS, NOTE_BUCKETS } from "./constants";
 import { COLUMN_STAGES } from "./column-stage";
+import { isAvatarColor } from "./avatar-colors";
 
 /**
  * A due date in ISO 8601, accepted in any of three unambiguous shapes:
@@ -360,6 +361,12 @@ export const updateAccountSchema = z.object({
   name: z.string().trim().min(1).max(60).optional(),
   email: z.email().max(200).optional(),
   avatarUrl: z.url().max(2000).nullable().optional().or(z.literal("")),
+  avatarColor: z
+    .string()
+    .refine(isAvatarColor, "Pick a color from the avatar palette.")
+    .nullable()
+    .optional()
+    .or(z.literal("")),
   defaultLanding: z.enum(LANDING_PAGES).optional(),
   weekStartsOn: z.number().int().min(0).max(6).optional(),
   handedness: z.enum(["right", "left"]).optional(),

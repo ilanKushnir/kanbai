@@ -17,6 +17,7 @@ model User {
   email        String   @unique
   name         String
   avatarUrl    String?
+  avatarColor  String?  // curated hex for the initials avatar (see lib/avatar-colors); null = brand default
   passwordHash String?
   systemRole   String   @default("user") // "user" | "admin" (instance-wide super admin)
   status       String   @default("active") // "active" | "disabled"

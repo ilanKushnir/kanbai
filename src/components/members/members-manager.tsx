@@ -17,6 +17,8 @@ type MemberRow = {
   userId: string;
   name: string;
   email: string;
+  avatarUrl: string | null;
+  avatarColor: string | null;
   role: string;
   isOwner: boolean;
   isSelf: boolean;
@@ -85,7 +87,7 @@ export function MembersManager({
               key={m.userId}
               className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-3 shadow-card"
             >
-              <Avatar name={m.name} size={36} />
+              <Avatar name={m.name} src={m.avatarUrl} color={m.avatarColor ?? undefined} size={36} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">{m.name}</span>

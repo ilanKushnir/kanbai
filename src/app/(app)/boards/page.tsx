@@ -31,7 +31,7 @@ export default async function BoardsPage({
       include: {
         columns: { select: { isDone: true, _count: { select: { tickets: true } } } },
         access: {
-          select: { level: true, user: { select: { id: true, name: true, avatarUrl: true } } },
+          select: { level: true, user: { select: { id: true, name: true, avatarUrl: true, avatarColor: true } } },
         },
       },
     }),

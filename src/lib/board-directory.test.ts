@@ -49,7 +49,7 @@ test("section labels state the actual semantics (no per-board ownership exists)"
 
 // ── Shared indicator summary ─────────────────────────────────────────────────
 
-const person = (id: string, name: string) => ({ id, name, avatarUrl: null });
+const person = (id: string, name: string) => ({ id, name, avatarUrl: null, avatarColor: null });
 
 test("board with no grants gets no face-pile summary", () => {
   assert.equal(sharedSummary({ sharedWith: [] }), null);

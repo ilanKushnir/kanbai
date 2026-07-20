@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildMyDayCompletionSeries,
   buildMyDayDoneArchive,
   buildMyDayFocusItems,
   buildMyDayQueue,
@@ -131,5 +132,46 @@ test("My Day groups completed tickets and notes by completion day, collapsed and
     "note:note-today",
     "ticket:ticket-yesterday",
     "note:note-yesterday",
+  ]);
+});
+
+test("buildMyDayCompletionSeries yields a dense, oldest-first window ending today", () => {
+  const series = buildMyDayCompletionSeries({
+    now: todayNoon,
+    days: 14,
+    tickets: [
+      { ...ticket({ id: "t-today" }), completedOn: today },
+      { ...ticket({ id: "t-today-2" }), completedOn: today },
+      { ...ticket({ id: "t-mid" }), completedOn: "2026-06-15" },
+      { ...ticket({ id: "t-outside" }), completedOn: "2026-06-01" },
+      { ...ticket({ id: "t-open" }), completedOn: null },
+    ],
+    notes: [
+      note({ id: "n-today", doneOn: today }),
+      note({ id: "n-mid", doneOn: "2026-06-15" }),
+      note({ id: "n-open", doneOn: null }),
+    ],
+  });
+
+  assert.equal(series.length, 14);
+  assert.equal(series[0].day, "2026-06-08");
+  assert.equal(series[13].day, today);
+  // No gaps: every consecutive pair is one calendar day apart.
+  for (let i = 1; i < series.length; i++) {
+    assert.ok(series[i - 1].day < series[i].day);
+  }
+  assert.deepEqual(series[13], { day: today, tickets: 2, notes: 1 });
+  assert.deepEqual(series[7], { day: "2026-06-15", tickets: 1, notes: 1 });
+  // Outside the window and still-open items are not counted anywhere.
+  const total = series.reduce((n, p) => n + p.tickets + p.notes, 0);
+  assert.equal(total, 5);
+});
+
+test("buildMyDayCompletionSeries zero-fills days with no completions", () => {
+  const series = buildMyDayCompletionSeries({ now: todayNoon, days: 3, tickets: [], notes: [] });
+  assert.deepEqual(series, [
+    { day: "2026-06-19", tickets: 0, notes: 0 },
+    { day: "2026-06-20", tickets: 0, notes: 0 },
+    { day: "2026-06-21", tickets: 0, notes: 0 },
   ]);
 });

@@ -23,6 +23,7 @@ export const PATCH = handler(async (req: Request) => {
     }
   }
   if (input.avatarUrl !== undefined) data.avatarUrl = input.avatarUrl || null;
+  if (input.avatarColor !== undefined) data.avatarColor = input.avatarColor || null;
   if (
     input.defaultLanding !== undefined ||
     input.weekStartsOn !== undefined ||

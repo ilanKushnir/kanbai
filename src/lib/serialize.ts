@@ -13,15 +13,18 @@ export const ticketInclude = {
 
 export type TicketWithRelations = Prisma.TicketGetPayload<{ include: typeof ticketInclude }>;
 
-export type UserLite = { id: string; name: string; avatarUrl?: string | null };
+export type UserLite = { id: string; name: string; avatarUrl?: string | null; avatarColor?: string | null };
 
 export function serializeTicket(t: TicketWithRelations, usersById?: Map<string, UserLite>) {
   let assignee: null | {
     type: "user" | "agent";
     id: string;
     name: string;
+    /** Agent color, or a user's chosen initials-avatar color. */
     color?: string;
     kind?: string;
+    /** User assignees only: profile image for the card avatar. */
+    avatarUrl?: string | null;
     /** Agent assignees only: the owning user (null = workspace agent). */
     ownerUserId?: string | null;
     ownerName?: string | null;
@@ -39,7 +42,13 @@ export function serializeTicket(t: TicketWithRelations, usersById?: Map<string, 
     };
   } else if (t.assigneeType === "user" && t.assigneeUserId) {
     const u = usersById?.get(t.assigneeUserId);
-    assignee = { type: "user", id: t.assigneeUserId, name: u?.name ?? "Someone" };
+    assignee = {
+      type: "user",
+      id: t.assigneeUserId,
+      name: u?.name ?? "Someone",
+      color: u?.avatarColor ?? undefined,
+      avatarUrl: u?.avatarUrl ?? null,
+    };
   }
 
   return {

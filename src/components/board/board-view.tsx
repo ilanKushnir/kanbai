@@ -75,7 +75,7 @@ type AgentLite = {
   ownerUserId: string | null;
   ownerName: string | null;
 };
-type MemberLite = { id: string; name: string; avatarUrl?: string | null };
+type MemberLite = { id: string; name: string; avatarUrl?: string | null; avatarColor?: string | null };
 /** Assignee chosen in the add-card composer, before the ticket exists. */
 type NewAssignee = { type: "user" | "agent"; id: string; name: string; color?: string; kind?: string };
 type ColumnMeta = {
@@ -209,7 +209,7 @@ export function BoardView({
 }: {
   board: BoardData;
   agents: AgentLite[];
-  members?: { id: string; name: string; avatarUrl?: string | null }[];
+  members?: MemberLite[];
   currentUser?: { id: string; name: string } | null;
   initialTicketId?: string;
   returnTo?: "notes";
@@ -1816,7 +1816,7 @@ function AddCard({
                     setAssignee({ type: "user", id: m.id, name: m.name });
                   }}
                 >
-                  <Avatar name={m.name} size={16} />
+                  <Avatar name={m.name} src={m.avatarUrl} color={m.avatarColor ?? undefined} size={16} />
                   {m.name}
                   {m.id === currentUser?.id && <span className="text-[0.625rem] text-fg-subtle">you</span>}
                 </MenuItem>

@@ -39,7 +39,7 @@ function subscribeToStorage(onChange: () => void) {
 export function BoardViewClient(props: {
   board: BoardData;
   agents: AgentLite[];
-  members?: { id: string; name: string; avatarUrl?: string | null }[];
+  members?: { id: string; name: string; avatarUrl?: string | null; avatarColor?: string | null }[];
   currentUser?: { id: string; name: string } | null;
   weekStartsOn?: number;
   initialTicketId?: string;

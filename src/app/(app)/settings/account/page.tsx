@@ -14,6 +14,7 @@ export default async function AccountPage() {
         name: ctx.user.name,
         email: ctx.user.email,
         avatarUrl: ctx.user.avatarUrl,
+        avatarColor: ctx.user.avatarColor,
         createdAt: ctx.user.createdAt.toISOString(),
         isSystemAdmin: ctx.isSystemAdmin,
         role: ctx.role,

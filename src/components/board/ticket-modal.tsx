@@ -34,7 +34,7 @@ import type { SerializedTicket } from "@/lib/serialize";
 type ColumnMeta = { id: string; name: string; isDone: boolean; subStates: string[] };
 type LabelLite = { id: string; name: string; color: string };
 type AgentLite = { id: string; name: string; color: string; kind: string };
-type MemberLite = { id: string; name: string; avatarUrl?: string | null };
+type MemberLite = { id: string; name: string; avatarUrl?: string | null; avatarColor?: string | null };
 
 export function TicketModal({
   ticket,
@@ -347,7 +347,8 @@ export function TicketModal({
                 <>
                   <Avatar
                     name={t.assignee.name}
-                    color={t.assignee.type === "agent" ? t.assignee.color : undefined}
+                    color={t.assignee.color}
+                    src={t.assignee.type === "user" ? t.assignee.avatarUrl : undefined}
                     isAgent={t.assignee.type === "agent"}
                     size={16}
                     title={assigneeLabel(t.assignee)}
@@ -385,7 +386,7 @@ export function TicketModal({
                     patch({ assigneeType: "user", assigneeUserId: m.id });
                   }}
                 >
-                  <Avatar name={m.name} size={16} />
+                  <Avatar name={m.name} src={m.avatarUrl} color={m.avatarColor ?? undefined} size={16} />
                   {m.name}
                   {m.id === currentUser?.id && <span className="text-[0.625rem] text-fg-subtle">you</span>}
                 </MenuItem>

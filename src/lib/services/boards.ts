@@ -90,7 +90,7 @@ export async function getBoardWithData(
     include: { user: true },
   });
   const usersById = new Map<string, UserLite>(
-    members.map((m) => [m.user.id, { id: m.user.id, name: m.user.name, avatarUrl: m.user.avatarUrl }]),
+    members.map((m) => [m.user.id, { id: m.user.id, name: m.user.name, avatarUrl: m.user.avatarUrl, avatarColor: m.user.avatarColor }]),
   );
 
   return {
@@ -278,7 +278,7 @@ export async function getPublicBoard(publicId: string) {
     include: { user: true },
   });
   const usersById = new Map<string, UserLite>(
-    members.map((m) => [m.user.id, { id: m.user.id, name: m.user.name, avatarUrl: m.user.avatarUrl }]),
+    members.map((m) => [m.user.id, { id: m.user.id, name: m.user.name, avatarUrl: m.user.avatarUrl, avatarColor: m.user.avatarColor }]),
   );
 
   return {

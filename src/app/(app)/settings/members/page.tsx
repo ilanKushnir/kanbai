@@ -44,6 +44,8 @@ export default async function MembersPage() {
       userId: m.userId,
       name: m.user.name,
       email: m.user.email,
+      avatarUrl: m.user.avatarUrl,
+      avatarColor: m.user.avatarColor,
       role: m.role,
       isOwner: m.role === "owner",
       isSelf: m.userId === ctx.user.id,

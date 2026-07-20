@@ -12,6 +12,7 @@ import { HttpError } from "@/lib/api";
 import { assertTicketAccess } from "@/lib/authz";
 import { dueMeta, priorityMeta } from "@/lib/display";
 import {
+  buildMyDayCompletionSeries,
   buildMyDayDoneArchive,
   buildMyDayQueue,
   countMyDayUnsortedNotes,
@@ -24,6 +25,7 @@ import {
 import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { DoneButton } from "@/components/my-day/done-button";
+import { MomentumChart } from "@/components/my-day/momentum-chart";
 
 export const metadata: Metadata = { title: "My Day" };
 export const dynamic = "force-dynamic";
@@ -66,7 +68,7 @@ export default async function MyDayPage() {
 
   const members = await db.workspaceMember.findMany({ where: { workspaceId: ctx.workspace.id }, include: { user: true } });
   const usersById = new Map<string, UserLite>(
-    members.map((m) => [m.user.id, { id: m.user.id, name: m.user.name, avatarUrl: m.user.avatarUrl }]),
+    members.map((m) => [m.user.id, { id: m.user.id, name: m.user.name, avatarUrl: m.user.avatarUrl, avatarColor: m.user.avatarColor }]),
   );
 
   const boardScope = ctx.isManager
@@ -129,6 +131,7 @@ export default async function MyDayPage() {
   const dayTotal = doneToday + remaining;
   const pct = dayTotal > 0 ? Math.round((doneToday / dayTotal) * 100) : 0;
   const queueEmpty = remaining + queue.anytime.length === 0;
+  const momentum = buildMyDayCompletionSeries({ now, tickets: doneRows, notes: todayNotes, days: 14 });
 
   // One continuous execution order across the groups: overdue first, then today.
   const todayOffset = queue.overdue.length;
@@ -136,45 +139,32 @@ export default async function MyDayPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-24 pt-6 md:px-6 md:pb-8 md:pt-8">
-      <header className="rounded-3xl border border-border bg-surface/60 p-5 shadow-card md:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">{dateLabel}</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight md:text-3xl">My Day</h1>
-            <p className="mt-1 text-sm text-fg-muted">
-              {remaining === 0
-                ? doneToday > 0
-                  ? "Everything due today is done."
-                  : "Nothing is due today."
-                : `${remaining} ${remaining === 1 ? "item" : "items"} to clear today.`}
-            </p>
+      <header className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_23rem] lg:items-stretch">
+        {/* The day's command surface: same inverted-iris capture language as
+            the Notes composer, restated as "here is your plan". */}
+        <div className="kb-day-hero flex flex-col rounded-3xl p-5 md:p-6">
+          <div className="flex items-start justify-between gap-5">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-white/60">{dateLabel}</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-white md:text-3xl">My Day</h1>
+              <p className="mt-1.5 text-sm text-white/75">
+                {remaining === 0
+                  ? doneToday > 0
+                    ? "Everything due today is done."
+                    : "Nothing is due today."
+                  : `${remaining} ${remaining === 1 ? "item" : "items"} to clear today.`}
+              </p>
+            </div>
+            <DayRing done={doneToday} total={dayTotal} pct={pct} />
           </div>
-          <div className="flex items-center gap-2">
-            <HeaderStat label="Overdue" value={queue.overdue.length} alert={queue.overdue.length > 0} />
-            <HeaderStat label="Today" value={queue.today.length} />
-            <HeaderStat label="Done" value={doneToday} good={doneToday > 0} />
+          <div className="mt-5 flex flex-wrap items-center gap-2 lg:mt-auto lg:pt-5">
+            <HeroStat label="Overdue" value={queue.overdue.length} dot="#ff6f86" emphasize={queue.overdue.length > 0} />
+            <HeroStat label="Due today" value={queue.today.length} dot="#34d6ee" />
+            <HeroStat label="Done" value={doneToday} dot="#32da98" emphasize={doneToday > 0} />
           </div>
         </div>
-        {dayTotal > 0 && (
-          <div className="mt-5">
-            <div className="flex items-center justify-between text-xs text-fg-subtle">
-              <span>
-                {doneToday} of {dayTotal} done
-              </span>
-              <span className="tabular-nums">{pct}%</span>
-            </div>
-            <div
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={dayTotal}
-              aria-valuenow={doneToday}
-              aria-label="Today's progress"
-              className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2"
-            >
-              <div className="h-full rounded-full bg-success transition-[width]" style={{ width: `${pct}%` }} />
-            </div>
-          </div>
-        )}
+
+        <MomentumChart series={momentum} />
       </header>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -252,13 +242,69 @@ export default async function MyDayPage() {
   );
 }
 
-function HeaderStat({ label, value, alert, good }: { label: string; value: number; alert?: boolean; good?: boolean }) {
+/** A quiet chip on the hero: colored dot carries identity, text stays white. */
+function HeroStat({ label, value, dot, emphasize }: { label: string; value: number; dot: string; emphasize?: boolean }) {
   return (
-    <div className="min-w-[4.25rem] rounded-2xl border border-border bg-surface/60 px-3 py-2 text-center shadow-sm">
-      <div className={alert ? "text-xl font-bold text-danger" : good ? "text-xl font-bold text-success" : "text-xl font-bold"}>
-        {value}
+    <span
+      className={
+        emphasize
+          ? "inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-2.5 py-1 text-xs font-medium text-white"
+          : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-xs font-medium text-white/80"
+      }
+    >
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} />
+      {label}
+      <span className="font-bold tabular-nums text-white">{value}</span>
+    </span>
+  );
+}
+
+/**
+ * Today's progress as a ring: done ÷ (done + still due today). Empty days show
+ * a calm sparkle instead of a meaningless 0%.
+ */
+function DayRing({ done, total, pct }: { done: number; total: number; pct: number }) {
+  const size = 92;
+  const stroke = 7;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  if (total === 0) {
+    return (
+      <div className="grid h-[5.75rem] w-[5.75rem] shrink-0 place-items-center rounded-full border border-white/15 bg-white/10">
+        <Sparkles className="h-7 w-7 text-white/80" />
       </div>
-      <div className="text-[0.625rem] uppercase tracking-wider text-fg-subtle">{label}</div>
+    );
+  }
+  return (
+    <div
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={done}
+      aria-label={`Today's progress: ${done} of ${total} done`}
+      className="relative shrink-0"
+      style={{ width: size, height: size }}
+    >
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgb(255 255 255 / 0.16)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="#34d6ee"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - pct / 100)}
+        />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center text-center">
+        <div>
+          <div className="text-lg font-bold leading-none text-white">{pct}%</div>
+          <div className="mt-0.5 text-[0.625rem] font-medium uppercase tracking-wider text-white/60">done</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -342,7 +388,7 @@ function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; ur
           </Badge>
         )}
         <Badge tone="default">Ticket</Badge>
-        {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.type === "agent" ? row.assignee.color : undefined} isAgent={row.assignee.type === "agent"} size={26} />}
+        {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.color} src={row.assignee.type === "user" ? row.assignee.avatarUrl : undefined} isAgent={row.assignee.type === "agent"} size={26} />}
         <form action={markMyDayTicketDone} className="ml-auto">
           <input type="hidden" name="ticketId" value={row.id} />
           <DoneControl disabled={!row.doneColumnId} title={row.doneColumnId ? "Mark ticket done" : "No done column configured"} />

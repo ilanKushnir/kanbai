@@ -20,7 +20,7 @@ export type BoardCardData = {
   ticketCount: number;
   doneCount: number;
   /** Members with an explicit BoardAccess grant, excluding the viewer. */
-  sharedWith: { id: string; name: string; avatarUrl: string | null }[];
+  sharedWith: { id: string; name: string; avatarUrl: string | null; avatarColor: string | null }[];
   /** The viewer's own explicit grant (always null for managers — theirs is implicit). */
   viewerLevel: "view" | "edit" | null;
 };
@@ -58,7 +58,7 @@ export function buildBoardSections<B extends { id: string }>(
 }
 
 export type SharedSummary = {
-  avatars: { id: string; name: string; avatarUrl: string | null }[];
+  avatars: { id: string; name: string; avatarUrl: string | null; avatarColor: string | null }[];
   overflow: number;
   label: string;
 };

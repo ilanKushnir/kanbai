@@ -30,7 +30,7 @@ async function serializeTicketWithAssignee(t: TicketWithRelations) {
   if (t.assigneeType === "user" && t.assigneeUserId) {
     const u = await db.user.findUnique({
       where: { id: t.assigneeUserId },
-      select: { id: true, name: true, avatarUrl: true },
+      select: { id: true, name: true, avatarUrl: true, avatarColor: true },
     });
     if (u) usersById = new Map([[u.id, u]]);
   }
