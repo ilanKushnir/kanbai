@@ -23,6 +23,20 @@ export function assigneeLabel(assignee: { type: "user" | "agent"; name: string; 
     : assignee.name;
 }
 
+/**
+ * Completion chip for tickets sitting in a done column — shown INSTEAD of the
+ * due chip, so a finished ticket never reads "overdue". Falls back to a bare
+ * "Done" for legacy rows completed before completedAt existed.
+ */
+export function completionMeta(completedAt: string | null | undefined): { label: string; tone: "emerald" } {
+  if (!completedAt) return { label: "Done", tone: "emerald" };
+  const d = new Date(completedAt);
+  return {
+    label: `Done ${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
+    tone: "emerald",
+  };
+}
+
 /** Human due label + urgency tone for chips. */
 export function dueMeta(iso: string | null): { label: string; tone: "rose" | "amber" | "slate" | "emerald" } | null {
   if (!iso) return null;

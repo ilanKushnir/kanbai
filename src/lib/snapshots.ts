@@ -33,8 +33,12 @@ type SnapTicket = {
   priority: string;
   subState?: string | null;
   dueDate: string | null;
+  // Optional: snapshots taken before completedAt/multi-assign existed won't carry these.
+  completedAt?: string | null;
   assigneeType: string | null;
   assigneeUserId: string | null;
+  /** All human assignees in display order (first = primary). */
+  assigneeUserIds?: string[];
   assigneeAgentId: string | null;
   createdByType: string;
   createdById: string | null;
@@ -83,6 +87,7 @@ export async function captureWorkspaceBoards(workspaceId: string): Promise<{ boa
         orderBy: { position: "asc" },
         include: {
           labels: { select: { labelId: true } },
+          assignees: { orderBy: { position: "asc" }, select: { userId: true } },
           comments: { orderBy: { createdAt: "asc" } },
           subtasks: { orderBy: { position: "asc" } },
         },
@@ -124,8 +129,10 @@ export async function captureWorkspaceBoards(workspaceId: string): Promise<{ boa
         priority: t.priority,
         subState: t.subState,
         dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+        completedAt: t.completedAt ? t.completedAt.toISOString() : null,
         assigneeType: t.assigneeType,
         assigneeUserId: t.assigneeUserId,
+        assigneeUserIds: t.assignees.map((a) => a.userId),
         assigneeAgentId: t.assigneeAgentId,
         createdByType: t.createdByType,
         createdById: t.createdById,
@@ -304,6 +311,7 @@ async function buildBoardRestoreOps(workspaceId: string, b: SnapBoard): Promise<
   const noteRefs = new Set<string>();
   for (const t of b.tickets) {
     if (t.assigneeUserId) userRefs.add(t.assigneeUserId);
+    for (const uid of t.assigneeUserIds ?? []) userRefs.add(uid);
     if (t.createdById) userRefs.add(t.createdById);
     if (t.assigneeAgentId) agentRefs.add(t.assigneeAgentId);
     if (t.sourceNoteId) noteRefs.add(t.sourceNoteId);
@@ -379,8 +387,13 @@ async function buildBoardRestoreOps(workspaceId: string, b: SnapBoard): Promise<
         },
       }),
     ),
-    ...b.tickets.map((t) =>
-      db.ticket.create({
+    ...b.tickets.map((t) => {
+      // Multi-assign rows: pre-multi-assign snapshots fall back to the single
+      // legacy pair; either way only still-existing users are recreated.
+      const assigneeUserIds = (
+        t.assigneeUserIds ?? (t.assigneeType === "user" && t.assigneeUserId ? [t.assigneeUserId] : [])
+      ).filter((uid) => validUsers.has(uid));
+      return db.ticket.create({
         data: {
           id: t.id,
           boardId: b.id,
@@ -392,8 +405,12 @@ async function buildBoardRestoreOps(workspaceId: string, b: SnapBoard): Promise<
           priority: t.priority,
           subState: t.subState ?? null,
           dueDate: t.dueDate ? new Date(t.dueDate) : null,
+          completedAt: t.completedAt ? new Date(t.completedAt) : null,
           assigneeType: t.assigneeType,
           assigneeUserId: t.assigneeUserId && validUsers.has(t.assigneeUserId) ? t.assigneeUserId : null,
+          assignees: assigneeUserIds.length
+            ? { create: assigneeUserIds.map((userId, position) => ({ userId, position })) }
+            : undefined,
           assigneeAgentId: t.assigneeAgentId && validAgents.has(t.assigneeAgentId) ? t.assigneeAgentId : null,
           createdByType: t.createdByType,
           createdById: t.createdById && validUsers.has(t.createdById) ? t.createdById : null,
@@ -403,8 +420,8 @@ async function buildBoardRestoreOps(workspaceId: string, b: SnapBoard): Promise<
               : null,
           createdAt: new Date(t.createdAt),
         },
-      }),
-    ),
+      });
+    }),
     ...b.tickets.flatMap((t) =>
       t.labelIds
         .filter((lid) => b.labels.some((l) => l.id === lid))

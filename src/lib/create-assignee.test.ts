@@ -23,7 +23,7 @@ test("handleCreate sends the chosen assignee with the create call", () => {
   assert.match(boardView, /assigneeUserId: assignee\.id/);
   assert.match(boardView, /assigneeAgentId: assignee\.id/);
   // The optimistic temp card shows the assignee immediately.
-  assert.match(boardView, /assignee: assignee \?\? null/);
+  assert.match(boardView, /assignee: assignee \? \{ \.\.\.assignee, avatarUrl: null \} : null/);
 });
 
 test("AddCard defaults the assignee to the current user; explicit Unassigned is sent as null", () => {

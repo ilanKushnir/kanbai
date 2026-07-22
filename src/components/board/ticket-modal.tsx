@@ -27,7 +27,7 @@ import { RichEditor } from "@/components/ui/rich-editor";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
-import { priorityMeta, dueMeta, assigneeLabel } from "@/lib/display";
+import { priorityMeta, dueMeta, completionMeta, assigneeLabel } from "@/lib/display";
 import { timeAgo, cn } from "@/lib/utils";
 import type { SerializedTicket } from "@/lib/serialize";
 
@@ -146,13 +146,17 @@ export function TicketModal({
   const doneColumn = columns.find((c) => c.isDone);
   const isDone = Boolean(column?.isDone);
   const pr = priorityMeta(t.priority);
-  const due = dueMeta(t.dueDate);
+  // Done tickets show their completion date — the due chip goes quiet so a
+  // finished ticket never reads "overdue".
+  const due = isDone ? null : dueMeta(t.dueDate);
+  const completed = isDone ? completionMeta(t.completedAt) : null;
   const dueValue = t.dueDate ? t.dueDate.slice(0, 10) : "";
 
   const labelIds = new Set(t.labels.map((l) => l.id));
   function toggleLabel(id: string) {
     const next = new Set(labelIds);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     patch({ labelIds: [...next] });
   }
 
@@ -274,6 +278,12 @@ export function TicketModal({
 
       {/* Meta row */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
+        {completed && (
+          <Badge tone={completed.tone}>
+            <CircleCheck className="h-3 w-3" />
+            {completed.label}
+          </Badge>
+        )}
         {/* Priority */}
         <Menu
           trigger={
@@ -339,21 +349,30 @@ export function TicketModal({
           )}
         </Menu>
 
-        {/* Assignee */}
+        {/* Assignee — humans multi-select (toggle, menu stays open); agents stay
+            single-select since a ticket holds at most one agent. */}
         <Menu
           trigger={
             <button className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2 cursor-pointer">
               {t.assignee ? (
                 <>
-                  <Avatar
-                    name={t.assignee.name}
-                    color={t.assignee.color}
-                    src={t.assignee.type === "user" ? t.assignee.avatarUrl : undefined}
-                    isAgent={t.assignee.type === "agent"}
-                    size={16}
-                    title={assigneeLabel(t.assignee)}
-                  />
+                  <span className="flex items-center -space-x-1">
+                    {(t.assignees.length ? t.assignees : [t.assignee]).slice(0, 3).map((a) => (
+                      <Avatar
+                        key={a.id}
+                        name={a.name}
+                        color={a.color}
+                        src={a.type === "user" ? a.avatarUrl : undefined}
+                        isAgent={a.type === "agent"}
+                        size={16}
+                        title={assigneeLabel(a)}
+                      />
+                    ))}
+                  </span>
                   {t.assignee.name}
+                  {t.assignees.length > 1 && (
+                    <span className="text-fg-subtle">+{t.assignees.length - 1}</span>
+                  )}
                   {/* Owner context for user-owned agents ("Hermes · Yuval"): anyone
                       can see whose agent holds the ticket, only the owner assigns. */}
                   {t.assignee.type === "agent" && t.assignee.ownerName && (
@@ -377,20 +396,29 @@ export function TicketModal({
               >
                 Unassigned
               </MenuItem>
-              {assignableUsers.map((m) => (
-                <MenuItem
-                  key={m.id}
-                  active={t.assignee?.type === "user" && t.assignee.id === m.id}
-                  onClick={() => {
-                    close();
-                    patch({ assigneeType: "user", assigneeUserId: m.id });
-                  }}
-                >
-                  <Avatar name={m.name} src={m.avatarUrl} color={m.avatarColor ?? undefined} size={16} />
-                  {m.name}
-                  {m.id === currentUser?.id && <span className="text-[0.625rem] text-fg-subtle">you</span>}
-                </MenuItem>
-              ))}
+              {assignableUsers.map((m) => {
+                const userIds =
+                  t.assignee?.type === "user"
+                    ? (t.assignees.length ? t.assignees : [t.assignee]).map((a) => a.id)
+                    : [];
+                const on = userIds.includes(m.id);
+                return (
+                  <MenuItem
+                    key={m.id}
+                    active={on}
+                    onClick={() => {
+                      const next = on ? userIds.filter((id) => id !== m.id) : [...userIds, m.id];
+                      if (!next.length) close();
+                      patch(next.length ? { assigneeType: "user", assigneeUserIds: next } : { assigneeType: null });
+                    }}
+                  >
+                    <Avatar name={m.name} src={m.avatarUrl} color={m.avatarColor ?? undefined} size={16} />
+                    {m.name}
+                    {m.id === currentUser?.id && <span className="text-[0.625rem] text-fg-subtle">you</span>}
+                    {on && <Check className="ml-auto h-3.5 w-3.5" />}
+                  </MenuItem>
+                );
+              })}
               {agents.map((a) => (
                 <MenuItem
                   key={a.id}

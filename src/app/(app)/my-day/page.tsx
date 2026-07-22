@@ -111,7 +111,7 @@ export default async function MyDayPage() {
     doneColumnId: t.board.columns[0]?.id ?? null,
   });
   const rows: Row[] = tickets.map(toRow);
-  const doneRows: Row[] = doneTickets.map((t) => ({ ...toRow(t), completedOn: ymd(t.updatedAt) }));
+  const doneRows: Row[] = doneTickets.map((t) => ({ ...toRow(t), completedOn: ymd(t.completedAt ?? t.updatedAt) }));
   const todayNotes: MyDayNote[] = notes.map((n) => ({
     ...n,
     createdAt: n.createdAt.toISOString(),

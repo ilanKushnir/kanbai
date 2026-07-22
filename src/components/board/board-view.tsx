@@ -331,7 +331,11 @@ export function BoardView({
     if (filters.priorities.size && !filters.priorities.has(t.priority)) return false;
     if (filters.labelIds.size && !t.labels.some((l) => filters.labelIds.has(l.id))) return false;
     if (filters.assignee === "agents" && t.assignee?.type !== "agent") return false;
-    if (filters.assignee === "me" && !(t.assignee?.type === "user" && t.assignee.id === currentUser?.id)) return false;
+    if (
+      filters.assignee === "me" &&
+      !(t.assignee?.type === "user" && (t.assignee.id === currentUser?.id || t.assignees?.some((a) => a.id === currentUser?.id)))
+    )
+      return false;
     if (filters.assignee === "unassigned" && t.assignee) return false;
     return true;
   }
@@ -586,7 +590,10 @@ export function BoardView({
       priority: "none",
       subState: sub,
       dueDate: null,
-      assignee: assignee ?? null,
+      completedAt: null,
+      isDone: col?.isDone ?? false,
+      assignee: assignee ? { ...assignee, avatarUrl: null } : null as SerializedTicket["assignee"],
+      assignees: assignee ? [{ ...assignee, avatarUrl: null }] : [],
       createdBy: { type: "user", id: currentUser?.id ?? null },
       labels: [],
       subtasks: [],

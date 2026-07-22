@@ -125,6 +125,8 @@ export const createTicketSchema = z.object({
   dueDate: dueDateSchema.nullable().optional(),
   assigneeType: z.enum(["user", "agent"]).nullable().optional(),
   assigneeUserId: z.string().nullable().optional(),
+  // Multi-assign (humans): full ordered list; first entry = primary assignee.
+  assigneeUserIds: z.array(z.string().min(1)).max(20).nullable().optional(),
   assigneeAgentId: z.string().nullable().optional(),
   labelIds: z.array(z.string()).optional(),
 });
@@ -136,6 +138,8 @@ export const updateTicketSchema = z.object({
   dueDate: dueDateSchema.nullable().optional(),
   assigneeType: z.enum(["user", "agent"]).nullable().optional(),
   assigneeUserId: z.string().nullable().optional(),
+  // Multi-assign (humans): replaces the whole list; [] or null unassigns.
+  assigneeUserIds: z.array(z.string().min(1)).max(20).nullable().optional(),
   assigneeAgentId: z.string().nullable().optional(),
   columnId: z.string().optional(),
   position: z.number().optional(),

@@ -7,7 +7,7 @@ import { Modal } from "@/components/ui/modal";
 import { RichText } from "@/components/ui/rich-text";
 import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { priorityMeta, dueMeta } from "@/lib/display";
+import { priorityMeta, dueMeta, completionMeta } from "@/lib/display";
 import type { PublicBoardData } from "@/lib/services/boards";
 import type { SerializedPublicTicket } from "@/lib/serialize";
 
@@ -48,7 +48,8 @@ export function PublicBoardView({ board }: { board: PublicBoardData }) {
 
 function ReadOnlyTicket({ ticket, onClose }: { ticket: SerializedPublicTicket; onClose: () => void }) {
   const pr = priorityMeta(ticket.priority);
-  const due = dueMeta(ticket.dueDate);
+  // Done tickets show completion, never a stale "overdue".
+  const due = ticket.isDone ? completionMeta(ticket.completedAt) : dueMeta(ticket.dueDate);
   return (
     <Modal open onClose={onClose} size="lg">
       <div className="flex items-center gap-2 pb-2 text-xs text-fg-subtle">

@@ -56,8 +56,9 @@ type BoardCtx = { id: string; workspaceId: string };
 
 /** A column referenced on a ticket must live on the same board. */
 async function assertColumnOnBoard(columnId: string, board: BoardCtx) {
-  const col = await db.column.findUnique({ where: { id: columnId }, select: { boardId: true } });
+  const col = await db.column.findUnique({ where: { id: columnId }, select: { boardId: true, isDone: true } });
   if (!col || col.boardId !== board.id) throw new HttpError(422, "Column is not on this board");
+  return col;
 }
 
 /** Drop any label ids that don't belong to this board (prevents cross-board/tenant labels). */
@@ -81,29 +82,67 @@ async function boardLabelIds(labelIds: string[], board: BoardCtx): Promise<strin
  * agents stay assignable by anyone. Throws if the referenced user/agent is
  * foreign, lacks access to this board, or is an agent the actor doesn't own.
  */
+async function assertUserAssignable(board: BoardCtx, userId: string) {
+  const member = await db.workspaceMember.findFirst({
+    where: { workspaceId: board.workspaceId, userId },
+    select: { role: true },
+  });
+  if (!member) throw new HttpError(422, "Assignee is not a member of this workspace", "assignee_not_member");
+  if (member.role !== "owner" && member.role !== "admin") {
+    const grant = await db.boardAccess.findUnique({
+      where: { boardId_userId: { boardId: board.id, userId } },
+      select: { id: true },
+    });
+    if (!grant) {
+      throw new HttpError(422, "Assignee does not have access to this board", "assignee_no_board_access");
+    }
+  }
+}
+
+/**
+ * Normalize the raw assignee inputs into (type, userIds) so the legacy single
+ * `assigneeUserId` and the multi `assigneeUserIds` behave identically: a
+ * non-empty list implies "user" when no type was sent, and each shape maps to
+ * one ordered, de-duplicated list (first entry = primary assignee).
+ */
+function normalizeAssigneeInput(input: {
+  assigneeType?: "user" | "agent" | null;
+  assigneeUserId?: string | null;
+  assigneeUserIds?: string[] | null;
+  assigneeAgentId?: string | null;
+}): { type: "user" | "agent" | null | undefined; userIds: string[] } {
+  const list = input.assigneeUserIds?.length
+    ? input.assigneeUserIds
+    : input.assigneeUserId
+      ? [input.assigneeUserId]
+      : [];
+  const userIds = [...new Set(list)];
+  const type =
+    input.assigneeType !== undefined
+      ? input.assigneeType
+      : input.assigneeUserIds !== undefined
+        ? userIds.length
+          ? ("user" as const)
+          : null
+        : undefined;
+  return { type, userIds };
+}
+
 async function resolveAssignee(
   board: BoardCtx,
   type: "user" | "agent" | null | undefined,
-  userId: string | null | undefined,
+  userIds: string[],
   agentId: string | null | undefined,
   actor: Actor,
-): Promise<{ assigneeType: "user" | "agent" | null; assigneeUserId: string | null; assigneeAgentId: string | null }> {
-  if (type === "user" && userId) {
-    const member = await db.workspaceMember.findFirst({
-      where: { workspaceId: board.workspaceId, userId },
-      select: { role: true },
-    });
-    if (!member) throw new HttpError(422, "Assignee is not a member of this workspace", "assignee_not_member");
-    if (member.role !== "owner" && member.role !== "admin") {
-      const grant = await db.boardAccess.findUnique({
-        where: { boardId_userId: { boardId: board.id, userId } },
-        select: { id: true },
-      });
-      if (!grant) {
-        throw new HttpError(422, "Assignee does not have access to this board", "assignee_no_board_access");
-      }
-    }
-    return { assigneeType: "user", assigneeUserId: userId, assigneeAgentId: null };
+): Promise<{
+  assigneeType: "user" | "agent" | null;
+  assigneeUserId: string | null;
+  assigneeAgentId: string | null;
+  assigneeUserIds: string[];
+}> {
+  if (type === "user" && userIds.length) {
+    for (const userId of userIds) await assertUserAssignable(board, userId);
+    return { assigneeType: "user", assigneeUserId: userIds[0], assigneeAgentId: null, assigneeUserIds: userIds };
   }
   if (type === "agent" && agentId) {
     const agent = await db.agent.findUnique({
@@ -114,10 +153,10 @@ async function resolveAssignee(
       throw new HttpError(422, "Assignee agent is not in this workspace");
     }
     await assertActorMayAssignAgent(actor, agentId, agent.ownerUserId);
-    return { assigneeType: "agent", assigneeUserId: null, assigneeAgentId: agentId };
+    return { assigneeType: "agent", assigneeUserId: null, assigneeAgentId: agentId, assigneeUserIds: [] };
   }
   // null / unassigned (or a type with no id)
-  return { assigneeType: type ?? null, assigneeUserId: null, assigneeAgentId: null };
+  return { assigneeType: type ?? null, assigneeUserId: null, assigneeAgentId: null, assigneeUserIds: [] };
 }
 
 /**
@@ -155,6 +194,7 @@ export async function createTicket(
     dueDate?: string | null;
     assigneeType?: "user" | "agent" | null;
     assigneeUserId?: string | null;
+    assigneeUserIds?: string[] | null;
     assigneeAgentId?: string | null;
     labelIds?: string[];
     number?: number; // explicit number (migration); otherwise auto-assigned
@@ -166,8 +206,9 @@ export async function createTicket(
   await onMutation(actor, board.workspaceId);
 
   let columnId = input.columnId;
+  let columnIsDone = false;
   if (columnId) {
-    await assertColumnOnBoard(columnId, board);
+    columnIsDone = (await assertColumnOnBoard(columnId, board)).isDone;
   } else {
     const first = await db.column.findFirst({
       where: { boardId: board.id },
@@ -175,6 +216,7 @@ export async function createTicket(
     });
     if (!first) throw new HttpError(422, "Board has no columns");
     columnId = first.id;
+    columnIsDone = first.isDone;
   }
 
   const labelIds = await boardLabelIds(input.labelIds ?? [], board);
@@ -187,10 +229,12 @@ export async function createTicket(
     actor.id != null &&
     input.assigneeType === undefined &&
     input.assigneeUserId === undefined &&
+    input.assigneeUserIds === undefined &&
     input.assigneeAgentId === undefined;
+  const normalized = normalizeAssigneeInput(input);
   const assignee = defaultToActor
-    ? await resolveAssignee(board, "user", actor.id, null, actor)
-    : await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId, actor);
+    ? await resolveAssignee(board, "user", [actor.id!], null, actor)
+    : await resolveAssignee(board, normalized.type, normalized.userIds, input.assigneeAgentId, actor);
 
   const last = await db.ticket.findFirst({
     where: { columnId },
@@ -207,9 +251,14 @@ export async function createTicket(
     dueDate: input.dueDate ? new Date(input.dueDate) : null,
     ...(input.createdAt ? { createdAt: new Date(input.createdAt) } : {}),
     position: (last?.position ?? -1) + 1,
+    // Landing straight in a done column counts as completed (migrations).
+    completedAt: columnIsDone ? new Date() : null,
     assigneeType: assignee.assigneeType,
     assigneeUserId: assignee.assigneeUserId,
     assigneeAgentId: assignee.assigneeAgentId,
+    assignees: assignee.assigneeUserIds.length
+      ? { create: assignee.assigneeUserIds.map((userId, position) => ({ userId, position })) }
+      : undefined,
     createdByType: actor.type === "agent" ? "agent" : "user",
     // createdById has a FK to User, so only set it for human actors.
     createdById: actor.type === "user" ? actor.id ?? null : null,
@@ -265,6 +314,7 @@ export async function updateTicket(
     dueDate: string | null;
     assigneeType: "user" | "agent" | null;
     assigneeUserId: string | null;
+    assigneeUserIds: string[] | null;
     assigneeAgentId: string | null;
     columnId: string;
     position: number;
@@ -280,6 +330,7 @@ export async function updateTicket(
   // write keeps the stale position and the card lands mid-column after reload.
   if (input.columnId !== undefined && input.columnId !== existing.columnId) {
     const { columnId, position: _position, subState, ...rest } = input;
+    void _position;
     const moved = await moveTicket(ticketId, columnId, Number.MAX_SAFE_INTEGER, actor, subState);
     if (Object.keys(rest).length === 0) return moved;
     return updateTicket(ticketId, rest, actor);
@@ -288,6 +339,9 @@ export async function updateTicket(
   const board = await boardCtx(existing.boardId);
   await onMutation(actor, board.workspaceId);
 
+  // A multi-assign write (assigneeUserIds) implies an assignee change even
+  // when no assigneeType was sent alongside it.
+  const assigneeInputPresent = input.assigneeType !== undefined || input.assigneeUserIds !== undefined;
   const assigneeChanged =
     input.assigneeType !== undefined &&
     (input.assigneeType !== existing.assigneeType ||
@@ -314,11 +368,17 @@ export async function updateTicket(
         : subStates[0]
       : null;
   }
-  if (input.assigneeType !== undefined) {
-    const a = await resolveAssignee(board, input.assigneeType, input.assigneeUserId, input.assigneeAgentId, actor);
+  if (assigneeInputPresent) {
+    const normalized = normalizeAssigneeInput(input);
+    const a = await resolveAssignee(board, normalized.type, normalized.userIds, input.assigneeAgentId, actor);
     data.assigneeType = a.assigneeType;
     data.assigneeUserId = a.assigneeUserId;
     data.assigneeAgentId = a.assigneeAgentId;
+    // Replace the multi-assign rows wholesale — the list IS the new state.
+    data.assignees = {
+      deleteMany: {},
+      create: a.assigneeUserIds.map((userId, position) => ({ userId, position })),
+    };
   }
 
   if (input.labelIds) {
@@ -419,7 +479,19 @@ export async function moveTicket(
       .map(({ id, idx }) =>
         db.ticket.update({
           where: { id },
-          data: { columnId: toColumnId, position: idx, ...(id === ticketId ? { subState: resolvedSubState } : {}) },
+          data: {
+            columnId: toColumnId,
+            position: idx,
+            ...(id === ticketId
+              ? {
+                  subState: resolvedSubState,
+                  // Entering a done column stamps completion (kept if already
+                  // done, e.g. reordering); leaving one clears it so a
+                  // reopened ticket can go overdue again.
+                  completedAt: targetColumn.isDone ? ticket.completedAt ?? new Date() : null,
+                }
+              : {}),
+          },
         }),
       ),
   );

@@ -1,8 +1,10 @@
-import { MessageSquare, CalendarClock, NotebookPen } from "lucide-react";
+import { MessageSquare, CalendarClock, CircleCheck, NotebookPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { priorityMeta, dueMeta, assigneeLabel } from "@/lib/display";
+import { priorityMeta, dueMeta, completionMeta, assigneeLabel } from "@/lib/display";
 import { cn, htmlToPlainText } from "@/lib/utils";
+
+type CardAssignee = { type: "user" | "agent"; name: string; color?: string; avatarUrl?: string | null; ownerName?: string | null };
 
 /** The subset of ticket fields a card renders — satisfied by both the full and public serializers. */
 export type TicketCardData = {
@@ -11,9 +13,14 @@ export type TicketCardData = {
   description?: string;
   priority: string;
   dueDate: string | null;
+  completedAt?: string | null;
+  /** Sits in a done column — the due chip becomes a "Done" chip. */
+  isDone?: boolean;
   labels: { id: string; name: string; color: string }[];
   commentCount: number;
-  assignee: { type: "user" | "agent"; name: string; color?: string; avatarUrl?: string | null; ownerName?: string | null } | null;
+  assignee: CardAssignee | null;
+  /** All assignees (multi-assign); falls back to the single `assignee`. */
+  assignees?: CardAssignee[];
   sourceNoteId?: string | null;
 };
 
@@ -29,14 +36,16 @@ export function TicketCard({
   className?: string;
 }) {
   const pr = priorityMeta(ticket.priority);
-  const due = dueMeta(ticket.dueDate);
-  const accent = ticket.priority === "urgent" || ticket.priority === "high";
+  // Done tickets show when they were completed — never a stale "overdue".
+  const done = Boolean(ticket.isDone);
+  const due = done ? null : dueMeta(ticket.dueDate);
+  const completed = done ? completionMeta(ticket.completedAt) : null;
+  const assignees = ticket.assignees?.length ? ticket.assignees : ticket.assignee ? [ticket.assignee] : [];
   const excerpt = ticket.description ? htmlToPlainText(ticket.description) : "";
 
   return (
     <div
       onClick={onClick}
-      style={accent ? { borderLeftWidth: 3, borderLeftColor: pr.color } : undefined}
       className={cn(
         "group rounded-xl border border-border bg-surface p-3 shadow-card transition-all",
         "hover:border-border-strong hover:shadow-md hover:-translate-y-px active:translate-y-0 cursor-pointer",
@@ -73,6 +82,12 @@ export function TicketCard({
           </span>
         )}
 
+        {completed && (
+          <Badge tone={completed.tone}>
+            <CircleCheck className="h-3 w-3" />
+            {completed.label}
+          </Badge>
+        )}
         {due && (
           <Badge tone={due.tone}>
             <CalendarClock className="h-3 w-3" />
@@ -93,15 +108,29 @@ export function TicketCard({
               {ticket.commentCount}
             </span>
           )}
-          {ticket.assignee && (
-            <Avatar
-              name={ticket.assignee.name}
-              color={ticket.assignee.color}
-              src={ticket.assignee.type === "user" ? ticket.assignee.avatarUrl : undefined}
-              isAgent={ticket.assignee.type === "agent"}
-              size={22}
-              title={assigneeLabel(ticket.assignee)}
-            />
+          {assignees.length > 0 && (
+            <span className="flex items-center -space-x-1.5">
+              {assignees.slice(0, 3).map((a, i) => (
+                <span key={`${a.type}-${a.name}-${i}`} className="rounded-full ring-2 ring-surface">
+                  <Avatar
+                    name={a.name}
+                    color={a.color}
+                    src={a.type === "user" ? a.avatarUrl : undefined}
+                    isAgent={a.type === "agent"}
+                    size={22}
+                    title={assigneeLabel(a)}
+                  />
+                </span>
+              ))}
+              {assignees.length > 3 && (
+                <span
+                  className="grid h-[22px] w-[22px] place-items-center rounded-full bg-surface-2 text-[0.625rem] font-semibold text-fg-muted ring-2 ring-surface"
+                  title={assignees.slice(3).map((a) => a.name).join(", ")}
+                >
+                  +{assignees.length - 3}
+                </span>
+              )}
+            </span>
           )}
         </div>
       </div>

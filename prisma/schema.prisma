@@ -27,6 +27,7 @@ model User {
   workspaces     WorkspaceMember[]
   notes          Note[]
   createdTickets Ticket[]          @relation("TicketCreator")
+  ticketAssignments TicketAssignee[]
   sessions       Session[]
   boardAccess    BoardAccess[]
   sentInvites    Invite[]          @relation("InviteSender")
@@ -184,6 +185,7 @@ model Ticket {
   priority    String   @default("medium") // none | low | medium | high | urgent
   subState    String?  // sub-state within its column (when the column defines sub-states)
   dueDate     DateTime?
+  completedAt DateTime? // set when the ticket enters a done column; cleared on the way out
   deletedAt   DateTime? // soft-delete; restorable for 30 days, then purged
 
   // Assignee can be a human user or an AI agent (or unassigned)
@@ -203,6 +205,7 @@ model Ticket {
   board    Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
   column   Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
   agent    Agent?       @relation(fields: [assigneeAgentId], references: [id])
+  assignees TicketAssignee[]
   labels   TicketLabel[]
   comments Comment[]
   subtasks Subtask[]
@@ -212,6 +215,21 @@ model Ticket {
   @@index([boardId])
   @@index([columnId])
   @@index([deletedAt])
+}
+
+/// Human assignees on a ticket (multi-assign). Holds ALL user assignees in
+/// display order; the legacy `assigneeType`/`assigneeUserId` pair stays in sync
+/// with the FIRST row (the primary assignee) so single-assignee clients and
+/// agents keep working. Agent assignment stays single via `assigneeAgentId`.
+model TicketAssignee {
+  ticketId String
+  userId   String
+  position Int    @default(0)
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, userId])
+  @@index([userId])
 }
 
 model Label {

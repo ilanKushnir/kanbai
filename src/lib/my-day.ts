@@ -14,6 +14,8 @@ export type MyDayTicket = {
   dueDate: string | null;
   priority: string;
   assignee?: { type: string; id: string } | null;
+  /** All assignees (multi-assign) — a co-assigned ticket is also "mine". */
+  assignees?: { id: string }[] | null;
   /** Local YYYY-MM-DD completion day for archive grouping. */
   completedOn?: string | null;
 };
@@ -35,11 +37,15 @@ export type MyDayFocusItem<TTicket extends MyDayTicket = MyDayTicket, TNote exte
 
 /**
  * Prisma where-fragment scoping My Day to the user's own plate: only tickets
- * explicitly assigned to that human. Unassigned tickets and tickets assigned
- * to other users or to agents belong to boards, not to this user's day.
+ * explicitly assigned to that human — as the primary assignee (legacy pair) or
+ * as any co-assignee (multi-assign rows). Unassigned tickets and tickets
+ * assigned to other users or to agents belong to boards, not to this user's day.
  */
 export function myDayTicketScope(userId: string) {
-  return { assigneeType: "user", assigneeUserId: userId } as const;
+  return {
+    assigneeType: "user",
+    OR: [{ assigneeUserId: userId }, { assignees: { some: { userId } } }],
+  };
 }
 
 function dayBounds(now: Date) {
@@ -65,7 +71,12 @@ export function getMyDayTicketBuckets<TTicket extends MyDayTicket>(tickets: TTic
   const week = rows.filter((r) => dueTime(r) !== null && (dueTime(r) as number) > endToday && (dueTime(r) as number) <= endWeek);
   const datedIds = new Set([...overdue, ...today, ...week].map((r) => r.id));
   const mine = userId
-    ? rows.filter((r) => !datedIds.has(r.id) && r.assignee?.type === "user" && r.assignee.id === userId)
+    ? rows.filter(
+        (r) =>
+          !datedIds.has(r.id) &&
+          r.assignee?.type === "user" &&
+          (r.assignee.id === userId || r.assignees?.some((a) => a.id === userId)),
+      )
     : [];
 
   return { rows, overdue, today, week, mine };

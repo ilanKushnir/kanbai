@@ -97,7 +97,7 @@
   --tone-violet-bg: rgba(139,92,246,0.13);  --tone-violet-fg: #7040e0;  --tone-violet-dot: #8b5cf6;
   --tone-blue-bg: rgba(47,143,237,0.13);    --tone-blue-fg: #1d6cc0;   --tone-blue-dot: #2f8fed;
 
-  /* Ticket priority (dots + card left-edge accents) */
+  /* Ticket priority (dots + labels) */
   --priority-low:    #64748b;
   --priority-medium: #2e7ce0;
   --priority-high:   #c97501;
