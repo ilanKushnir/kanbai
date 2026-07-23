@@ -18,6 +18,8 @@ export type MyDayTicket = {
   assignees?: { id: string }[] | null;
   /** Local YYYY-MM-DD completion day for archive grouping. */
   completedOn?: string | null;
+  /** ISO completion instant (when known) — orders today's echoes newest-first. */
+  completedAt?: string | null;
 };
 
 export type MyDayNote = {
@@ -258,4 +260,93 @@ export function buildMyDayDoneArchive<TTicket extends MyDayTicket, TNote extends
     group.items.push(item);
   }
   return { collapsedByDefault: true, total: items.length, hasMore: allGroupKeys.length > visibleKeys.size, groups };
+}
+
+export type MyDayPeekItem<TTicket extends MyDayTicket = MyDayTicket, TNote extends MyDayNote = MyDayNote> =
+  | { kind: "ticket"; id: string; ticket: TTicket }
+  | { kind: "note"; id: string; note: TNote };
+
+export type MyDayPeekList<TTicket extends MyDayTicket = MyDayTicket, TNote extends MyDayNote = MyDayNote> = {
+  total: number;
+  ticketCount: number;
+  noteCount: number;
+  /** The first few items — always visible in the panel. */
+  peek: MyDayPeekItem<TTicket, TNote>[];
+  /** Everything past the peek — revealed on expand. */
+  rest: MyDayPeekItem<TTicket, TNote>[];
+};
+
+function toPeekList<TTicket extends MyDayTicket, TNote extends MyDayNote>(
+  items: MyDayPeekItem<TTicket, TNote>[],
+  ticketCount: number,
+  noteCount: number,
+  peek?: number,
+): MyDayPeekList<TTicket, TNote> {
+  const peekCount = Math.max(1, peek ?? 3);
+  return { total: items.length, ticketCount, noteCount, peek: items.slice(0, peekCount), rest: items.slice(peekCount) };
+}
+
+/**
+ * "Echoes from today": everything completed today. Tickets lead, newest
+ * completion first (ticket completions carry a real timestamp); notes marked
+ * done today follow in section order (notes only record the day). Split into
+ * a peek and the rest so the panel stays compact until expanded.
+ */
+export function buildMyDayEchoes<TTicket extends MyDayTicket, TNote extends MyDayNote>(input: {
+  now?: Date;
+  /** Completed tickets carrying `completedOn` (and `completedAt` when known). */
+  tickets: TTicket[];
+  notes: TNote[];
+  peek?: number;
+}): MyDayPeekList<TTicket, TNote> {
+  const now = input.now ?? new Date();
+  const today = ymd(startOfDay(now));
+  const completedAtMs = (t: TTicket) => (t.completedAt ? new Date(t.completedAt).getTime() : 0);
+  const tickets = input.tickets
+    .filter((ticket) => ticket.completedOn === today)
+    .sort((a, b) => completedAtMs(b) - completedAtMs(a));
+  const notes = input.notes
+    .filter((note) => note.doneOn === today)
+    .slice()
+    .sort(compareSectionNotes);
+  const items: MyDayPeekItem<TTicket, TNote>[] = [
+    ...tickets.map((ticket) => ({ kind: "ticket" as const, id: ticket.id, ticket })),
+    ...notes.map((note) => ({ kind: "note" as const, id: note.id, note })),
+  ];
+  return toPeekList(items, tickets.length, notes.length, input.peek);
+}
+
+export type MyDayTomorrowRadar<TTicket extends MyDayTicket = MyDayTicket, TNote extends MyDayNote = MyDayNote> =
+  MyDayPeekList<TTicket, TNote> & {
+    /** Tomorrow as a local "YYYY-MM-DD" day. */
+    day: string;
+  };
+
+/**
+ * "Tomorrow Radar": the peek at tomorrow's plate — tickets due on tomorrow's
+ * local day (due time, then priority) followed by still-open notes scheduled
+ * for tomorrow. Anything already completed stays off the radar, so a done
+ * ticket never resurfaces as upcoming work.
+ */
+export function buildMyDayTomorrowRadar<TTicket extends MyDayTicket, TNote extends MyDayNote>(input: {
+  now?: Date;
+  /** Open tickets — anything carrying a `completedOn` is skipped defensively. */
+  tickets: TTicket[];
+  notes: TNote[];
+  peek?: number;
+}): MyDayTomorrowRadar<TTicket, TNote> {
+  const now = input.now ?? new Date();
+  const day = ymd(addDays(startOfDay(now), 1));
+  const tickets = input.tickets
+    .filter((ticket) => !ticket.completedOn && ticket.dueDate != null && ymd(new Date(ticket.dueDate)) === day)
+    .sort((a, b) => (dueTime(a) ?? Infinity) - (dueTime(b) ?? Infinity) || rank(b.priority) - rank(a.priority));
+  const notes = input.notes
+    .filter((note) => note.status === "inbox" && note.doneOn == null && note.scheduledDay === day)
+    .slice()
+    .sort(compareSectionNotes);
+  const items: MyDayPeekItem<TTicket, TNote>[] = [
+    ...tickets.map((ticket) => ({ kind: "ticket" as const, id: ticket.id, ticket })),
+    ...notes.map((note) => ({ kind: "note" as const, id: note.id, note })),
+  ];
+  return { day, ...toPeekList(items, tickets.length, notes.length, input.peek) };
 }

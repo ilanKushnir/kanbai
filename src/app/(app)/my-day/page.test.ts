@@ -55,6 +55,34 @@ test("My Day mobile shell leaves enough bottom scroll room for the fixed nav", (
 });
 
 
+test("My Day aside surfaces Echoes from today and Tomorrow Radar as compact expandable panels", () => {
+  // EchoRow sits between the two panel functions; RadarRow closes the file.
+  const echoesPanel = myDayPage.slice(myDayPage.indexOf("function EchoesPanel"), myDayPage.indexOf("function TomorrowRadarPanel"));
+  const radarPanel = myDayPage.slice(myDayPage.indexOf("function TomorrowRadarPanel"));
+
+  assert.match(myDayPage, /Echoes from today/);
+  assert.match(myDayPage, /Tomorrow Radar/);
+  assert.match(myDayPage, /<EchoesPanel echoes=\{echoes\} \/>/);
+  assert.match(myDayPage, /<TomorrowRadarPanel radar=\{radar\} dateLabel=\{tomorrowLabel\} \/>/);
+
+  // Peek → expand-to-all via native details/summary, and honest empty states.
+  assert.match(echoesPanel, /<details/);
+  assert.match(radarPanel, /<details/);
+  assert.match(echoesPanel, /Quiet so far/);
+  assert.match(radarPanel, /Clear skies/);
+
+  // RTL-safe rows: dir="auto" titles in logical-property columns.
+  assert.match(echoesPanel, /dir="auto"/);
+  assert.match(radarPanel, /dir="auto"/);
+  assert.match(echoesPanel, /text-start break-words/);
+  assert.match(radarPanel, /text-start break-words/);
+
+  // Completed echoes carry their completion time and never re-render due
+  // chips — a finished item must not read "overdue".
+  assert.match(echoesPanel, /doneAtLabel\(item\.ticket\.completedAt\)/);
+  assert.doesNotMatch(echoesPanel, /dueMeta/);
+});
+
 test("My Day done controls are outline-first and completed items render a collapsed Done archive", () => {
   assert.match(myDayPage, /function DoneControl/);
   assert.match(myDayPage, /border-success/);

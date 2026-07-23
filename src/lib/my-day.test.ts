@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import {
   buildMyDayCompletionSeries,
   buildMyDayDoneArchive,
+  buildMyDayEchoes,
   buildMyDayFocusItems,
   buildMyDayQueue,
+  buildMyDayTomorrowRadar,
   countMyDayUnsortedNotes,
   type MyDayNote,
   type MyDayTicket,
@@ -165,6 +167,94 @@ test("buildMyDayCompletionSeries yields a dense, oldest-first window ending toda
   // Outside the window and still-open items are not counted anywhere.
   const total = series.reduce((n, p) => n + p.tickets + p.notes, 0);
   assert.equal(total, 5);
+});
+
+test("buildMyDayEchoes keeps only items completed today, tickets newest-first then notes", () => {
+  const echoes = buildMyDayEchoes({
+    now: todayNoon,
+    tickets: [
+      { ...ticket({ id: "t-morning" }), completedOn: today, completedAt: "2026-06-21T08:30:00.000Z" },
+      { ...ticket({ id: "t-latest" }), completedOn: today, completedAt: "2026-06-21T11:45:00.000Z" },
+      { ...ticket({ id: "t-yesterday" }), completedOn: "2026-06-20", completedAt: "2026-06-20T10:00:00.000Z" },
+      { ...ticket({ id: "t-open" }), completedOn: null },
+    ],
+    notes: [
+      note({ id: "n-done-today", doneOn: today }),
+      note({ id: "n-done-yesterday", doneOn: "2026-06-20" }),
+      note({ id: "n-open" }),
+    ],
+  });
+
+  assert.equal(echoes.total, 3);
+  assert.equal(echoes.ticketCount, 2);
+  assert.equal(echoes.noteCount, 1);
+  assert.deepEqual(
+    [...echoes.peek, ...echoes.rest].map((item) => `${item.kind}:${item.id}`),
+    ["ticket:t-latest", "ticket:t-morning", "note:n-done-today"],
+  );
+});
+
+test("buildMyDayEchoes splits a compact peek from the expandable rest", () => {
+  const echoes = buildMyDayEchoes({
+    now: todayNoon,
+    peek: 2,
+    tickets: [],
+    notes: [
+      note({ id: "n-1", doneOn: today, position: 0 }),
+      note({ id: "n-2", doneOn: today, position: 1 }),
+      note({ id: "n-3", doneOn: today, position: 2 }),
+    ],
+  });
+
+  assert.deepEqual(echoes.peek.map((item) => item.id), ["n-1", "n-2"]);
+  assert.deepEqual(echoes.rest.map((item) => item.id), ["n-3"]);
+  assert.equal(echoes.total, 3);
+});
+
+test("buildMyDayTomorrowRadar picks tomorrow's tickets (due time, then priority) before tomorrow's open notes", () => {
+  const radar = buildMyDayTomorrowRadar({
+    now: todayNoon,
+    tickets: [
+      ticket({ id: "t-late", dueDate: new Date(2026, 5, 22, 16, 0, 0).toISOString(), priority: "high" }),
+      ticket({ id: "t-early", dueDate: new Date(2026, 5, 22, 9, 0, 0).toISOString(), priority: "low" }),
+      ticket({ id: "t-today" }),
+      ticket({ id: "t-next-week", dueDate: new Date(2026, 5, 26, 9, 0, 0).toISOString() }),
+      ticket({ id: "t-undated", dueDate: null }),
+    ],
+    notes: [
+      note({ id: "n-tomorrow", scheduledDay: "2026-06-22", bucket: "tomorrow" }),
+      note({ id: "n-today" }),
+      note({ id: "n-general", scheduledDay: null, bucket: "general" }),
+    ],
+  });
+
+  assert.equal(radar.day, "2026-06-22");
+  assert.equal(radar.ticketCount, 2);
+  assert.equal(radar.noteCount, 1);
+  assert.deepEqual(
+    [...radar.peek, ...radar.rest].map((item) => `${item.kind}:${item.id}`),
+    ["ticket:t-early", "ticket:t-late", "note:n-tomorrow"],
+  );
+});
+
+test("buildMyDayTomorrowRadar keeps done and inactive items off the radar", () => {
+  const tomorrow = "2026-06-22";
+  const radar = buildMyDayTomorrowRadar({
+    now: todayNoon,
+    tickets: [
+      // A completed ticket must never resurface as upcoming work, even if its due day is tomorrow.
+      { ...ticket({ id: "t-done", dueDate: new Date(2026, 5, 22, 9, 0, 0).toISOString() }), completedOn: today },
+    ],
+    notes: [
+      note({ id: "n-done-tomorrow", scheduledDay: tomorrow, bucket: "tomorrow", doneOn: today }),
+      note({ id: "n-queued", scheduledDay: tomorrow, bucket: "tomorrow", status: "queued" }),
+      note({ id: "n-archived", scheduledDay: tomorrow, bucket: "tomorrow", status: "archived" }),
+    ],
+  });
+
+  assert.equal(radar.total, 0);
+  assert.deepEqual(radar.peek, []);
+  assert.deepEqual(radar.rest, []);
 });
 
 test("buildMyDayCompletionSeries zero-fills days with no completions", () => {

@@ -1,26 +1,31 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
-import { ArrowUpRight, CalendarClock, NotebookPen, Sparkles } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CheckCheck, NotebookPen, Radar, Sparkles } from "lucide-react";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
 import { updateNote } from "@/lib/services/notes";
 import { moveTicketToDone } from "@/lib/services/tickets";
-import { ymd } from "@/lib/notes-schedule";
+import { parseYmd, ymd } from "@/lib/notes-schedule";
 import { HttpError } from "@/lib/api";
 import { assertTicketAccess } from "@/lib/authz";
 import { dueMeta, priorityMeta } from "@/lib/display";
 import {
   buildMyDayCompletionSeries,
   buildMyDayDoneArchive,
+  buildMyDayEchoes,
   buildMyDayQueue,
+  buildMyDayTomorrowRadar,
   countMyDayUnsortedNotes,
   getMyDayTicketBuckets,
   myDayTicketScope,
   type MyDayDoneArchiveGroup,
   type MyDayFocusItem,
   type MyDayNote,
+  type MyDayPeekItem,
+  type MyDayPeekList,
+  type MyDayTomorrowRadar,
 } from "@/lib/my-day";
 import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -121,7 +126,11 @@ export default async function MyDayPage() {
   const { week } = getMyDayTicketBuckets(rows, now, ctx.user.id);
   const queue = buildMyDayQueue({ now, tickets: rows, notes: todayNotes, userId: ctx.user.id });
   const unsortedCount = countMyDayUnsortedNotes({ now, notes: todayNotes });
-  const onDeck = week.slice(0, 6);
+  const echoes = buildMyDayEchoes({ now, tickets: doneRows, notes: todayNotes, peek: 3 });
+  const radar = buildMyDayTomorrowRadar({ now, tickets: rows, notes: todayNotes, peek: 3 });
+  const tomorrowLabel = parseYmd(radar.day).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  // Tomorrow lives on the radar panel; on deck keeps the rest of the week.
+  const onDeck = week.filter((r) => !r.dueDate || ymd(new Date(r.dueDate)) !== radar.day).slice(0, 6);
   const dateLabel = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   const doneArchive = buildMyDayDoneArchive({ now, tickets: doneRows, notes: todayNotes, limit: 12 });
   const doneToday = doneArchive.groups.find((group) => group.key === ymd(now))?.items.length ?? 0;
@@ -219,12 +228,14 @@ export default async function MyDayPage() {
         </div>
 
         <aside className="space-y-4">
+          <TomorrowRadarPanel radar={radar} dateLabel={tomorrowLabel} />
           <section className="rounded-2xl border border-border bg-surface/60 p-4">
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-subtle">On deck this week</h2>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-subtle">Later this week</h2>
             <div className="space-y-2">
               {onDeck.length ? onDeck.map((r) => <DeckRow key={r.id} row={r} />) : <p className="text-sm text-fg-subtle">No dated tickets later this week.</p>}
             </div>
           </section>
+          <EchoesPanel echoes={echoes} />
           <DoneArchive archive={doneArchive} />
           {unsortedCount > 0 && (
             <Link
@@ -479,6 +490,172 @@ function DeckRow({ row }: { row: Row }) {
       <div className="mt-1 flex items-center justify-between gap-2 text-xs text-fg-subtle">
         <span>{row.boardName}</span>
         {d && <span>{d.label}</span>}
+      </div>
+    </Link>
+  );
+}
+
+const countLabel = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/** Local completion time for today's echoes; notes only record the day. */
+function doneAtLabel(iso: string | null): string {
+  if (!iso) return "today";
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * "Echoes from today" — a compact timeline of everything finished today.
+ * Completed items only, so due chips (and stale "overdue") never appear here;
+ * each echo carries its completion time instead. Peek of the latest few,
+ * expandable to the whole day.
+ */
+function EchoesPanel({ echoes }: { echoes: MyDayPeekList<Row, MyDayNote> }) {
+  return (
+    <section className="relative overflow-hidden rounded-2xl border border-success/25 bg-surface/60 p-4">
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,var(--success-soft)_0%,transparent_55%)] opacity-50" />
+      <div className="relative">
+        <div className="flex items-center gap-2">
+          <CheckCheck className="h-3.5 w-3.5 shrink-0 text-success" />
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Echoes from today</h2>
+          <span className="ms-auto rounded-full bg-success-soft px-2 py-0.5 text-xs font-semibold tabular-nums text-success">{echoes.total}</span>
+        </div>
+        {echoes.total === 0 ? (
+          <p className="mt-3 text-sm text-fg-subtle">Quiet so far — your first win today will echo here.</p>
+        ) : (
+          <>
+            <p className="mt-1 text-[0.6875rem] text-fg-subtle">
+              {countLabel(echoes.ticketCount, "ticket")} · {countLabel(echoes.noteCount, "note")}
+            </p>
+            <div className="ms-1 mt-3 space-y-2.5 border-s border-success/25 ps-3">
+              {echoes.peek.map((item) => (
+                <EchoRow key={`${item.kind}-${item.id}`} item={item} />
+              ))}
+            </div>
+            {echoes.rest.length > 0 && (
+              <details className="group/echo mt-2">
+                <summary className="cursor-pointer list-none text-xs font-semibold text-success">
+                  <span className="group-open/echo:hidden">Replay all {echoes.total} echoes</span>
+                  <span className="hidden group-open/echo:inline">Latest echoes only</span>
+                </summary>
+                <div className="ms-1 mt-2.5 space-y-2.5 border-s border-success/25 ps-3">
+                  {echoes.rest.map((item) => (
+                    <EchoRow key={`${item.kind}-${item.id}`} item={item} />
+                  ))}
+                </div>
+              </details>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function EchoRow({ item }: { item: MyDayPeekItem<Row, MyDayNote> }) {
+  const isTicket = item.kind === "ticket";
+  const href = isTicket ? `/boards/${item.ticket.boardSlug}?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
+  return (
+    <Link href={href} className="relative block min-w-0 rounded-lg px-1.5 py-0.5 transition-colors hover:bg-success-soft/40">
+      <span aria-hidden className="absolute -start-[1.03rem] top-2 h-2 w-2 rounded-full border-2 border-success bg-surface" />
+      <div dir="auto" className="line-clamp-2 min-w-0 text-sm font-medium text-start break-words">
+        {isTicket ? item.ticket.title : item.note.body}
+      </div>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[0.6875rem] text-fg-subtle">
+        {isTicket ? (
+          <>
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(item.ticket.boardColor).dot }} />
+              {item.ticket.boardName}
+            </span>
+            <span className="ms-auto tabular-nums text-success">done {doneAtLabel(item.ticket.completedAt)}</span>
+          </>
+        ) : (
+          <>
+            <span className="inline-flex items-center gap-1">
+              <NotebookPen className="h-3 w-3 shrink-0" />
+              Note
+            </span>
+            <span className="ms-auto text-success">done today</span>
+          </>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+/**
+ * "Tomorrow Radar" — a peek at tomorrow's plate (tickets due tomorrow plus
+ * notes scheduled for tomorrow) so today ends with no surprises waiting.
+ * Peek of the first few, expandable to the full sweep.
+ */
+function TomorrowRadarPanel({ radar, dateLabel }: { radar: MyDayTomorrowRadar<Row, MyDayNote>; dateLabel: string }) {
+  return (
+    <section className="relative overflow-hidden rounded-2xl border border-primary/25 bg-surface/60 p-4">
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,var(--primary-soft)_0%,transparent_55%)] opacity-50" />
+      <div className="relative">
+        <div className="flex items-center gap-2">
+          <Radar className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Tomorrow Radar</h2>
+          <span className="ms-auto rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold tabular-nums text-primary">{radar.total}</span>
+        </div>
+        <p className="mt-1 text-[0.6875rem] text-fg-subtle">
+          {dateLabel}
+          {radar.total > 0 && <> · {countLabel(radar.ticketCount, "ticket")} · {countLabel(radar.noteCount, "note")}</>}
+        </p>
+        {radar.total === 0 ? (
+          <p className="mt-3 text-sm text-fg-subtle">Clear skies — nothing scheduled for tomorrow yet.</p>
+        ) : (
+          <>
+            <div className="mt-3 space-y-2">
+              {radar.peek.map((item) => (
+                <RadarRow key={`${item.kind}-${item.id}`} item={item} />
+              ))}
+            </div>
+            {radar.rest.length > 0 && (
+              <details className="group/radar mt-2">
+                <summary className="cursor-pointer list-none text-xs font-semibold text-primary">
+                  <span className="group-open/radar:hidden">Full sweep · all {radar.total}</span>
+                  <span className="hidden group-open/radar:inline">Back to the near blips</span>
+                </summary>
+                <div className="mt-2 space-y-2">
+                  {radar.rest.map((item) => (
+                    <RadarRow key={`${item.kind}-${item.id}`} item={item} />
+                  ))}
+                </div>
+              </details>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function RadarRow({ item }: { item: MyDayPeekItem<Row, MyDayNote> }) {
+  const isTicket = item.kind === "ticket";
+  const href = isTicket ? `/boards/${item.ticket.boardSlug}?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
+  const pr = isTicket ? priorityMeta(item.ticket.priority) : null;
+  return (
+    <Link href={href} className="block min-w-0 rounded-xl border border-border/70 bg-surface/60 px-3 py-2 transition-colors hover:border-primary/30 hover:bg-surface">
+      <div dir="auto" className="line-clamp-2 min-w-0 text-sm font-medium text-start break-words">
+        {isTicket ? item.ticket.title : item.note.body}
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-fg-subtle">
+        {isTicket ? (
+          <>
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(item.ticket.boardColor).dot }} />
+              {item.ticket.boardName}
+            </span>
+            {item.ticket.priority !== "none" && pr && <span style={{ color: pr.color }}>{pr.label}</span>}
+          </>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-primary">
+            <NotebookPen className="h-3 w-3 shrink-0" />
+            Note
+          </span>
+        )}
+        <span className="ms-auto text-fg-subtle">tomorrow</span>
       </div>
     </Link>
   );
