@@ -317,6 +317,20 @@ body {
   animation: ai-shimmer 1.6s linear infinite;
 }
 
+/* My Day "Done" celebration: while the done form is submitting, the host card
+   blooms — a soft success ring swells off the border while the button's check
+   pops. Purely presentational: the row only leaves the list after the server
+   action revalidates, so a failed action ends with the card intact. The
+   reduced-motion block below collapses it like every other animation. */
+@keyframes kb-done-bloom {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-success) 45%, transparent); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+.kb-done-host:has(button[data-done-celebrating]) {
+  border-color: color-mix(in oklab, var(--color-success) 45%, transparent);
+  animation: kb-done-bloom 0.8s var(--ease-out-soft) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after {

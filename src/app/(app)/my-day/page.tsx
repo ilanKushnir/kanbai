@@ -10,7 +10,7 @@ import { moveTicketToDone } from "@/lib/services/tickets";
 import { parseYmd, ymd } from "@/lib/notes-schedule";
 import { HttpError } from "@/lib/api";
 import { assertTicketAccess } from "@/lib/authz";
-import { dueMeta, priorityMeta } from "@/lib/display";
+import { assigneeLabel, cardAssignees, dueMeta, priorityMeta } from "@/lib/display";
 import {
   buildMyDayCompletionSeries,
   buildMyDayDoneArchive,
@@ -365,11 +365,15 @@ function QueueItem({ item, index, upNext }: { item: MyDayFocusItem<Row, MyDayNot
   );
 }
 
+/** Faces shown on a focus card's assignee stack before folding into "+N". */
+const FOCUS_CARD_AVATAR_LIMIT = 3;
+
 function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; urgent?: boolean; upNext?: boolean }) {
   const pr = priorityMeta(row.priority);
   const d = dueMeta(row.dueDate);
+  const assignees = cardAssignees(row);
   return (
-    <div className="group rounded-2xl border border-border bg-surface px-3 py-2.5 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md md:px-4 md:py-3">
+    <div className="group rounded-2xl border border-border bg-surface px-3 py-2.5 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md md:px-4 md:py-3 kb-done-host">
       <Link href={`/boards/${row.boardSlug}?ticket=${row.id}`} className="flex min-w-0 items-start gap-2.5">
         <span className={urgent ? "grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-danger-soft text-xs font-semibold text-danger" : "grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary-soft text-xs font-semibold text-primary"}>
           {index}
@@ -395,7 +399,34 @@ function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; ur
           </Badge>
         )}
         <Badge tone="default">Ticket</Badge>
-        {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.color} src={row.assignee.type === "user" ? row.assignee.avatarUrl : undefined} isAgent={row.assignee.type === "agent"} size={22} />}
+        {assignees.length > 0 && (
+          <span
+            role="group"
+            aria-label={`Assigned to ${assignees.map((a) => assigneeLabel(a)).join(", ")}`}
+            className="flex shrink-0 items-center -space-x-1.5"
+          >
+            {assignees.slice(0, FOCUS_CARD_AVATAR_LIMIT).map((a) => (
+              <span key={`${a.type}-${a.id}`} className="rounded-full ring-2 ring-surface">
+                <Avatar
+                  name={a.name}
+                  color={a.color}
+                  src={a.type === "user" ? a.avatarUrl : undefined}
+                  isAgent={a.type === "agent"}
+                  size={22}
+                  title={assigneeLabel(a)}
+                />
+              </span>
+            ))}
+            {assignees.length > FOCUS_CARD_AVATAR_LIMIT && (
+              <span
+                className="grid h-[22px] min-w-[22px] place-items-center rounded-full bg-surface-2 px-0.5 text-[0.625rem] font-semibold tabular-nums text-fg-muted ring-2 ring-surface"
+                title={assignees.slice(FOCUS_CARD_AVATAR_LIMIT).map((a) => assigneeLabel(a)).join(", ")}
+              >
+                +{assignees.length - FOCUS_CARD_AVATAR_LIMIT}
+              </span>
+            )}
+          </span>
+        )}
         <form action={markMyDayTicketDone} className="ms-auto">
           <input type="hidden" name="ticketId" value={row.id} />
           <DoneControl disabled={!row.doneColumnId} title={row.doneColumnId ? "Mark ticket done" : "No done column configured"} />
@@ -408,7 +439,7 @@ function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; ur
 
 function FocusNoteCard({ note, index, upNext }: { note: MyDayNote; index: number; upNext?: boolean }) {
   return (
-    <div className="group rounded-2xl border border-primary/20 bg-primary-soft/20 px-3 py-2.5 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md md:px-4 md:py-3">
+    <div className="group rounded-2xl border border-primary/20 bg-primary-soft/20 px-3 py-2.5 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md md:px-4 md:py-3 kb-done-host">
       <Link href={`/notes?focus=${note.id}`} className="flex min-w-0 items-start gap-2.5">
         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface text-xs font-semibold text-primary">
           {index}
@@ -554,7 +585,7 @@ function AnytimeRow({ item }: { item: MyDayFocusItem<Row, MyDayNote> }) {
   const href = isTicket ? `/boards/${item.ticket.boardSlug}?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
   const pr = isTicket ? priorityMeta(item.ticket.priority) : null;
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border/70 bg-surface/60 py-2 pe-2 ps-3 transition-colors hover:border-warning/30 hover:bg-surface">
+    <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border/70 bg-surface/60 py-2 pe-2 ps-3 transition-colors hover:border-warning/30 hover:bg-surface kb-done-host">
       <Link href={href} className="block min-w-0 flex-1 py-0.5">
         <div dir="auto" className="line-clamp-2 min-w-0 text-sm font-medium text-start break-words">
           {isTicket ? item.ticket.title : item.note.body}

@@ -4,6 +4,7 @@ import test from "node:test";
 
 const myDayPage = readFileSync("src/app/(app)/my-day/page.tsx", "utf8");
 const doneButton = readFileSync("src/components/my-day/done-button.tsx", "utf8");
+const globalsCss = readFileSync("src/app/globals.css", "utf8");
 
 test("My Day queries are scoped to tickets assigned to the current user", () => {
   // Both the open-ticket and done-ticket queries must carry the assignee scope —
@@ -152,6 +153,50 @@ test("My Day Anytime shelf rows keep item actions and stay RTL-safe on a 390px s
   assert.doesNotMatch(shelfAndRow, /whitespace-nowrap/);
   assert.doesNotMatch(shelfAndRow, /\bw-\[\d/); // no fixed pixel widths on the shelf
   assert.doesNotMatch(shelfAndRow, /\bml-|\bmr-|\bpl-|\bpr-|text-left|text-right/); // logical properties only
+});
+
+test("My Day focus ticket cards show the full assignee stack with +N overflow and accessible names", () => {
+  const ticketCard = myDayPage.slice(myDayPage.indexOf("function FocusCard"), myDayPage.indexOf("function FocusNoteCard"));
+
+  // Shared helper renders the multi-assign list, falling back to the legacy
+  // single assignee — never the primary-only path.
+  assert.match(myDayPage, /const FOCUS_CARD_AVATAR_LIMIT = 3;/);
+  assert.match(ticketCard, /const assignees = cardAssignees\(row\)/);
+  assert.doesNotMatch(ticketCard, /row\.assignee &&/);
+
+  // Compact overlapped stack capped at the limit, remainder folded into "+N".
+  assert.match(ticketCard, /-space-x-1\.5/);
+  assert.match(ticketCard, /assignees\.slice\(0, FOCUS_CARD_AVATAR_LIMIT\)/);
+  assert.match(ticketCard, /\+\{assignees\.length - FOCUS_CARD_AVATAR_LIMIT\}/);
+
+  // Every face announces itself: the group label lists all names, and both the
+  // avatars and the overflow chip carry full-name titles (owner context for agents).
+  assert.match(ticketCard, /role="group"/);
+  assert.match(ticketCard, /aria-label=\{`Assigned to \$\{assignees\.map\(\(a\) => assigneeLabel\(a\)\)\.join\(", "\)\}`\}/);
+  assert.match(ticketCard, /title=\{assigneeLabel\(a\)\}/);
+  assert.match(ticketCard, /assignees\.slice\(FOCUS_CARD_AVATAR_LIMIT\)\.map\(\(a\) => assigneeLabel\(a\)\)\.join\(", "\)/);
+});
+
+test("My Day Done celebrates locally while success stays server-driven", () => {
+  // While the form is pending the button pops a check with a small sparkle and
+  // flags itself so the host card can bloom — but it stays disabled, and the
+  // row only leaves the list once the server action revalidates.
+  assert.match(doneButton, /data-done-celebrating=\{pending \? "" : undefined\}/);
+  assert.match(doneButton, /animate-check-pop/);
+  assert.match(doneButton, /animate-confetti-pop/);
+  assert.match(doneButton, /disabled=\{disabled \|\| pending\}/);
+  assert.match(myDayPage, /revalidatePath\("\/my-day"\)/);
+  assert.doesNotMatch(myDayPage, /useOptimistic/);
+
+  // The bloom lives in CSS on every done host: focus ticket card, focus note
+  // card, and the Anytime shelf row.
+  assert.match(globalsCss, /@keyframes kb-done-bloom/);
+  assert.match(globalsCss, /\.kb-done-host:has\(button\[data-done-celebrating\]\)/);
+  assert.equal((myDayPage.match(/kb-done-host/g) ?? []).length, 3);
+
+  // Reduced-motion users get the instant state change, not the bloom.
+  const reduced = globalsCss.slice(globalsCss.indexOf("@media (prefers-reduced-motion: reduce)"));
+  assert.match(reduced, /animation-duration: 0\.001ms !important/);
 });
 
 test("My Day done controls are outline-first and completed items render a collapsed Done archive", () => {
