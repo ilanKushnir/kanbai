@@ -4,6 +4,9 @@ import test from "node:test";
 
 const myDayPage = readFileSync("src/app/(app)/my-day/page.tsx", "utf8");
 const doneButton = readFileSync("src/components/my-day/done-button.tsx", "utf8");
+const myDayTicketModal = readFileSync("src/components/my-day/my-day-ticket-modal.tsx", "utf8");
+const myDayUndoToast = readFileSync("src/components/my-day/my-day-undo-toast.tsx", "utf8");
+const ticketModal = readFileSync("src/components/board/ticket-modal.tsx", "utf8");
 const globalsCss = readFileSync("src/app/globals.css", "utf8");
 
 test("My Day queries are scoped to tickets assigned to the current user", () => {
@@ -134,7 +137,7 @@ test("My Day Anytime shelf rows keep item actions and stay RTL-safe on a 390px s
   const row = myDayPage.slice(myDayPage.indexOf("function AnytimeRow"), myDayPage.indexOf("const countLabel"));
 
   // Both kinds render: tickets and notes keep their navigation and Done action.
-  assert.match(row, /\/boards\/\$\{item\.ticket\.boardSlug\}\?ticket=\$\{item\.ticket\.id\}/);
+  assert.match(row, /\/my-day\?ticket=\$\{item\.ticket\.id\}/);
   assert.match(row, /\/notes\?focus=\$\{item\.note\.id\}/);
   assert.match(row, /<form action=\{isTicket \? markMyDayTicketDone : markMyDayNoteDone\}/);
   assert.match(row, /name=\{isTicket \? "ticketId" : "noteId"\}/);
@@ -206,4 +209,41 @@ test("My Day done controls are outline-first and completed items render a collap
   assert.match(myDayPage, /hover:bg-success hover:text-success-fg/);
   assert.match(myDayPage, /<details[^>]*>/);
   assert.match(myDayPage, /<summary[^>]*>[^]*Done archive/);
+});
+
+
+test("My Day ticket links open a contextual ticket modal instead of navigating to the board", () => {
+  assert.match(myDayPage, /searchParams: Promise<MyDaySearchParams>/);
+  assert.match(myDayPage, /const modalTicket = sp\.ticket \? \[\.\.\.rows, \.\.\.doneRows\]\.find/);
+  assert.match(myDayPage, /<MyDayTicketModal/);
+  assert.match(myDayPage, /href=\{`\/my-day\?ticket=\$\{row\.id\}`\}/);
+  assert.match(myDayTicketModal, /router\.replace\("\/my-day", \{ scroll: false \}\)/);
+  assert.match(myDayTicketModal, /onClose=\{closeToMyDay\}/);
+});
+
+test("ticket modal Mark done animates success before closing and exposes an undo hook", () => {
+  assert.match(ticketModal, /doneClosing/);
+  assert.match(ticketModal, /kb-ticket-modal-done-close/);
+  assert.match(ticketModal, /onDoneComplete\?\.\(\{ ticket: next, previous \}\)/);
+  assert.match(ticketModal, /setTimeout\(\(\) => \{/);
+  assert.match(ticketModal, /<CircleCheck className="h-9 w-9 animate-check-pop"/);
+  assert.match(globalsCss, /@keyframes ticket-done-close/);
+});
+
+test("My Day done actions show temporary Undo only after server-driven success", () => {
+  assert.match(myDayPage, /redirect\(myDayDoneUrl\(\{ kind: "ticket"/);
+  assert.match(myDayPage, /redirect\(myDayDoneUrl\(\{ kind: "note"/);
+  assert.match(myDayPage, /<MyDayUndoToast undo=\{undo\} \/>/);
+  assert.match(myDayUndoToast, /actionLabel: "Undo"/);
+  assert.match(myDayUndoToast, /duration: 7000/);
+  assert.match(myDayUndoToast, /\/api\/tickets\/\$\{payload\.id\}\/move/);
+  assert.match(myDayUndoToast, /\/api\/notes\/\$\{payload\.id\}/);
+  assert.doesNotMatch(myDayPage, /useOptimistic/);
+});
+
+test("My Day modal done undo restores the previous ticket column", () => {
+  assert.match(myDayTicketModal, /const \[current, setCurrent\]/);
+  assert.match(myDayTicketModal, /onMoveToDone=\{moveToDone\}/);
+  assert.match(myDayTicketModal, /onDoneComplete=\{\(\{ previous \}\) =>/);
+  assert.match(myDayTicketModal, /body: \{ columnId: previous\.columnId, position: 0, subState: previous\.subState \}/);
 });

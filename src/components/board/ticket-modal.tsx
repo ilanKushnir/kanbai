@@ -47,6 +47,7 @@ export function TicketModal({
   onUpdated,
   onDeleted,
   onMoveToDone,
+  onDoneComplete,
 }: {
   ticket: SerializedTicket;
   columns: ColumnMeta[];
@@ -59,6 +60,7 @@ export function TicketModal({
   onUpdated: (t: SerializedTicket) => void;
   onDeleted: (id: string) => void;
   onMoveToDone?: () => Promise<SerializedTicket>;
+  onDoneComplete?: (result: { ticket: SerializedTicket; previous: { columnId: string; subState: string | null } }) => void;
 }) {
   const { toast } = useToast();
   const [t, setT] = React.useState(ticket);
@@ -67,6 +69,14 @@ export function TicketModal({
   const [editingDesc, setEditingDesc] = React.useState(false);
   const [comment, setComment] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const [doneClosing, setDoneClosing] = React.useState(false);
+  const doneCloseTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      if (doneCloseTimer.current) clearTimeout(doneCloseTimer.current);
+    };
+  }, []);
 
   function apply(next: SerializedTicket) {
     setT(next);
@@ -122,11 +132,17 @@ export function TicketModal({
   }
 
   async function moveToDone() {
-    if (!onMoveToDone || !doneColumn || isDone) return;
+    if (!onMoveToDone || !doneColumn || isDone || doneClosing) return;
+    const previous = { columnId: t.columnId, subState: t.subState };
     setSaving(true);
     try {
       const next = await onMoveToDone();
       apply(next);
+      setDoneClosing(true);
+      doneCloseTimer.current = setTimeout(() => {
+        onClose();
+        onDoneComplete?.({ ticket: next, previous });
+      }, 720);
     } catch (e) {
       toast({ title: "Couldn't mark done", description: e instanceof Error ? e.message : undefined, variant: "error" });
     } finally {
@@ -169,7 +185,15 @@ export function TicketModal({
   }, [members, currentUser]);
 
   return (
-    <Modal open onClose={handleClose} size="lg" hideClose>
+    <Modal open onClose={handleClose} size="lg" hideClose className={cn(doneClosing && "kb-ticket-modal-done-close")}>
+      {doneClosing && (
+        <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-[inherit] bg-surface/70 backdrop-blur-[1px] animate-fade-in">
+          <div className="grid place-items-center gap-2 rounded-2xl border border-success/30 bg-success-soft px-5 py-4 text-success shadow-lg">
+            <CircleCheck className="h-9 w-9 animate-check-pop" />
+            <div className="text-sm font-semibold">Done</div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 pb-3">
         <div className="flex items-center gap-1.5">
         <Menu

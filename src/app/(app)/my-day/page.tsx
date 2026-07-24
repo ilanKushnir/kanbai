@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
 import { ArrowUpRight, CalendarClock, CheckCheck, ChevronDown, NotebookPen, Radar, Sparkles, Zap } from "lucide-react";
@@ -7,7 +8,9 @@ import { getContext } from "@/lib/auth";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
 import { updateNote } from "@/lib/services/notes";
 import { moveTicketToDone } from "@/lib/services/tickets";
+import { boardAssigneeUsers } from "@/lib/services/board-members";
 import { parseYmd, ymd } from "@/lib/notes-schedule";
+import { parseSubStates } from "@/lib/substates";
 import { HttpError } from "@/lib/api";
 import { assertTicketAccess } from "@/lib/authz";
 import { assigneeLabel, cardAssignees, dueMeta, priorityMeta } from "@/lib/display";
@@ -31,20 +34,32 @@ import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { DoneButton } from "@/components/my-day/done-button";
 import { MomentumChart } from "@/components/my-day/momentum-chart";
+import { MyDayTicketModal } from "@/components/my-day/my-day-ticket-modal";
+import { MyDayUndoToast } from "@/components/my-day/my-day-undo-toast";
 
 export const metadata: Metadata = { title: "My Day" };
 export const dynamic = "force-dynamic";
+
+type MyDaySearchParams = { ticket?: string; done?: string; undoId?: string; undoColumnId?: string; undoSubState?: string; undoTitle?: string };
+
+function myDayDoneUrl(params: { kind: "ticket" | "note"; id: string; title: string; columnId?: string; subState?: string | null }) {
+  const sp = new URLSearchParams({ done: params.kind, undoId: params.id, undoTitle: params.title.slice(0, 120) });
+  if (params.columnId) sp.set("undoColumnId", params.columnId);
+  if (params.subState) sp.set("undoSubState", params.subState);
+  return `/my-day?${sp.toString()}`;
+}
 
 async function markMyDayNoteDone(formData: FormData) {
   "use server";
   const ctx = await getContext();
   const noteId = String(formData.get("noteId") ?? "");
   if (!noteId) return;
-  const note = await db.note.findUnique({ where: { id: noteId }, select: { userId: true } });
+  const note = await db.note.findUnique({ where: { id: noteId }, select: { userId: true, body: true } });
   if (!note || note.userId !== ctx.user.id) throw new HttpError(404, "Note not found");
   await updateNote(noteId, { doneOn: ymd(new Date()) });
   revalidatePath("/my-day");
   revalidatePath("/notes");
+  redirect(myDayDoneUrl({ kind: "note", id: noteId, title: note.body }));
 }
 
 async function markMyDayTicketDone(formData: FormData) {
@@ -52,13 +67,18 @@ async function markMyDayTicketDone(formData: FormData) {
   const ctx = await getContext();
   const ticketId = String(formData.get("ticketId") ?? "");
   if (!ticketId) return;
+  const before = await db.ticket.findUnique({ where: { id: ticketId }, select: { title: true, columnId: true, subState: true } });
+  if (!before) throw new HttpError(404, "Ticket not found");
   try {
     await assertTicketAccess(ctx, ticketId, true);
     await moveTicketToDone(ticketId, { type: "user", id: ctx.user.id, name: ctx.user.name });
   } catch (error) {
     if (!(error instanceof HttpError && error.status === 422 && error.message.includes("No done column"))) throw error;
+    revalidatePath("/my-day");
+    return;
   }
   revalidatePath("/my-day");
+  redirect(myDayDoneUrl({ kind: "ticket", id: ticketId, title: before.title, columnId: before.columnId, subState: before.subState }));
 }
 
 type Row = ReturnType<typeof serializeTicket> & {
@@ -68,7 +88,8 @@ type Row = ReturnType<typeof serializeTicket> & {
   doneColumnId: string | null;
 };
 
-export default async function MyDayPage() {
+export default async function MyDayPage({ searchParams }: { searchParams: Promise<MyDaySearchParams> }) {
+  const sp = await searchParams;
   const ctx = await getContext();
 
   const members = await db.workspaceMember.findMany({ where: { workspaceId: ctx.workspace.id }, include: { user: true } });
@@ -108,6 +129,20 @@ export default async function MyDayPage() {
     }),
   ]);
 
+  const agentRows = await db.agent.findMany({
+    where: { workspaceId: ctx.workspace.id, status: "active" },
+    select: {
+      id: true,
+      name: true,
+      color: true,
+      kind: true,
+      ownerUserId: true,
+      ownerUser: { select: { name: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  const agents = agentRows.map(({ ownerUser, ...a }) => ({ ...a, ownerName: ownerUser?.name ?? null }));
+
   const toRow = (t: typeof tickets[number]): Row => ({
     ...serializeTicket(t, usersById),
     boardSlug: t.board.slug,
@@ -143,11 +178,30 @@ export default async function MyDayPage() {
   const queueEmpty = remaining === 0;
   const momentum = buildMyDayCompletionSeries({ now, tickets: doneRows, notes: todayNotes, days: 14 });
 
+  const modalTicket = sp.ticket ? [...rows, ...doneRows].find((row) => row.id === sp.ticket) ?? null : null;
+  const modalBoard = modalTicket
+    ? await db.board.findFirst({
+        where: { workspaceId: ctx.workspace.id, id: modalTicket.boardId },
+        select: {
+          columns: { orderBy: { position: "asc" }, select: { id: true, name: true, isDone: true, subStates: true } },
+          labels: { orderBy: { name: "asc" }, select: { id: true, name: true, color: true } },
+        },
+      })
+    : null;
+  const modalMembers = modalTicket ? await boardAssigneeUsers(modalTicket.boardId) : [];
+  const undo =
+    sp.done === "ticket" && sp.undoId && sp.undoColumnId
+      ? { kind: "ticket" as const, id: sp.undoId, title: sp.undoTitle ?? "Ticket", columnId: sp.undoColumnId, subState: sp.undoSubState ?? null }
+      : sp.done === "note" && sp.undoId
+        ? { kind: "note" as const, id: sp.undoId, title: sp.undoTitle ?? "Note" }
+        : null;
+
   // One continuous execution order across the groups: overdue first, then today.
   const todayOffset = queue.overdue.length;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 md:px-6 md:pb-8 md:pt-8">
+      <MyDayUndoToast undo={undo} />
       {/* The header's right track mirrors the body grid below (20rem + gap-6)
           so the momentum chart sits flush over the "On deck" aside. */}
       <header className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-6 lg:items-stretch">
@@ -245,6 +299,17 @@ export default async function MyDayPage() {
           )}
         </aside>
       </div>
+      {modalTicket && modalBoard && (
+        <MyDayTicketModal
+          key={modalTicket.id}
+          ticket={modalTicket}
+          columns={modalBoard.columns.map((c) => ({ ...c, subStates: parseSubStates(c.subStates) }))}
+          labels={modalBoard.labels}
+          agents={agents}
+          members={modalMembers}
+          currentUser={{ id: ctx.user.id, name: ctx.user.name }}
+        />
+      )}
     </div>
   );
 }
@@ -374,7 +439,7 @@ function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; ur
   const assignees = cardAssignees(row);
   return (
     <div className="group rounded-2xl border border-border bg-surface px-3 py-2.5 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md md:px-4 md:py-3 kb-done-host">
-      <Link href={`/boards/${row.boardSlug}?ticket=${row.id}`} className="flex min-w-0 items-start gap-2.5">
+      <Link href={`/my-day?ticket=${row.id}`} className="flex min-w-0 items-start gap-2.5">
         <span className={urgent ? "grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-danger-soft text-xs font-semibold text-danger" : "grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary-soft text-xs font-semibold text-primary"}>
           {index}
         </span>
@@ -429,6 +494,7 @@ function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; ur
         )}
         <form action={markMyDayTicketDone} className="ms-auto">
           <input type="hidden" name="ticketId" value={row.id} />
+          <input type="hidden" name="undoColumnId" value={row.columnId} />
           <DoneControl disabled={!row.doneColumnId} title={row.doneColumnId ? "Mark ticket done" : "No done column configured"} />
           <span className="sr-only">Done</span>
         </form>
@@ -510,7 +576,7 @@ function DoneArchive({ archive }: { archive: { total: number; hasMore: boolean; 
 function DeckRow({ row }: { row: Row }) {
   const d = dueMeta(row.dueDate);
   return (
-    <Link href={`/boards/${row.boardSlug}?ticket=${row.id}`} className="block rounded-xl border border-border/70 bg-surface/60 px-3 py-2 hover:bg-surface">
+    <Link href={`/my-day?ticket=${row.id}`} className="block rounded-xl border border-border/70 bg-surface/60 px-3 py-2 hover:bg-surface">
       <div dir="auto" className="line-clamp-2 text-sm font-medium">{row.title}</div>
       <div className="mt-1 flex items-center justify-between gap-2 text-xs text-fg-subtle">
         <span>{row.boardName}</span>
@@ -582,7 +648,7 @@ function AnytimeShelf({ items }: { items: MyDayFocusItem<Row, MyDayNote>[] }) {
 /** One compact shelf row: tap target for the item, Done kept in reach of the thumb. */
 function AnytimeRow({ item }: { item: MyDayFocusItem<Row, MyDayNote> }) {
   const isTicket = item.kind === "ticket";
-  const href = isTicket ? `/boards/${item.ticket.boardSlug}?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
+  const href = isTicket ? `/my-day?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
   const pr = isTicket ? priorityMeta(item.ticket.priority) : null;
   return (
     <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border/70 bg-surface/60 py-2 pe-2 ps-3 transition-colors hover:border-warning/30 hover:bg-surface kb-done-host">
@@ -609,6 +675,7 @@ function AnytimeRow({ item }: { item: MyDayFocusItem<Row, MyDayNote> }) {
       </Link>
       <form action={isTicket ? markMyDayTicketDone : markMyDayNoteDone} className="shrink-0">
         <input type="hidden" name={isTicket ? "ticketId" : "noteId"} value={isTicket ? item.ticket.id : item.note.id} />
+        {isTicket && <input type="hidden" name="undoColumnId" value={item.ticket.columnId} />}
         <DoneControl
           disabled={isTicket && !item.ticket.doneColumnId}
           title={!isTicket ? "Mark note done" : item.ticket.doneColumnId ? "Mark ticket done" : "No done column configured"}
@@ -676,7 +743,7 @@ function EchoesPanel({ echoes }: { echoes: MyDayPeekList<Row, MyDayNote> }) {
 
 function EchoRow({ item }: { item: MyDayPeekItem<Row, MyDayNote> }) {
   const isTicket = item.kind === "ticket";
-  const href = isTicket ? `/boards/${item.ticket.boardSlug}?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
+  const href = isTicket ? `/my-day?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
   return (
     <Link href={href} className="relative block min-w-0 rounded-lg px-1.5 py-0.5 transition-colors hover:bg-success-soft/40">
       <span aria-hidden className="absolute -start-[1.03rem] top-2 h-2 w-2 rounded-full border-2 border-success bg-surface" />
@@ -756,7 +823,7 @@ function TomorrowRadarPanel({ radar, dateLabel }: { radar: MyDayTomorrowRadar<Ro
 
 function RadarRow({ item }: { item: MyDayPeekItem<Row, MyDayNote> }) {
   const isTicket = item.kind === "ticket";
-  const href = isTicket ? `/boards/${item.ticket.boardSlug}?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
+  const href = isTicket ? `/my-day?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
   const pr = isTicket ? priorityMeta(item.ticket.priority) : null;
   return (
     <Link href={href} className="block min-w-0 rounded-xl border border-border/70 bg-surface/60 px-3 py-2 transition-colors hover:border-primary/30 hover:bg-surface">

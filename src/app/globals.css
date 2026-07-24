@@ -295,6 +295,11 @@ body {
   35% { opacity: 1; }
   100% { opacity: 0; transform: translate(-50%, -95%) scale(1.25); }
 }
+@keyframes ticket-done-close {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  52% { opacity: 1; transform: translateY(-2px) scale(0.992); }
+  100% { opacity: 0; transform: translateY(18px) scale(0.965); }
+}
 
 .animate-fade-in { animation: fade-in 0.18s ease-out both; }
 .animate-scale-in { animation: scale-in 0.16s var(--ease-out-emph) both; }
@@ -308,6 +313,7 @@ body {
 .animate-ai-handoff { animation: ai-handoff 0.9s ease-out both; }
 .animate-done-slide { animation: done-slide 0.46s cubic-bezier(0.22,1,0.36,1) both; transform-origin: 50% 50%; }
 .animate-confetti-pop { animation: confetti-pop 0.7s ease-out both; }
+.kb-ticket-modal-done-close { animation: ticket-done-close 0.72s var(--ease-out-emph) both; }
 .ai-shimmer {
   background-image: linear-gradient(100deg, var(--color-primary) 30%, var(--color-primary-soft-fg) 50%, var(--color-primary) 70%);
   background-size: 200% 100%;
