@@ -107,6 +107,20 @@ export function countMyDayUnsortedNotes<TNote extends MyDayNote>(_input: { now?:
   ).length;
 }
 
+function getMyDayAnytimeNotes<TNote extends MyDayNote>(notes: TNote[], now = new Date()): TNote[] {
+  const schedule = buildSchedule(now);
+  return notes
+    .filter(
+      (note) =>
+        note.status === "inbox" &&
+        note.doneOn == null &&
+        isSectionVisibleNote(note, schedule.todayYmd) &&
+        noteSectionKey(schedule, note) === "general",
+    )
+    .slice()
+    .sort(compareSectionNotes);
+}
+
 export function buildMyDayFocusItems<TTicket extends MyDayTicket, TNote extends MyDayNote>(input: {
   now?: Date;
   tickets: TTicket[];
@@ -130,7 +144,7 @@ export type MyDayQueue<TTicket extends MyDayTicket = MyDayTicket, TNote extends 
   overdue: MyDayFocusItem<TTicket, TNote>[];
   /** Due-today tickets, then today's still-open scheduled notes. */
   today: MyDayFocusItem<TTicket, TNote>[];
-  /** Undated tickets assigned to the user — no deadline, but on their plate. */
+  /** Undated tickets assigned to the user plus open general notes — optional extra capacity. */
   anytime: MyDayFocusItem<TTicket, TNote>[];
 };
 
@@ -138,7 +152,8 @@ export type MyDayQueue<TTicket extends MyDayTicket = MyDayTicket, TNote extends 
  * The execution queue for the My Day page: the same population as
  * {@link buildMyDayFocusItems} but split into Overdue / Today / Anytime groups,
  * and with done-today notes left out (they live in the Done archive; an
- * execution queue only lists work still open).
+ * execution queue only lists work still open). Anytime is optional extra
+ * capacity: undated assigned tickets and open general notes.
  */
 export function buildMyDayQueue<TTicket extends MyDayTicket, TNote extends MyDayNote>(input: {
   now?: Date;
@@ -158,7 +173,10 @@ export function buildMyDayQueue<TTicket extends MyDayTicket, TNote extends MyDay
         .filter((note) => note.doneOn == null)
         .map((note) => ({ kind: "note" as const, id: note.id, note, urgent: false as const })),
     ],
-    anytime: buckets.mine.map((ticket) => ticketItem(ticket, false)),
+    anytime: [
+      ...buckets.mine.map((ticket) => ticketItem(ticket, false)),
+      ...getMyDayAnytimeNotes(input.notes, now).map((note) => ({ kind: "note" as const, id: note.id, note, urgent: false as const })),
+    ],
   };
 }
 

@@ -94,6 +94,8 @@ test("My Day queue splits overdue / today / anytime and keeps done-today notes o
     notes: [
       note({ id: "today-note" }),
       note({ id: "done-today-note", doneOn: today }), // archived surface, not the queue
+      note({ id: "anytime-note", scheduledDay: null, bucket: "general", position: 2 }),
+      note({ id: "done-anytime-note", scheduledDay: null, bucket: "general", doneOn: today, position: 3 }),
       note({ id: "future-note", scheduledDay: "2026-06-22", bucket: "tomorrow" }),
     ],
     tickets: [
@@ -108,7 +110,7 @@ test("My Day queue splits overdue / today / anytime and keeps done-today notes o
 
   assert.deepEqual(queue.overdue.map((i) => `${i.kind}:${i.id}:${i.urgent}`), ["ticket:overdue-ticket:true"]);
   assert.deepEqual(queue.today.map((i) => `${i.kind}:${i.id}`), ["ticket:today-ticket", "note:today-note"]);
-  assert.deepEqual(queue.anytime.map((i) => `${i.kind}:${i.id}`), ["ticket:mine-ticket"]);
+  assert.deepEqual(queue.anytime.map((i) => `${i.kind}:${i.id}`), ["ticket:mine-ticket", "note:anytime-note"]);
 });
 
 test("My Day groups completed tickets and notes by completion day, collapsed and initially limited", () => {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
-import { ArrowUpRight, CalendarClock, CheckCheck, NotebookPen, Radar, Sparkles } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CheckCheck, ChevronDown, NotebookPen, Radar, Sparkles, Zap } from "lucide-react";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
@@ -139,12 +139,12 @@ export default async function MyDayPage() {
   const remaining = queue.overdue.length + queue.today.length;
   const dayTotal = doneToday + remaining;
   const pct = dayTotal > 0 ? Math.round((doneToday / dayTotal) * 100) : 0;
-  const queueEmpty = remaining + queue.anytime.length === 0;
+  // The main lane is only about dated work; the Anytime shelf below is extra capacity.
+  const queueEmpty = remaining === 0;
   const momentum = buildMyDayCompletionSeries({ now, tickets: doneRows, notes: todayNotes, days: 14 });
 
   // One continuous execution order across the groups: overdue first, then today.
   const todayOffset = queue.overdue.length;
-  const anytimeOffset = todayOffset + queue.today.length;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-24 pt-6 md:px-6 md:pb-8 md:pt-8">
@@ -216,15 +216,9 @@ export default async function MyDayPage() {
                   ))}
                 </QueueGroup>
               )}
-              {queue.anytime.length > 0 && (
-                <QueueGroup title="Anytime" count={queue.anytime.length} tone="default" hint="Assigned to you, no due date.">
-                  {queue.anytime.map((item, i) => (
-                    <QueueItem key={`${item.kind}-${item.id}`} item={item} index={anytimeOffset + i + 1} />
-                  ))}
-                </QueueGroup>
-              )}
             </>
           )}
+          <AnytimeShelf items={queue.anytime} />
         </div>
 
         <aside className="space-y-4">
@@ -492,6 +486,104 @@ function DeckRow({ row }: { row: Row }) {
         {d && <span>{d.label}</span>}
       </div>
     </Link>
+  );
+}
+
+const ANYTIME_PEEK = 4;
+
+/**
+ * "Anytime Shelf" — undated items assigned to you, kept off the day's command
+ * list. It reads as optional extra capacity ("if you have spare energy"), in
+ * the same peek/expand panel language as Echoes and Tomorrow Radar: a short
+ * top-shelf preview, a clear hidden count, and a native expand to everything.
+ */
+function AnytimeShelf({ items }: { items: MyDayFocusItem<Row, MyDayNote>[] }) {
+  const ticketCount = items.filter((item) => item.kind === "ticket").length;
+  const noteCount = items.length - ticketCount;
+  const shelfPeek = items.slice(0, ANYTIME_PEEK);
+  const shelfRest = items.slice(ANYTIME_PEEK);
+  return (
+    <section className="relative overflow-hidden rounded-3xl border border-warning/25 bg-surface/60 p-4 shadow-card">
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_100%,var(--warning-soft)_0%,transparent_55%)] opacity-40" />
+      <div className="relative">
+        <div className="flex min-w-0 items-center gap-2">
+          <Zap className="h-3.5 w-3.5 shrink-0 text-warning" />
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Anytime shelf</h2>
+          <span className="ms-auto rounded-full bg-warning-soft px-2 py-0.5 text-xs font-semibold tabular-nums text-warning">{items.length}</span>
+        </div>
+        <p className="mt-1 text-[0.6875rem] text-fg-subtle">
+          {items.length === 0 ? (
+            <>No due date, no pressure</>
+          ) : (
+            <>Extra energy today? · {countLabel(ticketCount, "ticket")} · {countLabel(noteCount, "note")}</>
+          )}
+        </p>
+        {items.length === 0 ? (
+          <p className="mt-3 text-sm text-fg-subtle">The shelf is clear — anything assigned to you without a date lands here.</p>
+        ) : (
+          <>
+            <div className="mt-3 space-y-2">
+              {shelfPeek.map((item) => (
+                <AnytimeRow key={`${item.kind}-${item.id}`} item={item} />
+              ))}
+            </div>
+            {shelfRest.length > 0 && (
+              <details className="group/shelf mt-1">
+                <summary className="flex min-h-10 cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-warning [&::-webkit-details-marker]:hidden">
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open/shelf:rotate-180" />
+                  <span className="group-open/shelf:hidden">Open the shelf · {shelfRest.length} hidden</span>
+                  <span className="hidden group-open/shelf:inline">Top shelf only</span>
+                </summary>
+                <div className="mt-1 space-y-2">
+                  {shelfRest.map((item) => (
+                    <AnytimeRow key={`${item.kind}-${item.id}`} item={item} />
+                  ))}
+                </div>
+              </details>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** One compact shelf row: tap target for the item, Done kept in reach of the thumb. */
+function AnytimeRow({ item }: { item: MyDayFocusItem<Row, MyDayNote> }) {
+  const isTicket = item.kind === "ticket";
+  const href = isTicket ? `/boards/${item.ticket.boardSlug}?ticket=${item.ticket.id}` : `/notes?focus=${item.note.id}`;
+  const pr = isTicket ? priorityMeta(item.ticket.priority) : null;
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border/70 bg-surface/60 py-2 pe-2 ps-3 transition-colors hover:border-warning/30 hover:bg-surface">
+      <Link href={href} className="block min-w-0 flex-1 py-0.5">
+        <div dir="auto" className="line-clamp-2 min-w-0 text-sm font-medium text-start break-words">
+          {isTicket ? item.ticket.title : item.note.body}
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-fg-subtle">
+          {isTicket ? (
+            <>
+              <span className="inline-flex items-center gap-1">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(item.ticket.boardColor).dot }} />
+                {item.ticket.boardName}
+              </span>
+              {item.ticket.priority !== "none" && pr && <span style={{ color: pr.color }}>{pr.label}</span>}
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-primary">
+              <NotebookPen className="h-3 w-3 shrink-0" />
+              Note
+            </span>
+          )}
+        </div>
+      </Link>
+      <form action={isTicket ? markMyDayTicketDone : markMyDayNoteDone} className="shrink-0">
+        <input type="hidden" name={isTicket ? "ticketId" : "noteId"} value={isTicket ? item.ticket.id : item.note.id} />
+        <DoneControl
+          disabled={isTicket && !item.ticket.doneColumnId}
+          title={!isTicket ? "Mark note done" : item.ticket.doneColumnId ? "Mark ticket done" : "No done column configured"}
+        />
+      </form>
+    </div>
   );
 }
 

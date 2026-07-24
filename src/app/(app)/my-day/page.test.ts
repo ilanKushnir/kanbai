@@ -83,6 +83,59 @@ test("My Day aside surfaces Echoes from today and Tomorrow Radar as compact expa
   assert.doesNotMatch(echoesPanel, /dueMeta/);
 });
 
+test("My Day Anytime renders as a compact shelf, not a numbered queue group", () => {
+  // Anytime is optional extra capacity, so it must not reuse the QueueGroup
+  // command-list treatment or join the day's execution numbering.
+  assert.doesNotMatch(myDayPage, /<QueueGroup[^>]*title="Anytime"/);
+  assert.doesNotMatch(myDayPage, /anytimeOffset/);
+  // The shelf is always mounted (its empty state is part of the design) and
+  // the main lane's "clear" check only counts dated work.
+  assert.match(myDayPage, /<AnytimeShelf items=\{queue\.anytime\} \/>/);
+  assert.match(myDayPage, /const queueEmpty = remaining === 0/);
+});
+
+test("My Day Anytime shelf previews a few items and expands natively to the rest", () => {
+  const shelf = myDayPage.slice(myDayPage.indexOf("const ANYTIME_PEEK"), myDayPage.indexOf("function AnytimeRow"));
+
+  // Top-shelf preview within the 3–5 target, remainder split off for expand.
+  assert.match(myDayPage, /const ANYTIME_PEEK = 4;/);
+  assert.match(shelf, /items\.slice\(0, ANYTIME_PEEK\)/);
+  assert.match(shelf, /items\.slice\(ANYTIME_PEEK\)/);
+
+  // Native details/summary expand with a clear hidden count, plus a count pill
+  // and a polished empty state — same panel grammar as Echoes/Radar.
+  assert.match(shelf, /<details className="group\/shelf/);
+  assert.match(shelf, /\{shelfRest\.length\} hidden/);
+  assert.match(shelf, /group-open\/shelf:hidden/);
+  assert.match(shelf, /\{items\.length\}<\/span>/);
+  assert.match(shelf, /The shelf is clear/);
+});
+
+test("My Day Anytime shelf rows keep item actions and stay RTL-safe on a 390px screen", () => {
+  const row = myDayPage.slice(myDayPage.indexOf("function AnytimeRow"), myDayPage.indexOf("const countLabel"));
+
+  // Both kinds render: tickets and notes keep their navigation and Done action.
+  assert.match(row, /\/boards\/\$\{item\.ticket\.boardSlug\}\?ticket=\$\{item\.ticket\.id\}/);
+  assert.match(row, /\/notes\?focus=\$\{item\.note\.id\}/);
+  assert.match(row, /<form action=\{isTicket \? markMyDayTicketDone : markMyDayNoteDone\}/);
+  assert.match(row, /name=\{isTicket \? "ticketId" : "noteId"\}/);
+  assert.match(row, /<DoneControl/);
+  assert.match(row, /doneColumnId/); // tickets without a done column stay disabled
+
+  // 390px / RTL guards: shrinkable text column, bidi-aware full-width titles,
+  // logical padding, wrapping meta — nothing that can force horizontal scroll.
+  assert.match(row, /className="flex min-w-0 items-center gap-2/);
+  assert.match(row, /className="block min-w-0 flex-1/);
+  assert.match(row, /dir="auto"/);
+  assert.match(row, /line-clamp-2 min-w-0 text-sm font-medium text-start break-words/);
+  assert.match(row, /pe-2 ps-3/);
+  assert.match(row, /flex-wrap/);
+  const shelfAndRow = myDayPage.slice(myDayPage.indexOf("const ANYTIME_PEEK"), myDayPage.indexOf("const countLabel"));
+  assert.doesNotMatch(shelfAndRow, /whitespace-nowrap/);
+  assert.doesNotMatch(shelfAndRow, /\bw-\[\d/); // no fixed pixel widths on the shelf
+  assert.doesNotMatch(shelfAndRow, /\bml-|\bmr-|\bpl-|\bpr-|text-left|text-right/); // logical properties only
+});
+
 test("My Day done controls are outline-first and completed items render a collapsed Done archive", () => {
   assert.match(myDayPage, /function DoneControl/);
   assert.match(myDayPage, /border-success/);
