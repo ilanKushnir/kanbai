@@ -147,7 +147,7 @@ export default async function MyDayPage() {
   const todayOffset = queue.overdue.length;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 pb-24 pt-6 md:px-6 md:pb-8 md:pt-8">
+    <div className="mx-auto w-full max-w-5xl px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 md:px-6 md:pb-8 md:pt-8">
       {/* The header's right track mirrors the body grid below (20rem + gap-6)
           so the momentum chart sits flush over the "On deck" aside. */}
       <header className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-6 lg:items-stretch">
@@ -179,7 +179,7 @@ export default async function MyDayPage() {
       </header>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="space-y-5">
+        <div className="space-y-4 md:space-y-5">
           {queueEmpty ? (
             <section className="grid min-h-64 place-items-center rounded-3xl border border-dashed border-border bg-surface-2/35 p-6 text-center shadow-card">
               <div>
@@ -330,8 +330,8 @@ function QueueGroup({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl border border-border bg-surface/60 p-3 shadow-card md:p-4">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 px-1">
+    <section className="rounded-3xl border border-border bg-surface/60 p-2.5 shadow-card md:p-4">
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 px-1 md:mb-3">
         <h2
           className={
             groupTone === "danger"
@@ -352,7 +352,7 @@ function QueueGroup({
         </span>
         <p className="ms-auto hidden text-xs text-fg-subtle sm:block">{hint}</p>
       </div>
-      <div className="space-y-2">{children}</div>
+      <div className="space-y-1.5 md:space-y-2">{children}</div>
     </section>
   );
 }
@@ -369,14 +369,14 @@ function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; ur
   const pr = priorityMeta(row.priority);
   const d = dueMeta(row.dueDate);
   return (
-    <div className="group rounded-2xl border border-border bg-surface px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
-      <Link href={`/boards/${row.boardSlug}?ticket=${row.id}`} className="flex min-w-0 items-start gap-3">
-        <span className={urgent ? "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger-soft text-danger" : "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary"}>
+    <div className="group rounded-2xl border border-border bg-surface px-3 py-2.5 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md md:px-4 md:py-3">
+      <Link href={`/boards/${row.boardSlug}?ticket=${row.id}`} className="flex min-w-0 items-start gap-2.5">
+        <span className={urgent ? "grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-danger-soft text-xs font-semibold text-danger" : "grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary-soft text-xs font-semibold text-primary"}>
           {index}
         </span>
         <div className="min-w-0 flex-1 text-start" dir="auto">
-          <div className="text-base font-semibold leading-snug break-words">{row.title}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
+          <div className="line-clamp-2 text-[0.9375rem] font-semibold leading-snug break-words md:text-base">{row.title}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-subtle">
             <span className="inline-flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(row.boardColor).dot }} />
               {row.boardName}
@@ -386,7 +386,7 @@ function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; ur
           </div>
         </div>
       </Link>
-      <div className="mt-3 flex flex-wrap items-center gap-2 pl-12">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 ps-[2.375rem]">
         {upNext && <Badge tone="primary">Up next</Badge>}
         {d && (
           <Badge tone={d.tone}>
@@ -395,8 +395,8 @@ function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; ur
           </Badge>
         )}
         <Badge tone="default">Ticket</Badge>
-        {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.color} src={row.assignee.type === "user" ? row.assignee.avatarUrl : undefined} isAgent={row.assignee.type === "agent"} size={26} />}
-        <form action={markMyDayTicketDone} className="ml-auto">
+        {row.assignee && <Avatar name={row.assignee.name} color={row.assignee.color} src={row.assignee.type === "user" ? row.assignee.avatarUrl : undefined} isAgent={row.assignee.type === "agent"} size={22} />}
+        <form action={markMyDayTicketDone} className="ms-auto">
           <input type="hidden" name="ticketId" value={row.id} />
           <DoneControl disabled={!row.doneColumnId} title={row.doneColumnId ? "Mark ticket done" : "No done column configured"} />
           <span className="sr-only">Done</span>
@@ -408,14 +408,14 @@ function FocusCard({ row, index, urgent, upNext }: { row: Row; index: number; ur
 
 function FocusNoteCard({ note, index, upNext }: { note: MyDayNote; index: number; upNext?: boolean }) {
   return (
-    <div className="group rounded-2xl border border-primary/20 bg-primary-soft/20 px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
-      <Link href={`/notes?focus=${note.id}`} className="flex min-w-0 items-start gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface text-primary">
+    <div className="group rounded-2xl border border-primary/20 bg-primary-soft/20 px-3 py-2.5 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md md:px-4 md:py-3">
+      <Link href={`/notes?focus=${note.id}`} className="flex min-w-0 items-start gap-2.5">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface text-xs font-semibold text-primary">
           {index}
         </span>
         <div className="min-w-0 flex-1 text-start" dir="auto">
-          <div className="line-clamp-3 text-base font-semibold leading-snug break-words">{note.body}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
+          <div className="line-clamp-2 text-[0.9375rem] font-semibold leading-snug break-words md:text-base">{note.body}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-subtle">
             <span className="inline-flex items-center gap-1 text-primary">
               <NotebookPen className="h-3.5 w-3.5" />
               Today note
@@ -423,10 +423,10 @@ function FocusNoteCard({ note, index, upNext }: { note: MyDayNote; index: number
           </div>
         </div>
       </Link>
-      <div className="mt-3 flex flex-wrap items-center gap-2 pl-12">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 ps-[2.375rem]">
         {upNext && <Badge tone="primary">Up next</Badge>}
         <Badge tone="primary">Note</Badge>
-        <form action={markMyDayNoteDone} className="ml-auto">
+        <form action={markMyDayNoteDone} className="ms-auto">
           <input type="hidden" name="noteId" value={note.id} />
           <DoneControl title="Mark note done" />
         </form>
@@ -441,7 +441,7 @@ function DoneControl({ disabled, title }: { disabled?: boolean; title: string })
     <DoneButton
       disabled={disabled}
       title={title}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-success bg-transparent px-2.5 py-1.5 text-xs font-semibold text-success shadow-sm transition-colors hover:bg-success hover:text-success-fg focus:bg-success focus:text-success-fg active:bg-success active:text-success-fg disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-2 disabled:text-fg-subtle disabled:shadow-none"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-success bg-transparent px-2.5 py-1 text-xs font-semibold text-success shadow-sm md:py-1.5 transition-colors hover:bg-success hover:text-success-fg focus:bg-success focus:text-success-fg active:bg-success active:text-success-fg disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-2 disabled:text-fg-subtle disabled:shadow-none"
     />
   );
 }

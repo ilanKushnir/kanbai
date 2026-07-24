@@ -37,21 +37,39 @@ test("My Day mobile focus cards keep titles in a wide RTL-safe content column", 
   const noteCard = myDayPage.slice(myDayPage.indexOf("function FocusNoteCard"), myDayPage.indexOf("function DoneControl"));
 
   assert.match(ticketCard, /className="group rounded-2xl/);
-  assert.match(ticketCard, /className="flex min-w-0 items-start gap-3/);
+  assert.match(ticketCard, /className="flex min-w-0 items-start gap-2\.5/);
   assert.match(ticketCard, /className="min-w-0 flex-1 text-start/);
-  assert.match(ticketCard, /className="text-base font-semibold leading-snug break-words/);
-  assert.match(ticketCard, /className="mt-3 flex flex-wrap items-center gap-2/);
+  assert.match(ticketCard, /className="line-clamp-2 text-\[0\.9375rem\] font-semibold leading-snug break-words md:text-base/);
+  assert.match(ticketCard, /className="mt-2 flex flex-wrap items-center gap-1\.5/);
   assert.doesNotMatch(ticketCard, /items-center gap-3 rounded-2xl[^]*ml-auto flex shrink-0 items-center gap-2/);
 
   assert.match(noteCard, /className="group rounded-2xl/);
-  assert.match(noteCard, /className="flex min-w-0 items-start gap-3/);
+  assert.match(noteCard, /className="flex min-w-0 items-start gap-2\.5/);
   assert.match(noteCard, /className="min-w-0 flex-1 text-start/);
-  assert.match(noteCard, /className="line-clamp-3 text-base font-semibold leading-snug break-words/);
-  assert.match(noteCard, /className="mt-3 flex flex-wrap items-center gap-2/);
+  assert.match(noteCard, /className="line-clamp-2 text-\[0\.9375rem\] font-semibold leading-snug break-words md:text-base/);
+  assert.match(noteCard, /className="mt-2 flex flex-wrap items-center gap-1\.5/);
 });
 
-test("My Day mobile shell leaves enough bottom scroll room for the fixed nav", () => {
-  assert.match(myDayPage, /pb-24 pt-6 md:px-6 md:pb-8/);
+test("My Day mobile shell leaves safe-area-aware bottom scroll room for the fixed nav", () => {
+  assert.match(myDayPage, /pb-\[calc\(6rem\+env\(safe-area-inset-bottom\)\)\] pt-6 md:px-6 md:pb-8/);
+});
+
+test("My Day focus cards stay compact on a 390px screen without losing the Done action", () => {
+  const cards = myDayPage.slice(myDayPage.indexOf("function FocusCard"), myDayPage.indexOf("function DoneControl"));
+
+  // Tight mobile padding that relaxes back to the roomy desktop card.
+  assert.match(cards, /px-3 py-2\.5 [^"]*md:px-4 md:py-3/);
+  // Smaller, subtler execution index — no 36px tile eating vertical space.
+  assert.match(cards, /h-7 w-7 shrink-0 place-items-center rounded-lg/);
+  assert.doesNotMatch(cards, /h-9 w-9/);
+  // Titles clamp to two lines and stay RTL-safe.
+  assert.doesNotMatch(cards, /line-clamp-3/);
+  // Chips row indents with logical properties only (no pl-/ml- physical offsets).
+  assert.match(cards, /ps-\[2\.375rem\]/);
+  assert.match(cards, /className="ms-auto"/);
+  assert.doesNotMatch(cards, /\bpl-|\bml-|text-left|text-right/);
+  // The Done control keeps its tap affordance at a lower mobile height.
+  assert.match(myDayPage, /px-2\.5 py-1 text-xs font-semibold text-success shadow-sm md:py-1\.5/);
 });
 
 
