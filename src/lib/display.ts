@@ -24,6 +24,16 @@ export function assigneeLabel(assignee: { type: "user" | "agent"; name: string; 
 }
 
 /**
+ * The assignee list a card renders: the full multi-assign list when present,
+ * falling back to the legacy single `assignee` (older serialized payloads),
+ * else empty.
+ */
+export function cardAssignees<T>(ticket: { assignee?: T | null; assignees?: T[] | null }): T[] {
+  if (ticket.assignees?.length) return ticket.assignees;
+  return ticket.assignee ? [ticket.assignee] : [];
+}
+
+/**
  * Completion chip for tickets sitting in a done column — shown INSTEAD of the
  * due chip, so a finished ticket never reads "overdue". Falls back to a bare
  * "Done" for legacy rows completed before completedAt existed.

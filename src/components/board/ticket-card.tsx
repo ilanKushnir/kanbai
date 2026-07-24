@@ -1,7 +1,7 @@
 import { MessageSquare, CalendarClock, CircleCheck, NotebookPen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { priorityMeta, dueMeta, completionMeta, assigneeLabel } from "@/lib/display";
+import { priorityMeta, dueMeta, completionMeta, assigneeLabel, cardAssignees } from "@/lib/display";
 import { cn, htmlToPlainText } from "@/lib/utils";
 
 type CardAssignee = { type: "user" | "agent"; name: string; color?: string; avatarUrl?: string | null; ownerName?: string | null };
@@ -40,7 +40,7 @@ export function TicketCard({
   const done = Boolean(ticket.isDone);
   const due = done ? null : dueMeta(ticket.dueDate);
   const completed = done ? completionMeta(ticket.completedAt) : null;
-  const assignees = ticket.assignees?.length ? ticket.assignees : ticket.assignee ? [ticket.assignee] : [];
+  const assignees = cardAssignees(ticket);
   const excerpt = ticket.description ? htmlToPlainText(ticket.description) : "";
 
   return (

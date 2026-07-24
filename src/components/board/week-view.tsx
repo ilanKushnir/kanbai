@@ -7,7 +7,7 @@ import { TicketModal } from "./ticket-modal";
 import { Avatar } from "@/components/ui/avatar";
 import { api } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
-import { priorityMeta, assigneeLabel, canAssignAgent } from "@/lib/display";
+import { priorityMeta, assigneeLabel, canAssignAgent, cardAssignees } from "@/lib/display";
 import { addDays, parseYmd, ymd } from "@/lib/notes-schedule";
 import {
   buildWeekDays,
@@ -443,7 +443,10 @@ export function WeekView({
   );
 }
 
-/** A compact journal entry: title, then number / priority / done tick / assignee. */
+/** Faces shown in a week card's assignee stack before folding into "+N". */
+const WEEK_CARD_AVATAR_LIMIT = 3;
+
+/** A compact journal entry: title, then number / priority / done tick / assignees. */
 function WeekCard({
   ticket,
   onClick,
@@ -452,6 +455,7 @@ function WeekCard({
   onClick: () => void;
 }) {
   const pr = priorityMeta(ticket.priority);
+  const assignees = cardAssignees(ticket);
   return (
     <button
       onClick={onClick}
@@ -477,16 +481,32 @@ function WeekCard({
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: pr.color }} title={pr.label} />
         )}
         {ticket.done && <CircleCheck className="h-3.5 w-3.5 text-success" aria-label="Done" />}
-        {ticket.assignee && (
-          <span className="ms-auto">
-            <Avatar
-              name={ticket.assignee.name}
-              color={ticket.assignee.color}
-              src={ticket.assignee.type === "user" ? ticket.assignee.avatarUrl : undefined}
-              isAgent={ticket.assignee.type === "agent"}
-              size={18}
-              title={assigneeLabel(ticket.assignee)}
-            />
+        {assignees.length > 0 && (
+          <span
+            role="group"
+            aria-label={`Assigned to ${assignees.map((a) => assigneeLabel(a)).join(", ")}`}
+            className="ms-auto flex shrink-0 items-center -space-x-1"
+          >
+            {assignees.slice(0, WEEK_CARD_AVATAR_LIMIT).map((a) => (
+              <span key={`${a.type}-${a.id}`} className="rounded-full ring-2 ring-surface">
+                <Avatar
+                  name={a.name}
+                  color={a.color}
+                  src={a.type === "user" ? a.avatarUrl : undefined}
+                  isAgent={a.type === "agent"}
+                  size={18}
+                  title={assigneeLabel(a)}
+                />
+              </span>
+            ))}
+            {assignees.length > WEEK_CARD_AVATAR_LIMIT && (
+              <span
+                className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-surface-2 px-0.5 text-[0.5625rem] font-semibold tabular-nums text-fg-muted ring-2 ring-surface"
+                title={assignees.slice(WEEK_CARD_AVATAR_LIMIT).map((a) => assigneeLabel(a)).join(", ")}
+              >
+                +{assignees.length - WEEK_CARD_AVATAR_LIMIT}
+              </span>
+            )}
           </span>
         )}
       </div>
