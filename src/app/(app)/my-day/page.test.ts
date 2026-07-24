@@ -234,11 +234,48 @@ test("My Day done actions show temporary Undo only after server-driven success",
   assert.match(myDayPage, /redirect\(myDayDoneUrl\(\{ kind: "ticket"/);
   assert.match(myDayPage, /redirect\(myDayDoneUrl\(\{ kind: "note"/);
   assert.match(myDayPage, /<MyDayUndoToast undo=\{undo\} \/>/);
-  assert.match(myDayUndoToast, /actionLabel: "Undo"/);
-  assert.match(myDayUndoToast, /duration: 7000/);
+
+  // The dock shows once per payload, holds the 7s undo window, strips the undo
+  // params from the URL, and restores through the same server endpoints.
+  assert.match(myDayUndoToast, /const UNDO_WINDOW_MS = 7000;/);
+  assert.match(myDayUndoToast, /setTimeout\(\(\) => setActive\(null\), UNDO_WINDOW_MS\)/);
+  assert.match(myDayUndoToast, /if \(shown\.current === key\) return;/);
+  assert.match(myDayUndoToast, /router\.replace\("\/my-day", \{ scroll: false \}\)/);
   assert.match(myDayUndoToast, /\/api\/tickets\/\$\{payload\.id\}\/move/);
   assert.match(myDayUndoToast, /\/api\/notes\/\$\{payload\.id\}/);
+  assert.match(myDayUndoToast, /toast\(\{ title: "Restored to My Day", variant: "success" \}\)/);
+  assert.match(myDayUndoToast, /toast\(\{ title: "Couldn't undo"/);
+  assert.match(myDayUndoToast, /router\.refresh\(\)/);
   assert.doesNotMatch(myDayPage, /useOptimistic/);
+});
+
+test("My Day undo dock floats as a glass surface clear of the mobile nav, with a prominent Undo", () => {
+  // Own portal, not the shared toast stack — the dock owns its surface and
+  // placement while success/error feedback still goes through useToast above.
+  assert.match(myDayUndoToast, /createPortal\(/);
+
+  // Safe-area-aware bottom offset above the fixed mobile nav; desktop drops to
+  // the usual corner-free bottom-center.
+  assert.match(myDayUndoToast, /bottom-\[calc\(4\.5rem\+env\(safe-area-inset-bottom\)\+0\.75rem\)\]/);
+  assert.match(myDayUndoToast, /md:bottom-6/);
+
+  // Elevated glass card with a success-tinted border, ring, and glow so it
+  // separates from the dark My Day cards behind it.
+  assert.match(myDayUndoToast, /border-success\/30 bg-surface\/85/);
+  assert.match(myDayUndoToast, /shadow-2xl shadow-success\/15 ring-1 ring-border\/60 backdrop-blur-xl/);
+  assert.match(myDayUndoToast, /rounded-full bg-success-soft text-success shadow-\[0_0_18px_2px_color-mix/); // glowing check orb
+
+  // Thumb-friendly, high-emphasis Undo CTA; low-emphasis close.
+  assert.match(myDayUndoToast, /min-h-10 [^"]*bg-success px-3\.5 text-sm font-semibold text-success-fg/);
+  assert.match(myDayUndoToast, /aria-label="Dismiss"/);
+  assert.match(myDayUndoToast, /text-fg-subtle hover:bg-surface-2/);
+
+  // 390px / RTL guards: shrinkable title column, bidi-aware truncation, no
+  // physical-direction utilities.
+  assert.match(myDayUndoToast, /className="min-w-0 flex-1"/);
+  assert.match(myDayUndoToast, /dir="auto"/);
+  assert.match(myDayUndoToast, /truncate text-xs text-fg-muted text-start/);
+  assert.doesNotMatch(myDayUndoToast, /\bml-|\bmr-|\bpl-|\bpr-|text-left|text-right/);
 });
 
 test("My Day modal done undo restores the previous ticket column", () => {
