@@ -1,5 +1,6 @@
 import { handler, created } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
+import { agentNoteScope } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { attachmentSchema } from "@/lib/validation";
 import { getWorkspaceNote, addAttachment } from "@/lib/services/notes";
@@ -12,7 +13,7 @@ export const POST = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "notes:write");
     const { noteId } = await params;
-    await getWorkspaceNote(noteId, agent.workspaceId); // 404s outside the workspace
+    await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent)); // 404s outside the workspace
     const input = parse(attachmentSchema, await readJson(req));
     const note = await addAttachment(noteId, input);
     return created({ note });

@@ -113,6 +113,17 @@ export async function destroyCurrentSession() {
   jar.delete(SESSION_COOKIE);
 }
 
+/**
+ * Revoke every session for a user except the one making the current request —
+ * called after a password change so a stolen/older session can't outlive it.
+ */
+export async function revokeOtherSessions(userId: string) {
+  const jar = await cookies();
+  const token = jar.get(SESSION_COOKIE)?.value;
+  const currentHash = token ? sha256(token) : "";
+  await db.session.deleteMany({ where: { userId, tokenHash: { not: currentHash } } });
+}
+
 export async function setActiveWorkspace(workspaceId: string) {
   const jar = await cookies();
   jar.set(WS_COOKIE, workspaceId, cookieOpts());

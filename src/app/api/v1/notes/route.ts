@@ -1,5 +1,6 @@
 import { handler, ok, created, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
+import { agentNoteScope } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { createNoteV1Schema } from "@/lib/validation";
 import { NOTE_BUCKETS } from "@/lib/constants";
@@ -21,7 +22,10 @@ export const GET = handler(async (req: Request) => {
   const url = new URL(req.url);
   const status = url.searchParams.get("status") ?? undefined;
   const bucket = url.searchParams.get("bucket") ?? undefined;
-  const userId = url.searchParams.get("userId") ?? undefined;
+  // An owned, non-manager agent only ever sees its owner's notes; the userId
+  // filter can narrow further but can't widen past that scope.
+  const scope = await agentNoteScope(agent);
+  const userId = scope ?? url.searchParams.get("userId") ?? undefined;
   // `assigned=me` narrows to notes queued to this agent.
   const assignedAgentId = url.searchParams.get("assigned") === "me" ? agent.id : undefined;
 
@@ -47,10 +51,13 @@ export const POST = handler(async (req: Request) => {
   requireScope(agent, "notes:write");
   const input = parse(createNoteV1Schema, await readJson(req));
 
-  const userId = await resolveWorkspaceUserId(agent.workspaceId, {
+  // An owned, non-manager agent can only create notes for its own owner; it
+  // can't file notes into other members' inboxes.
+  const scope = await agentNoteScope(agent);
+  const userId = scope ?? (await resolveWorkspaceUserId(agent.workspaceId, {
     userId: input.userId,
     userEmail: input.userEmail,
-  });
+  }));
   const note = await createNote(userId, input.body, {
     bucket: input.bucket,
     priority: input.priority,

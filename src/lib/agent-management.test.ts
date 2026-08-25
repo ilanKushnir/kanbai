@@ -19,7 +19,9 @@ const docs = readFileSync("docs/AGENT_PROTOCOL.md", "utf8");
 test("Note → ticket promotion is one action, dual-scoped, and never deletes the note", () => {
   assert.match(promoteRoute, /requireScope\(agent, "notes:write"\)/);
   assert.match(promoteRoute, /requireScope\(agent, "tickets:write"\)/);
-  assert.match(promoteRoute, /getWorkspaceNote\(noteId, agent\.workspaceId\)/); // any workspace note, not just this agent's inbox
+  // Any workspace note (not just this agent's inbox), but capped to the owner's
+  // scope so an owned agent can't promote another member's private note.
+  assert.match(promoteRoute, /getWorkspaceNote\(noteId, agent\.workspaceId, await agentNoteScope\(agent\)\)/);
   assert.match(promoteRoute, /guardAgentSnapshot/); // undoable via snapshot restore
   assert.match(promoteRoute, /fulfillNote\(/); // shared service: create ticket + mark sorted
   assert.match(promoteRoute, /409, "Note already sorted/);

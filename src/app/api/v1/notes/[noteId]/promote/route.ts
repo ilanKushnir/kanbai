@@ -1,6 +1,6 @@
 import { handler, created, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertAgentBoardAccess } from "@/lib/access";
+import { assertAgentBoardAccess, agentNoteScope } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { promoteNoteV1Schema } from "@/lib/validation";
 import { getWorkspaceNote, fulfillNote } from "@/lib/services/notes";
@@ -33,7 +33,7 @@ export const POST = handler(
     requireScope(agent, "tickets:write");
     const { noteId } = await params;
 
-    const note = await getWorkspaceNote(noteId, agent.workspaceId);
+    const note = await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent));
     if (note.deletedAt) throw new HttpError(404, "Note not found");
     if (note.ticket) throw new HttpError(409, "Note already sorted into a ticket");
 

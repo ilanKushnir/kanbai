@@ -1,5 +1,6 @@
 import { handler, ok } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
+import { agentNoteScope } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { moveNoteSchema } from "@/lib/validation";
 import { getWorkspaceNote, moveNote } from "@/lib/services/notes";
@@ -12,7 +13,7 @@ export const POST = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "notes:write");
     const { noteId } = await params;
-    const note = await getWorkspaceNote(noteId, agent.workspaceId);
+    const note = await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent));
     const { scheduledDay, position } = parse(moveNoteSchema, await readJson(req));
     const updated = await moveNote(noteId, note.userId, scheduledDay, position);
     return ok({ note: updated });

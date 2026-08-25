@@ -79,9 +79,16 @@ export async function listInboxForAgent(agentId: string) {
  * is a member of that workspace. 404s otherwise so we never leak existence of
  * notes in other workspaces. Returns the raw note (with relations).
  */
-export async function getWorkspaceNote(noteId: string, workspaceId: string) {
+/**
+ * Load a note that belongs to a member of `workspaceId`. Pass `restrictToUserId`
+ * (an owned agent's note scope) to additionally require the note belongs to that
+ * user — an owned, non-manager agent can only touch its owner's notes. A mismatch
+ * 404s exactly like a missing note, so it never leaks another member's note ids.
+ */
+export async function getWorkspaceNote(noteId: string, workspaceId: string, restrictToUserId?: string | null) {
   const note = await db.note.findUnique({ where: { id: noteId }, include: noteInclude });
   if (!note) throw new HttpError(404, "Note not found");
+  if (restrictToUserId != null && note.userId !== restrictToUserId) throw new HttpError(404, "Note not found");
   const member = await db.workspaceMember.findFirst({
     where: { workspaceId, userId: note.userId },
     select: { id: true },

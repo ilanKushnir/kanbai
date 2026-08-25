@@ -1,5 +1,6 @@
 import { handler, ok } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
+import { agentNoteScope } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { updateNoteSchema } from "@/lib/validation";
 import {
@@ -16,7 +17,7 @@ export const GET = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "notes:read");
     const { noteId } = await params;
-    const note = await getWorkspaceNote(noteId, agent.workspaceId);
+    const note = await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent));
     return ok({ note: serializeNote(note) });
   },
 );
@@ -26,7 +27,7 @@ export const PATCH = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "notes:write");
     const { noteId } = await params;
-    await getWorkspaceNote(noteId, agent.workspaceId); // 404s outside the workspace
+    await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent)); // 404s outside the workspace
     const input = parse(updateNoteSchema, await readJson(req));
     const note = await updateNote(noteId, input);
     return ok({ note });
@@ -38,7 +39,7 @@ export const DELETE = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "notes:write");
     const { noteId } = await params;
-    await getWorkspaceNote(noteId, agent.workspaceId); // 404s outside the workspace
+    await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent)); // 404s outside the workspace
     await deleteNote(noteId);
     return ok({ ok: true });
   },

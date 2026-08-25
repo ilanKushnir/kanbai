@@ -1,6 +1,6 @@
 import { handler, ok } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertAgentInWorkspace } from "@/lib/access";
+import { assertAgentInWorkspace, agentNoteScope } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { queueNoteV1Schema } from "@/lib/validation";
 import { getWorkspaceNote, queueNoteToAgent } from "@/lib/services/notes";
@@ -13,7 +13,7 @@ export const POST = handler(
     const agent = await requireAgent(req);
     requireScope(agent, "notes:write");
     const { noteId } = await params;
-    await getWorkspaceNote(noteId, agent.workspaceId); // 404s outside the workspace
+    await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent)); // 404s outside the workspace
     const { agentId, sortContext } = parse(queueNoteV1Schema, await readJson(req));
 
     const target = agentId ?? agent.id;

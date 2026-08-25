@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
-import { assertBoardAccess } from "@/lib/authz";
+import { assertBoardAccess, boardWhereForContext } from "@/lib/authz";
 import { getBoardWithData } from "@/lib/services/boards";
 import { boardAssigneeUsers } from "@/lib/services/board-members";
 import { parseUserSettings } from "@/lib/user-settings";
@@ -21,8 +21,10 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const ctx = await getContext();
+  // Scope to boards the caller may actually see, so a board's name can't leak in
+  // the tab title to a member without a grant (the page body already 404s).
   const board = await db.board.findFirst({
-    where: { workspaceId: ctx.workspace.id, slug },
+    where: { ...boardWhereForContext(ctx), slug },
     select: { name: true },
   });
   return { title: board?.name ?? "Board" };

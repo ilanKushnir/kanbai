@@ -1,5 +1,6 @@
 import { handler, ok, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
+import { agentHasManagerAuthority } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { updateMemberV1Schema } from "@/lib/validation";
 import { logActivity } from "@/lib/activity";
@@ -17,10 +18,19 @@ async function loadMember(workspaceId: string, userId: string) {
   return member;
 }
 
+/** Managing members requires manager authority — an agent scoped to a single
+ *  member (owned by a non-manager) cannot change roles or remove members. */
+async function assertMemberAuthority(agent: { workspaceId: string; ownerUserId?: string | null }) {
+  if (!(await agentHasManagerAuthority(agent))) {
+    throw new HttpError(403, "This agent is scoped to a single member and can't manage workspace members.", "agent_not_manager");
+  }
+}
+
 /** Update a member's workspace role and/or per-board access grants. */
 export const PATCH = handler(async (req: Request, { params }: Ctx) => {
   const agent = await requireAgent(req);
   requireScope(agent, "members:write");
+  await assertMemberAuthority(agent);
   const { userId } = await params;
   const member = await loadMember(agent.workspaceId, userId);
   if (member.role === "owner") throw new HttpError(403, "The workspace owner can't be changed.");
@@ -61,6 +71,7 @@ export const PATCH = handler(async (req: Request, { params }: Ctx) => {
 export const DELETE = handler(async (req: Request, { params }: Ctx) => {
   const agent = await requireAgent(req);
   requireScope(agent, "members:write");
+  await assertMemberAuthority(agent);
   const { userId } = await params;
   const member = await loadMember(agent.workspaceId, userId);
   if (member.role === "owner") throw new HttpError(403, "The workspace owner can't be removed.");

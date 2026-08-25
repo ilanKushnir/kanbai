@@ -28,6 +28,33 @@ export async function agentAccessibleBoardIds(agent: AgentPrincipal): Promise<st
   return grants.map((g) => g.boardId);
 }
 
+/**
+ * Whether the agent may act with workspace-manager authority. An agent with no
+ * owner represents the workspace itself (legacy/manager-provisioned); an owned
+ * agent inherits its owner's authority, so member management is allowed only
+ * when that owner is a workspace owner/admin. This closes the escalation where
+ * an agent owned by a plain member could promote members or edit roles.
+ */
+export async function agentHasManagerAuthority(agent: AgentPrincipal): Promise<boolean> {
+  if (!agent.ownerUserId) return true;
+  const m = await db.workspaceMember.findFirst({
+    where: { workspaceId: agent.workspaceId, userId: agent.ownerUserId },
+    select: { role: true },
+  });
+  return m?.role === "owner" || m?.role === "admin";
+}
+
+/**
+ * For per-user private data (notes): the single userId an owned, non-manager
+ * agent is confined to, or null meaning "the whole workspace" (no owner, or an
+ * owner with manager authority). Mirrors the board cap for notes, which are
+ * strictly per-user-private in the session model.
+ */
+export async function agentNoteScope(agent: AgentPrincipal): Promise<string | null> {
+  if (!agent.ownerUserId) return null;
+  return (await agentHasManagerAuthority(agent)) ? null : agent.ownerUserId;
+}
+
 /** Prisma `where` fragment limiting boards to the agent's effective access. */
 export async function agentBoardWhere(agent: AgentPrincipal) {
   const ids = await agentAccessibleBoardIds(agent);

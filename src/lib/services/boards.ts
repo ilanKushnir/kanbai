@@ -17,6 +17,25 @@ async function uniqueBoardSlug(workspaceId: string, name: string) {
   return existing.some((b) => b.slug === base) ? `${base}-${existing.length + 1}` : base;
 }
 
+/**
+ * Order a done column's tickets by completion time. Everywhere else keeps the
+ * manual `position` order the query already returned. `newestFirst` picks the
+ * final display direction: the authenticated board stores oldest→newest and
+ * reverses for display, so it wants ascending; the public page renders as-is,
+ * so it wants descending. A missing completedAt (legacy rows) falls back to
+ * createdAt so nothing sorts to a random spot.
+ */
+export function orderColumnTickets<T extends { completedAt: Date | null; createdAt: Date }>(
+  tickets: T[],
+  isDone: boolean,
+  newestFirst: boolean,
+): T[] {
+  if (!isDone) return tickets;
+  const key = (t: T) => (t.completedAt ?? t.createdAt).getTime();
+  const asc = [...tickets].sort((a, b) => key(a) - key(b));
+  return newestFirst ? asc.reverse() : asc;
+}
+
 export function slugify(name: string) {
   return (
     name
@@ -111,7 +130,9 @@ export async function getBoardWithData(
       stage: resolveColumnStage(c.stage, c.name, c.isDone),
       wipLimit: c.wipLimit,
       subStates: parseSubStates(c.subStates),
-      tickets: c.tickets.map((t) => serializeTicket(t, usersById)),
+      // Done columns are ordered by completion time (newest lands on top after the
+      // board's newest-first reversal); other columns keep their manual order.
+      tickets: orderColumnTickets(c.tickets, c.isDone, false).map((t) => serializeTicket(t, usersById)),
     })),
   };
 }
@@ -246,9 +267,15 @@ export function applyColumnStageSync(
 export async function setBoardPublic(boardId: string, isPublic: boolean) {
   const board = await db.board.findUnique({ where: { id: boardId }, select: { slug: true, publicId: true } });
   if (!board) throw new HttpError(404, "Board not found");
-  const data: { isPublic: boolean; publicId?: string } = { isPublic };
+  const data: { isPublic: boolean; publicId?: string | null } = { isPublic };
   // Readable slug prefix + a high-entropy, mixed-case suffix so the URL can't be guessed.
-  if (isPublic && !board.publicId) data.publicId = `${board.slug}-${shortToken(16)}`;
+  if (isPublic && !board.publicId) {
+    data.publicId = `${board.slug}-${shortToken(16)}`;
+  } else if (!isPublic) {
+    // Retire the token on unshare so a leaked link stays dead — re-sharing mints
+    // a fresh URL rather than silently reactivating the old one.
+    data.publicId = null;
+  }
   const updated = await db.board.update({
     where: { id: boardId },
     data,
@@ -291,7 +318,8 @@ export async function getPublicBoard(publicId: string) {
       name: c.name,
       isDone: c.isDone,
       stage: resolveColumnStage(c.stage, c.name, c.isDone),
-      tickets: c.tickets.map((t) => serializePublicTicket(t, usersById)),
+      // Public page renders in array order, so done columns come back newest-completed first.
+      tickets: orderColumnTickets(c.tickets, c.isDone, true).map((t) => serializePublicTicket(t, usersById)),
     })),
   };
 }

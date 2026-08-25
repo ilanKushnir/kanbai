@@ -36,8 +36,14 @@ export function ShareButton({
         { method: "PATCH", body: { isPublic: next } },
       );
       setIsPublic(res.public?.isPublic ?? next);
-      if (res.public?.publicId) setPublicId(res.public.publicId);
-      toast({ title: next ? "Board is now public" : "Board is private again", variant: "success" });
+      // Reflect the server's token exactly: a fresh one on share, null on unshare
+      // (unsharing retires the link, so re-sharing later mints a new URL).
+      setPublicId(res.public?.publicId ?? null);
+      toast({
+        title: next ? "Board is now public" : "Board is private again",
+        description: next ? undefined : "The old link is now dead — re-sharing creates a new one.",
+        variant: "success",
+      });
       router.refresh();
     } catch (e) {
       toast({ title: "Couldn't update sharing", description: e instanceof Error ? e.message : undefined, variant: "error" });

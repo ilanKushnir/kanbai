@@ -1,5 +1,6 @@
 import { handler, ok, created } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
+import { agentHasManagerAuthority } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { createMemberV1Schema } from "@/lib/validation";
 import { db } from "@/lib/db";
@@ -7,10 +8,20 @@ import { HttpError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
+/** An agent may only manage/list members with workspace-manager authority (no
+ *  owner, or an owner/admin owner). Blocks an agent owned by a plain member from
+ *  enumerating members or escalating roles. */
+async function assertMemberAuthority(agent: { workspaceId: string; ownerUserId?: string | null }) {
+  if (!(await agentHasManagerAuthority(agent))) {
+    throw new HttpError(403, "This agent is scoped to a single member and can't manage workspace members.", "agent_not_manager");
+  }
+}
+
 /** List workspace members (so a migration can map assignees by email). */
 export const GET = handler(async (req: Request) => {
   const agent = await requireAgent(req);
   requireScope(agent, "members:read");
+  await assertMemberAuthority(agent);
   const members = await db.workspaceMember.findMany({
     where: { workspaceId: agent.workspaceId },
     include: { user: { select: { id: true, email: true, name: true } } },
@@ -24,6 +35,7 @@ export const GET = handler(async (req: Request) => {
 export const POST = handler(async (req: Request) => {
   const agent = await requireAgent(req);
   requireScope(agent, "members:write");
+  await assertMemberAuthority(agent);
   const input = parse(createMemberV1Schema, await readJson(req));
   const email = input.email.toLowerCase();
 
