@@ -20,17 +20,6 @@ export type BoardLite = {
   labels: { id: string; name: string; color: string }[];
 };
 
-export type DeliveryT = {
-  id: string;
-  event: string;
-  status: string; // pending | success | failed
-  statusCode: number | null;
-  signature: string;
-  error: string | null;
-  attempts: number;
-  createdAt: string;
-};
-
 export type AgentFull = {
   id: string;
   name: string;
@@ -42,29 +31,9 @@ export type AgentFull = {
   apiKeyPrefix: string | null;
   apiKeyLast4: string | null;
   hasKey: boolean;
-  webhookUrl: string | null;
-  webhookSecret: string | null;
-  webhookActive: boolean;
-  /** "*" = all events, else a comma list of subscribed event names. */
-  webhookEvents: string;
   scopes: string[];
   lastSeenAt: string | null;
   createdAt: string;
-  deliveries: DeliveryT[];
-};
-
-/** Outcome of a "Send test" delivery, as returned by POST /api/agents/{id}/test. */
-export type TestSendResultT = {
-  result: {
-    deliveryId: string;
-    status: "success" | "failed";
-    statusCode?: number;
-    error: string | null;
-    attempts: number;
-    signed: boolean;
-    durationMs: number;
-  };
-  secretFingerprint: string | null;
 };
 
 /**

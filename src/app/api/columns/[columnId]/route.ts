@@ -8,6 +8,7 @@ import { parseSubStates, stringifySubStates } from "@/lib/substates";
 import { resolveColumnStage } from "@/lib/column-stage";
 import { applyColumnStageSync } from "@/lib/services/boards";
 import { reconcileColumnSubStates } from "@/lib/services/tickets";
+import { logActivity } from "@/lib/activity";
 import { db } from "@/lib/db";
 
 export const PATCH = handler(
@@ -25,6 +26,12 @@ export const PATCH = handler(
     const column = await db.column.update({ where: { id: columnId }, data });
     // Changing the band list can orphan tickets' sub-states — snap them back valid.
     if (input.subStates !== undefined) await reconcileColumnSubStates(columnId);
+    await logActivity({
+      actor: { type: "user", id: ctx.user.id, name: ctx.user.name },
+      action: "column.updated",
+      boardId: column.boardId,
+      meta: { columnId, name: column.name, fields: Object.keys(data) },
+    });
     return ok({
       column: {
         id: column.id,
@@ -58,7 +65,13 @@ export const DELETE = handler(
     const total = await db.column.count({ where: { boardId: col!.boardId } });
     if (total <= 1) throw new HttpError(422, "A board needs at least one column.", "last_column");
 
-    await db.column.delete({ where: { id: columnId } });
+    const deleted = await db.column.delete({ where: { id: columnId } });
+    await logActivity({
+      actor: { type: "user", id: ctx.user.id, name: ctx.user.name },
+      action: "column.deleted",
+      boardId: col!.boardId,
+      meta: { columnId, name: deleted.name },
+    });
     return ok({ ok: true });
   },
 );

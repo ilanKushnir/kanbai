@@ -1,6 +1,6 @@
 // Client-safe parsing of the User.settings JSON blob (personal preferences).
 
-export type LandingPage = "my-day" | "notes" | "boards";
+export type LandingPage = "today" | "boards";
 export type Handedness = "right" | "left";
 export type DictationLanguage = "auto" | "en" | "he" | "es" | "fr" | "de" | "it" | "pt" | "ar" | "ru" | "zh" | "ja" | "ko";
 export type UserSettings = {
@@ -16,7 +16,7 @@ export type UserSettings = {
 };
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
-  defaultLanding: "my-day",
+  defaultLanding: "today",
   weekStartsOn: 0,
   handedness: "right",
   dictationLanguage: "auto",
@@ -37,7 +37,9 @@ function parsePinnedBoardIds(value: unknown): string[] {
   return ids;
 }
 
-const LANDINGS: LandingPage[] = ["my-day", "notes", "boards"];
+const LANDINGS: LandingPage[] = ["today", "boards"];
+// Older installs stored the retired surfaces; both fold into Today.
+const LEGACY_LANDINGS: Record<string, LandingPage> = { "my-day": "today", notes: "today" };
 export const DICTATION_LANGUAGES: { value: DictationLanguage; label: string; whisperLanguage?: string; model: string; note?: string }[] = [
   { value: "auto", label: "Auto-detect", model: "whisper-large-v3" },
   { value: "en", label: "English", whisperLanguage: "en", model: "whisper-base/en or whisper-large-v3" },
@@ -60,7 +62,10 @@ export function parseUserSettings(raw?: string | null): UserSettings {
   try {
     const o = JSON.parse(raw) as Partial<UserSettings>;
     return {
-      defaultLanding: o.defaultLanding && LANDINGS.includes(o.defaultLanding) ? o.defaultLanding : "my-day",
+      defaultLanding:
+        o.defaultLanding && LANDINGS.includes(o.defaultLanding)
+          ? o.defaultLanding
+          : (o.defaultLanding && LEGACY_LANDINGS[o.defaultLanding as string]) || "today",
       weekStartsOn:
         typeof o.weekStartsOn === "number" && o.weekStartsOn >= 0 && o.weekStartsOn <= 6
           ? Math.floor(o.weekStartsOn)

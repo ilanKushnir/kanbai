@@ -11,7 +11,7 @@ const roleRank: Record<string, number> = { owner: 0, admin: 1, member: 2 };
 
 export default async function MembersPage() {
   const ctx = await getContext();
-  if (!ctx.isManager) redirect("/my-day");
+  if (!ctx.isManager) redirect("/today");
 
   const [members, boards, invites, access] = await Promise.all([
     db.workspaceMember.findMany({ where: { workspaceId: ctx.workspace.id }, include: { user: true } }),

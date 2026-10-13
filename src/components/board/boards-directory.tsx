@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Columns3, Globe, LayoutGrid, Pin, Users } from "lucide-react";
+import { Globe, LayoutGrid, Pin, Users } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, tone } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -129,66 +130,65 @@ function BoardCard({
   onTogglePin: () => void;
 }) {
   const t = tone(b.color);
+  const open = b.ticketCount - b.doneCount;
   const pct = b.ticketCount ? Math.round((b.doneCount / b.ticketCount) * 100) : 0;
   const shared = sharedSummary(b);
+  const cover = COVER_TONES.has(b.color) ? b.color : "slate";
 
   return (
     <div className="group relative">
       <Link
         href={`/boards/${b.slug}`}
-        className="relative block overflow-hidden rounded-2xl border border-border bg-surface p-5 shadow-card transition-all hover:border-border-strong hover:shadow-md hover:-translate-y-px active:translate-y-0"
+        className="relative block overflow-hidden rounded-2xl border border-border bg-surface shadow-card transition-all hover:border-border-strong hover:shadow-md hover:-translate-y-px active:translate-y-0"
       >
-        <span className="absolute inset-x-0 top-0 h-1" style={{ background: t.dot }} />
-        <div className="flex items-center gap-2.5 pr-10">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg" style={{ backgroundColor: t.bg }}>
-            <Columns3 className="h-4.5 w-4.5" style={{ color: t.dot }} />
-          </span>
-          <h3 dir="auto" title={b.name} className="min-w-0 truncate text-base font-semibold tracking-tight">
-            {b.name}
-          </h3>
+        <div className="kb-cover relative h-28 w-full overflow-hidden bg-surface-2">
+          <Image src={`/art/cover-${cover}.webp`} alt="" fill sizes="(min-width: 1024px) 360px, 100vw" className="object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
         </div>
-        {b.description && (
-          <p dir="auto" className="mt-2 line-clamp-2 text-sm text-fg-muted">
-            {b.description}
-          </p>
-        )}
-
-        {(shared || b.isPublic || b.viewerLevel === "view") && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {shared && (
-              <span className="flex items-center gap-1.5" title={shared.label} aria-label={shared.label}>
-                <span aria-hidden className="flex items-center -space-x-1.5">
-                  {shared.avatars.map((u) => (
-                    <Avatar key={u.id} name={u.name} src={u.avatarUrl} color={u.avatarColor ?? undefined} size={20} className="ring-2 ring-surface" />
-                  ))}
-                </span>
-                {shared.overflow > 0 && (
-                  <span aria-hidden className="text-[0.6875rem] font-medium text-fg-subtle">
-                    +{shared.overflow}
-                  </span>
-                )}
-              </span>
-            )}
-            {b.isPublic && (
-              <Badge tone="aqua">
-                <Globe aria-hidden className="h-3 w-3" /> Public link
-              </Badge>
-            )}
-            {b.viewerLevel === "view" && <Badge tone="amber">View only</Badge>}
+        <div className="px-4 pb-4 pt-3">
+          <div className="flex items-center gap-2 pr-8">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: t.dot }} />
+            <h3 dir="auto" title={b.name} className="font-display min-w-0 truncate text-[1.2rem] font-medium leading-tight">
+              {b.name}
+            </h3>
           </div>
-        )}
+          {b.description && (
+            <p dir="auto" className="mt-1 line-clamp-2 text-[0.8125rem] text-fg-muted">
+              {b.description}
+            </p>
+          )}
 
-        <div className="mt-4 flex items-center justify-between text-xs text-fg-subtle">
-          <span>
-            {b.ticketCount} {b.ticketCount === 1 ? "ticket" : "tickets"}
-          </span>
-          <span>{pct}% done</span>
-        </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-3">
-          <span
-            className="block h-full rounded-full transition-all"
-            style={{ width: `${pct}%`, background: t.dot }}
-          />
+          {(shared || b.isPublic || b.viewerLevel === "view") && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              {shared && (
+                <span className="flex items-center gap-1.5" title={shared.label} aria-label={shared.label}>
+                  <span aria-hidden className="flex items-center -space-x-1.5">
+                    {shared.avatars.map((u) => (
+                      <Avatar key={u.id} name={u.name} src={u.avatarUrl} color={u.avatarColor ?? undefined} size={20} className="ring-2 ring-surface" />
+                    ))}
+                  </span>
+                  {shared.overflow > 0 && (
+                    <span aria-hidden className="text-[0.6875rem] font-medium text-fg-subtle">
+                      +{shared.overflow}
+                    </span>
+                  )}
+                </span>
+              )}
+              {b.isPublic && (
+                <Badge tone="aqua">
+                  <Globe aria-hidden className="h-3 w-3" /> Public link
+                </Badge>
+              )}
+              {b.viewerLevel === "view" && <Badge tone="amber">View only</Badge>}
+            </div>
+          )}
+
+          <div className="mt-3 flex items-center justify-between text-xs text-fg-subtle">
+            <span>{open === 0 ? (b.ticketCount ? "All done" : "Empty") : `${open} open`}</span>
+            <span>{b.ticketCount ? `${pct}% done` : ""}</span>
+          </div>
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-3">
+            <span className="block h-full rounded-full transition-all" style={{ width: `${pct}%`, background: t.dot }} />
+          </div>
         </div>
       </Link>
 
@@ -199,10 +199,8 @@ function BoardCard({
         aria-label={pinned ? `Unpin ${b.name}` : `Pin ${b.name}`}
         title={pinned ? "Unpin" : "Pin"}
         className={cn(
-          "absolute right-1.5 top-2 z-10 grid h-10 w-10 place-items-center rounded-lg transition-colors cursor-pointer md:h-9 md:w-9",
-          pinned
-            ? "text-primary hover:bg-primary-soft"
-            : "text-fg-subtle/60 hover:bg-surface-2 hover:text-fg-muted",
+          "absolute right-1.5 top-1.5 z-10 grid h-9 w-9 place-items-center rounded-lg bg-surface/80 backdrop-blur transition-colors cursor-pointer",
+          pinned ? "text-primary hover:bg-primary-soft" : "text-fg-subtle/70 hover:bg-surface-2 hover:text-fg-muted",
         )}
       >
         <Pin className={cn("h-4 w-4", pinned && "fill-current")} />
@@ -210,3 +208,5 @@ function BoardCard({
     </div>
   );
 }
+
+const COVER_TONES = new Set(["slate", "iris", "aqua", "emerald", "amber", "rose", "violet", "blue"]);

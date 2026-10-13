@@ -41,7 +41,7 @@ test("pin list is capped", () => {
 test("pins don't disturb the other preference fields", () => {
   const raw = JSON.stringify({ defaultLanding: "notes", weekStartsOn: 1, pinnedBoardIds: ["b1"] });
   const s = parseUserSettings(raw);
-  assert.equal(s.defaultLanding, "notes");
+  assert.equal(s.defaultLanding, "today"); // legacy "notes" folds into Today
   assert.equal(s.weekStartsOn, 1);
   assert.equal(s.handedness, "right");
   assert.deepEqual(s.pinnedBoardIds, ["b1"]);

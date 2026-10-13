@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { broadcast, dispatchWebhook } from "@/lib/webhooks";
 import { ticketInclude, serializeTicket, type TicketWithRelations, type UserLite } from "@/lib/serialize";
 import { HttpError } from "@/lib/api";
 import { onMutation } from "@/lib/snapshots";
 import { parseSubStates } from "@/lib/substates";
 import { toRichHtml } from "@/lib/sanitize";
+import { resolveColumnStage, type ColumnStage } from "@/lib/column-stage";
+import { LABEL_COLORS } from "@/lib/constants";
 
 export type Actor = { type: "user" | "agent" | "system"; id?: string | null; name: string };
 
@@ -56,7 +57,7 @@ type BoardCtx = { id: string; workspaceId: string };
 
 /** A column referenced on a ticket must live on the same board. */
 async function assertColumnOnBoard(columnId: string, board: BoardCtx) {
-  const col = await db.column.findUnique({ where: { id: columnId }, select: { boardId: true, isDone: true } });
+  const col = await db.column.findUnique({ where: { id: columnId }, select: { boardId: true, isDone: true, subStates: true } });
   if (!col || col.boardId !== board.id) throw new HttpError(422, "Column is not on this board");
   return col;
 }
@@ -69,6 +70,72 @@ async function boardLabelIds(labelIds: string[], board: BoardCtx): Promise<strin
     select: { id: true },
   });
   return rows.map((l) => l.id);
+}
+
+function labelColorFor(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return LABEL_COLORS[Math.abs(h) % LABEL_COLORS.length];
+}
+
+/**
+ * Resolve label NAMES on a board to ids — case-insensitive match, and any
+ * missing name is created on the board with a stable, name-derived color.
+ * The one helper behind every `labelNames` input (create, patch, promote, sort).
+ */
+export async function ensureLabelsByName(boardId: string, names: string[] | undefined | null): Promise<string[]> {
+  const wanted = [...new Set((names ?? []).map((n) => n.trim()).filter(Boolean))];
+  if (!wanted.length) return [];
+  const existing = await db.label.findMany({ where: { boardId } });
+  const ids: string[] = [];
+  for (const name of wanted) {
+    const match = existing.find((l) => l.name.toLowerCase() === name.toLowerCase());
+    if (match) {
+      ids.push(match.id);
+      continue;
+    }
+    const createdLabel = await db.label.create({ data: { boardId, name, color: labelColorFor(name) } });
+    existing.push(createdLabel);
+    ids.push(createdLabel.id);
+  }
+  return ids;
+}
+
+/** How a caller may address a column: by id, by (case-insensitive) name, or by semantic stage. */
+export type ColumnRef = {
+  columnId?: string | null;
+  column?: string | null;
+  columnName?: string | null;
+  stage?: ColumnStage | string | null;
+};
+
+/**
+ * Resolve a {@link ColumnRef} to a column id on `boardId`. Precedence:
+ * columnId → column/columnName (case-insensitive) → stage (first column whose
+ * effective stage matches, by position). Returns undefined when nothing was
+ * given so callers can apply their own default (first column). 422 on a miss.
+ */
+export async function resolveColumnRef(boardId: string, ref: ColumnRef | undefined | null): Promise<string | undefined> {
+  if (!ref) return undefined;
+  if (ref.columnId) return ref.columnId;
+  const name = (ref.column ?? ref.columnName)?.trim();
+  const stage = ref.stage?.trim().toLowerCase();
+  if (!name && !stage) return undefined;
+  const cols = await db.column.findMany({ where: { boardId }, orderBy: { position: "asc" } });
+  if (name) {
+    const hit = cols.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+    if (!hit) {
+      throw new HttpError(
+        422,
+        `No column named "${name}" on this board (have: ${cols.map((c) => c.name).join(", ")})`,
+        "column_not_found",
+      );
+    }
+    return hit.id;
+  }
+  const hit = cols.find((c) => resolveColumnStage(c.stage, c.name, c.isDone) === stage);
+  if (!hit) throw new HttpError(422, `No column with stage "${stage}" on this board`, "column_not_found");
+  return hit.id;
 }
 
 /**
@@ -188,6 +255,11 @@ export async function createTicket(
   input: {
     boardId: string;
     columnId?: string;
+    /** Column by name (case-insensitive) — alias of columnName. */
+    column?: string;
+    columnName?: string;
+    /** Column by semantic stage (intake | backlog | active | done). */
+    stage?: ColumnStage | string;
     title: string;
     description?: string;
     priority?: string;
@@ -197,6 +269,8 @@ export async function createTicket(
     assigneeUserIds?: string[] | null;
     assigneeAgentId?: string | null;
     labelIds?: string[];
+    /** Labels by name — missing ones are created on the board. Merged with labelIds. */
+    labelNames?: string[];
     number?: number; // explicit number (migration); otherwise auto-assigned
     createdAt?: string | null; // preserve original creation time on migration
   },
@@ -205,10 +279,13 @@ export async function createTicket(
   const board = await boardCtx(input.boardId);
   await onMutation(actor, board.workspaceId);
 
-  let columnId = input.columnId;
+  let columnId = await resolveColumnRef(board.id, input);
   let columnIsDone = false;
+  let columnSubStates: string[] = [];
   if (columnId) {
-    columnIsDone = (await assertColumnOnBoard(columnId, board)).isDone;
+    const col = await assertColumnOnBoard(columnId, board);
+    columnIsDone = col.isDone;
+    columnSubStates = parseSubStates(col.subStates);
   } else {
     const first = await db.column.findFirst({
       where: { boardId: board.id },
@@ -217,9 +294,15 @@ export async function createTicket(
     if (!first) throw new HttpError(422, "Board has no columns");
     columnId = first.id;
     columnIsDone = first.isDone;
+    columnSubStates = parseSubStates(first.subStates);
   }
 
-  const labelIds = await boardLabelIds(input.labelIds ?? [], board);
+  const labelIds = [
+    ...new Set([
+      ...(await boardLabelIds(input.labelIds ?? [], board)),
+      ...(await ensureLabelsByName(board.id, input.labelNames)),
+    ]),
+  ];
   // A human creating a ticket takes it by default: with no assignee input at
   // all, the ticket lands on the creator's own plate. An explicit
   // `assigneeType: null` still means "unassigned", and agent/system actors
@@ -248,6 +331,8 @@ export async function createTicket(
     title: input.title,
     description: toRichHtml(input.description),
     priority: input.priority ?? "medium",
+    // A column with sub-states files new cards into its first band (mirrors moveTicket).
+    subState: columnSubStates[0] ?? null,
     dueDate: input.dueDate ? new Date(input.dueDate) : null,
     ...(input.createdAt ? { createdAt: new Date(input.createdAt) } : {}),
     position: (last?.position ?? -1) + 1,
@@ -296,11 +381,10 @@ export async function createTicket(
     action: "ticket.created",
     boardId: board.id,
     ticketId: ticket.id,
-    meta: { title: ticket.title },
+    meta: { title: ticket.title, column: serialized.column ?? null },
   });
-  await broadcast(board.workspaceId, "ticket.created", { ticket: serialized }, { actor });
-  if (ticket.assigneeType === "agent" && ticket.assigneeAgentId) {
-    await dispatchWebhook(ticket.assigneeAgentId, "ticket.assigned", { ticket: serialized }, { actor });
+  if (columnIsDone) {
+    await logActivity({ actor, action: "ticket.done", boardId: board.id, ticketId: ticket.id, meta: { title: ticket.title } });
   }
   return serialized;
 }
@@ -317,20 +401,35 @@ export async function updateTicket(
     assigneeUserIds: string[] | null;
     assigneeAgentId: string | null;
     columnId: string;
+    column: string;
+    columnName: string;
+    stage: ColumnStage | string;
     position: number;
     subState: string | null;
     labelIds: string[];
+    /** Replaces the full label set by name (missing names auto-created on the board). */
+    labelNames: string[];
   }>,
   actor: Actor,
 ) {
   const existing = await loadTicket(ticketId);
 
+  // Column aliases (name / stage) resolve to an id up front.
+  if (input.columnId === undefined && (input.column || input.columnName || input.stage)) {
+    const { column, columnName, stage, ...rest } = input;
+    const columnId = await resolveColumnRef(existing.boardId, { column, columnName, stage });
+    return updateTicket(ticketId, { ...rest, ...(columnId ? { columnId } : {}) }, actor);
+  }
+
   // A column change must go through moveTicket so both columns are renumbered,
   // band grouping is preserved, and the sub-state is validated — a raw columnId
   // write keeps the stale position and the card lands mid-column after reload.
   if (input.columnId !== undefined && input.columnId !== existing.columnId) {
-    const { columnId, position: _position, subState, ...rest } = input;
+    const { columnId, position: _position, subState, column: _c, columnName: _cn, stage: _st, ...rest } = input;
     void _position;
+    void _c;
+    void _cn;
+    void _st;
     const moved = await moveTicket(ticketId, columnId, Number.MAX_SAFE_INTEGER, actor, subState);
     if (Object.keys(rest).length === 0) return moved;
     return updateTicket(ticketId, rest, actor);
@@ -381,8 +480,14 @@ export async function updateTicket(
     };
   }
 
-  if (input.labelIds) {
-    const labelIds = await boardLabelIds(input.labelIds, board); // only this board's labels
+  if (input.labelIds || input.labelNames) {
+    // The combined set IS the new state: ids (this board's only) + names (find-or-create).
+    const labelIds = [
+      ...new Set([
+        ...(await boardLabelIds(input.labelIds ?? [], board)),
+        ...(await ensureLabelsByName(board.id, input.labelNames)),
+      ]),
+    ];
     await db.ticketLabel.deleteMany({ where: { ticketId } });
     if (labelIds.length) {
       await db.ticketLabel.createMany({ data: labelIds.map((labelId) => ({ ticketId, labelId })) });
@@ -392,11 +497,14 @@ export async function updateTicket(
   const updated = await db.ticket.update({ where: { id: ticketId }, data, include: ticketInclude });
   const serialized = await serializeTicketWithAssignee(updated);
 
-  await logActivity({ actor, action: "ticket.updated", boardId: board.id, ticketId });
-  await broadcast(board.workspaceId, "ticket.updated", { ticket: serialized }, { actor });
-  if (assigneeChanged && updated.assigneeType === "agent" && updated.assigneeAgentId) {
-    await dispatchWebhook(updated.assigneeAgentId, "ticket.assigned", { ticket: serialized }, { actor });
-  }
+  const fields = Object.keys(input).filter((k) => (input as Record<string, unknown>)[k] !== undefined);
+  await logActivity({
+    actor,
+    action: "ticket.updated",
+    boardId: board.id,
+    ticketId,
+    meta: { title: updated.title, fields, ...(assigneeChanged ? { assigneeChanged: true } : {}) },
+  });
   return serialized;
 }
 
@@ -421,10 +529,15 @@ export async function reconcileColumnSubStates(columnId: string) {
   }
 }
 
+/**
+ * Move a ticket to another column (or reorder within one). `position` is the
+ * index within the target column; omit it (or pass Number.MAX_SAFE_INTEGER) to
+ * append at the end.
+ */
 export async function moveTicket(
   ticketId: string,
   toColumnId: string,
-  position: number,
+  position: number | null | undefined,
   actor: Actor,
   subState?: string | null,
 ) {
@@ -432,6 +545,8 @@ export async function moveTicket(
   const board = await boardCtx(ticket.boardId);
   await onMutation(actor, board.workspaceId);
   const fromColumnId = ticket.columnId;
+  const fromColumn = await db.column.findUnique({ where: { id: fromColumnId }, select: { name: true, isDone: true } });
+  if (position == null) position = Number.MAX_SAFE_INTEGER;
 
   const targetColumn = await db.column.findUnique({ where: { id: toColumnId } });
   if (!targetColumn || targetColumn.boardId !== board.id) {
@@ -514,35 +629,60 @@ export async function moveTicket(
   const updated = await loadTicket(ticketId);
   const serialized = await serializeTicketWithAssignee(updated);
 
+  const becameDone = targetColumn.isDone && !(fromColumn?.isDone ?? false);
+  const reopened = !targetColumn.isDone && (fromColumn?.isDone ?? false);
   await logActivity({
     actor,
-    action: "ticket.moved",
+    // Landing in a done column is its own event ("ticket.done") so feeds and
+    // agents can tell completion apart from a plain reorder/move.
+    action: becameDone ? "ticket.done" : reopened ? "ticket.reopened" : "ticket.moved",
     boardId: board.id,
     ticketId,
-    meta: { to: targetColumn.name },
+    meta: {
+      title: ticket.title,
+      from: fromColumn?.name ?? null,
+      to: targetColumn.name,
+      toColumn: targetColumn.name,
+      toColumnId,
+      sameColumn: fromColumnId === toColumnId,
+    },
   });
-  await broadcast(board.workspaceId, "ticket.moved", {
-    ticket: serialized,
-    from: fromColumnId,
-    to: toColumnId,
-  }, { actor });
   return serialized;
+}
+
+/** The board's done column (first isDone column by position), or null. */
+export async function boardDoneColumnId(boardId: string): Promise<string | null> {
+  const col = await db.column.findFirst({ where: { boardId, isDone: true }, orderBy: { position: "asc" }, select: { id: true } });
+  return col?.id ?? null;
 }
 
 export async function moveTicketToDone(ticketId: string, actor: Actor) {
   const ticket = await loadTicket(ticketId);
-  const doneColumn = await db.column.findFirst({
-    where: { boardId: ticket.boardId, isDone: true },
-    orderBy: { position: "asc" },
-    select: { id: true },
-  });
-  if (!doneColumn) throw new HttpError(422, "No done column is configured for this board.");
-  const last = await db.ticket.findFirst({
-    where: { columnId: doneColumn.id, deletedAt: null, id: { not: ticketId } },
-    orderBy: { position: "desc" },
-    select: { position: true },
-  });
-  return moveTicket(ticketId, doneColumn.id, (last?.position ?? -1) + 1, actor, null);
+  const doneColumnId = await boardDoneColumnId(ticket.boardId);
+  if (!doneColumnId) throw new HttpError(422, "No done column is configured for this board.");
+  return moveTicket(ticketId, doneColumnId, Number.MAX_SAFE_INTEGER, actor, null);
+}
+
+/** Complete a ticket: move it to its board's done column (= moveTicketToDone). */
+export const completeTicket = moveTicketToDone;
+
+/**
+ * Reopen a completed ticket by moving it back into `columnId` (end of that
+ * column). When `columnId` is omitted, the first non-done column is used.
+ */
+export async function uncompleteTicket(ticketId: string, columnId: string | null | undefined, actor: Actor) {
+  const ticket = await loadTicket(ticketId);
+  let target = columnId ?? null;
+  if (!target) {
+    const first = await db.column.findFirst({
+      where: { boardId: ticket.boardId, isDone: false },
+      orderBy: { position: "asc" },
+      select: { id: true },
+    });
+    if (!first) throw new HttpError(422, "This board has no open column to reopen into.");
+    target = first.id;
+  }
+  return moveTicket(ticketId, target, Number.MAX_SAFE_INTEGER, actor, null);
 }
 
 export async function addComment(ticketId: string, body: string, actor: Actor) {
@@ -560,17 +700,13 @@ export async function addComment(ticketId: string, body: string, actor: Actor) {
     },
   });
 
-  await logActivity({ actor, action: "comment.created", boardId: board.id, ticketId });
-  await broadcast(board.workspaceId, "comment.created", {
+  await logActivity({
+    actor,
+    action: "comment.created",
+    boardId: board.id,
     ticketId,
-    comment: {
-      id: comment.id,
-      authorType: comment.authorType,
-      authorName: comment.authorName,
-      body: comment.body,
-      createdAt: comment.createdAt.toISOString(),
-    },
-  }, { actor });
+    meta: { title: ticket.title, commentId: comment.id, excerpt: body.slice(0, 120) },
+  });
   return comment;
 }
 
@@ -584,7 +720,7 @@ export async function deleteTicket(ticketId: string, actor: Actor) {
     actor,
     action: "ticket.deleted",
     boardId: board.id,
+    ticketId,
     meta: { title: ticket.title },
   });
-  await broadcast(board.workspaceId, "ticket.updated", { deletedId: ticketId }, { actor });
 }

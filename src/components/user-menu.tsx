@@ -56,7 +56,7 @@ export function UserMenu({
     setBusy(true);
     try {
       await api("/api/workspaces/switch", { body: { workspaceId: id } });
-      window.location.assign("/my-day");
+      window.location.assign("/today");
     } catch {
       setBusy(false);
     }

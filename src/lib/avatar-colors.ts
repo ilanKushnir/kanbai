@@ -1,7 +1,7 @@
 // Curated palette for the initials avatar. Every value must keep white
 // initials legible (≥ 4.5:1 on the solid color — guarded by avatar-colors.test).
 // Stored on User.avatarColor as the hex itself (mirrors Agent.color), so the
-// Avatar component needs no lookup; null/absent falls back to the brand iris.
+// Avatar component needs no lookup; null/absent falls back to the brand ember.
 
 export const AVATAR_COLORS: { value: string; label: string }[] = [
   { value: "#6d5dfb", label: "Iris" },
@@ -16,8 +16,8 @@ export const AVATAR_COLORS: { value: string; label: string }[] = [
   { value: "#52607b", label: "Slate" },
 ];
 
-/** The brand iris the Avatar component falls back to when no color is stored. */
-export const DEFAULT_AVATAR_COLOR = "#6d5dfb";
+/** The brand ember the Avatar component falls back to when no color is stored. */
+export const DEFAULT_AVATAR_COLOR = "#c2410c";
 
 export function isAvatarColor(value: unknown): value is string {
   return typeof value === "string" && AVATAR_COLORS.some((c) => c.value === value);

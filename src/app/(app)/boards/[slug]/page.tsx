@@ -75,7 +75,7 @@ export default async function BoardPage({
       <header className="shrink-0 px-4 pt-6 pb-4 md:px-8">
         <div className="flex items-center gap-2.5">
           <span className="h-3 w-3 rounded-full" style={{ backgroundColor: t.dot }} />
-          <h1 className="text-xl font-bold tracking-tight">{board.name}</h1>
+          <h1 dir="auto" className="font-display text-[1.6rem] font-medium leading-tight">{board.name}</h1>
           <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-fg-subtle">
             {total}
           </span>

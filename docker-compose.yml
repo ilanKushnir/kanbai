@@ -26,6 +26,8 @@ services:
       KANBAI_KEY_PEPPER: "change-me-to-a-long-random-value"
       # Set to "true" on first boot to seed demo data (boards, notes, Hermes).
       KANBAI_SEED: "false"
+      # Wall-clock used for "today" everywhere (Today page, agent agenda, badges).
+      TZ: "Asia/Jerusalem"
     volumes:
       - kanbai-data:/app/data
     healthcheck:

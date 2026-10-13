@@ -30,7 +30,7 @@ export const POST = handler(
     const { ticketId } = await params;
     await assertAgentTicketAccess(agent, ticketId);
     const { title } = parse(createSubtaskSchema, await readJson(req));
-    const ticket = await createSubtask(ticketId, title, { type: "agent", id: agent.id, name: agent.name });
-    return created({ ticket });
+    const result = await createSubtask(ticketId, title, { type: "agent", id: agent.id, name: agent.name });
+    return created(result);
   },
 );

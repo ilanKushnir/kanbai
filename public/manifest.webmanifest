@@ -1,13 +1,13 @@
 {
   "name": "Kanbai",
   "short_name": "Kanbai",
-  "description": "Capture fast. Let agents sort. Serious Kanban when it counts.",
-  "start_url": "/",
+  "description": "Your day, one list. Projects on boards. An agent that keeps it current.",
+  "start_url": "/today",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#0b0d15",
-  "theme_color": "#0b0d15",
+  "background_color": "#0e1118",
+  "theme_color": "#0e1118",
   "categories": ["productivity", "utilities"],
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },

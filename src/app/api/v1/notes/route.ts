@@ -58,9 +58,11 @@ export const POST = handler(async (req: Request) => {
     userId: input.userId,
     userEmail: input.userEmail,
   }));
-  const note = await createNote(userId, input.body, {
-    bucket: input.bucket,
-    priority: input.priority,
-  });
+  const note = await createNote(
+    userId,
+    input.body,
+    { bucket: input.bucket, priority: input.priority, scheduledDay: input.scheduledDay },
+    { type: "agent", id: agent.id, name: agent.name },
+  );
   return created({ note });
 });

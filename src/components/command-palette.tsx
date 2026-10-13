@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   Search,
   Plus,
-  NotebookPen,
   Columns3,
   Bot,
   SunMoon,
@@ -102,7 +101,7 @@ export function CommandPalette({
     // Keep the PWA status bar in sync with the in-app theme (matches layout.tsx viewport colors).
     document
       .querySelectorAll('meta[name="theme-color"]')
-      .forEach((m) => m.setAttribute("content", dark ? "#0b0d15" : "#f2f3f8"));
+      .forEach((m) => m.setAttribute("content", dark ? "#0e1118" : "#f6f2ea"));
     try {
       localStorage.setItem("kanbai-theme", dark ? "dark" : "light");
     } catch {}
@@ -117,9 +116,9 @@ export function CommandPalette({
       {
         key: "a-note",
         group: "Actions",
-        label: "New note",
+        label: "New task",
         icon: <Plus className="h-4 w-4" />,
-        onSelect: () => run(() => router.push("/notes?compose=1")),
+        onSelect: () => run(() => router.push("/today?compose=1")),
       },
       {
         key: "a-board",
@@ -137,8 +136,7 @@ export function CommandPalette({
       },
     ];
     const nav: Item[] = [
-      { key: "n-my-day", group: "Go to", label: "My Day", icon: <CalendarDays className="h-4 w-4" />, onSelect: () => run(() => router.push("/my-day")) },
-      { key: "n-notes", group: "Go to", label: "Notes", icon: <NotebookPen className="h-4 w-4" />, onSelect: () => run(() => router.push("/notes")) },
+      { key: "n-today", group: "Go to", label: "Today", icon: <CalendarDays className="h-4 w-4" />, onSelect: () => run(() => router.push("/today")) },
       { key: "n-boards", group: "Go to", label: "Boards", icon: <Columns3 className="h-4 w-4" />, onSelect: () => run(() => router.push("/boards")) },
       { key: "n-agents", group: "Go to", label: "Agents", icon: <Bot className="h-4 w-4" />, onSelect: () => run(() => router.push("/agents")) },
     ];
@@ -186,7 +184,7 @@ export function CommandPalette({
           group: "Notes",
           label: n.body,
           icon: <Hash className="h-4 w-4 text-fg-subtle" />,
-          onSelect: () => run(() => router.push(`/notes?focus=${n.id}`)),
+          onSelect: () => run(() => router.push(`/today?focus=${n.id}`)),
         }),
       );
     }

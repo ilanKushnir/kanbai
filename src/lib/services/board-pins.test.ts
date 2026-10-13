@@ -70,7 +70,8 @@ test("pins ride along in User.settings without disturbing other preferences", as
   const settings = parseUserSettings(
     (await db.user.findUnique({ where: { id: uid }, select: { settings: true } }))?.settings,
   );
-  assert.equal(settings.defaultLanding, "notes");
+  // Legacy "notes" landing is folded into "today" by parseUserSettings.
+  assert.equal(settings.defaultLanding, "today");
   assert.equal(settings.weekStartsOn, 1);
   assert.deepEqual(settings.pinnedBoardIds, [boardA1, boardOtherWs]);
 });

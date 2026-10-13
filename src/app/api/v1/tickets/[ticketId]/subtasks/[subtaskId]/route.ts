@@ -14,8 +14,8 @@ export const PATCH = handler(
     const { ticketId, subtaskId } = await params;
     await assertAgentTicketAccess(agent, ticketId);
     const input = parse(updateSubtaskSchema, await readJson(req));
-    const ticket = await updateSubtask(ticketId, subtaskId, input, { type: "agent", id: agent.id, name: agent.name });
-    return ok({ ticket });
+    const result = await updateSubtask(ticketId, subtaskId, input, { type: "agent", id: agent.id, name: agent.name });
+    return ok(result);
   },
 );
 
@@ -25,7 +25,7 @@ export const DELETE = handler(
     requireScope(agent, "tickets:write");
     const { ticketId, subtaskId } = await params;
     await assertAgentTicketAccess(agent, ticketId);
-    const ticket = await deleteSubtask(ticketId, subtaskId, { type: "agent", id: agent.id, name: agent.name });
-    return ok({ ticket });
+    const result = await deleteSubtask(ticketId, subtaskId, { type: "agent", id: agent.id, name: agent.name });
+    return ok({ ok: true, ...result });
   },
 );

@@ -11,7 +11,7 @@ export const POST = handler(
     const { ticketId } = await params;
     await assertTicketAccess(ctx, ticketId, true);
     const { orderedIds } = parse(reorderSubtasksSchema, await readJson(req));
-    const ticket = await reorderSubtasks(ticketId, orderedIds, { type: "user", id: ctx.user.id, name: ctx.user.name });
-    return ok({ ticket });
+    const result = await reorderSubtasks(ticketId, orderedIds, { type: "user", id: ctx.user.id, name: ctx.user.name });
+    return ok(result);
   },
 );

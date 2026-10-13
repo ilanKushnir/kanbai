@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 /**
- * Static guards for the "deep ink, vivid iris" color system: the tokens live
+ * Static guards for the "paper & ember" color system: the tokens live
  * in globals.css and are consumed through CSS variables, so these tests parse
  * the real declarations and verify WCAG contrast arithmetic for both themes.
  */
@@ -143,14 +143,16 @@ test("structure reads as solid panels, not translucent washes", () => {
   // Desktop sidebar is a solid surface panel; the frosted 60% wash was a major
   // contributor to the washed-out feel.
   assert.ok(!appShell.includes("bg-surface/60"), "sidebar must not be translucent");
-  // The shared "today" surface exists for calendar-shaped views.
+  // The shared "today" surface exists for calendar-shaped views, and display type is wired.
   assert.ok(css.includes(".kb-today"), "globals.css defines .kb-today");
+  assert.ok(css.includes("--font-display: var(--font-fraunces)"), "display font token");
 });
 
 test("iOS standalone status bar uses the same canvas colors as the app shell", () => {
   assert.match(layout, /statusBarStyle: "black-translucent"/);
-  assert.match(layout, /#f2f3f8/);
-  assert.match(layout, /#0b0d15/);
+  // The two canvas colours are declared once in layout.tsx and must equal --bg per theme.
+  assert.match(layout, new RegExp(`CANVAS_LIGHT = "${rootVars["--bg"]}"`));
+  assert.match(layout, new RegExp(`CANVAS_DARK = "${darkVars["--bg"]}"`));
   assert.match(appShell, /pt-\[env\(safe-area-inset-top\)\]/);
   assert.match(appShell, /bg-bg/);
 });

@@ -93,7 +93,7 @@ export async function requireUser(): Promise<User> {
 
 export async function requireSystemAdmin(): Promise<User> {
   const user = await requireUser();
-  if (user.systemRole !== "admin") redirect("/my-day");
+  if (user.systemRole !== "admin") redirect("/today");
   return user;
 }
 

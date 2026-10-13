@@ -15,7 +15,7 @@ export const POST = handler(
     const { noteId } = await params;
     const note = await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent));
     const { scheduledDay, position } = parse(moveNoteSchema, await readJson(req));
-    const updated = await moveNote(noteId, note.userId, scheduledDay, position);
+    const updated = await moveNote(noteId, note.userId, scheduledDay, position, { type: "agent", id: agent.id, name: agent.name });
     return ok({ note: updated });
   },
 );

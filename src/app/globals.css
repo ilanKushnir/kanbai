@@ -4,17 +4,14 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
-  Kanbai design tokens
-  ────────────────────
-  Palette: "deep ink, vivid iris"
-  - Indigo-tinted ink neutrals (never flat gray) with a clear step between
-    canvas → panel → raised surfaces, so structure reads without borders shouting
-  - Iris (indigo-violet) as the primary brand color, run one notch deeper and
-    more saturated than pastel so it reads committed, not washed
-  - Aqua (cyan) as the energetic accent
-  - Emerald / Amber / Rose for status semantics
-  - Chip tones and priority colors are theme-aware variables so labels stay
-    punchy on dark and legible on light from one source of truth
+  Kanbai design tokens — "paper & ember"
+  ──────────────────────────────────────
+  A warm, editorial system built for one person's working day, not a team
+  dashboard. Light is cream paper with ink text; dark is midnight navy with
+  cream highlights. Ember (terracotta) is the single action colour, sage is
+  the done/success colour. Serif display type (Fraunces) carries headings;
+  Geist does the UI work. Chip tones and priority colours are theme-aware
+  variables so labels stay legible from one source of truth.
 */
 :root {
   --radius: 0.875rem;
@@ -30,65 +27,62 @@
   --ease-out-emph: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Brand */
-  --iris-50:  #eef0ff;
-  --iris-100: #e0e3ff;
-  --iris-200: #c6cbff;
-  --iris-300: #a3a8ff;
-  --iris-400: #837ffb;
-  --iris-500: #6d5dfb;
-  --iris-600: #5b45f0;
-  --iris-700: #4c36d4;
-  --iris-800: #3f2faa;
-  --iris-900: #362d86;
+  --ember-50:  #fdf1ea;
+  --ember-100: #fbe3d6;
+  --ember-200: #f6c4ac;
+  --ember-300: #f0a07d;
+  --ember-400: #e97a4e;
+  --ember-500: #d85f33;
+  --ember-600: #bf4a22;
+  --ember-700: #9a3715;
+  --ember-800: #772b12;
+  --ember-900: #5a2210;
 
-  --aqua-400: #34d6ee;
-  --aqua-500: #15bcd6;
-  --aqua-600: #0e97ad;
+  --sage-300: #a9c0a7;
+  --sage-500: #6f8f6b;
+  --sage-700: #3f5c3c;
 
-  /* Light theme — deeper canvas so white cards actually pop, inkier text */
-  --bg:           #f2f3f8;
-  --bg-subtle:    #e9ebf3;
-  --surface:      #ffffff;
-  --surface-2:    #f2f3f9;
-  --surface-3:    #e8eaf4;
-  --border:       #dde0eb;
-  --border-strong:#c6cbdd;
-  --fg:           #101322;
-  --fg-muted:     #4d5470;
-  --fg-subtle:    #767d9b;
+  /* Light theme — cream paper, ink text */
+  --bg:           #f6f2ea;
+  --bg-subtle:    #efe9dd;
+  --surface:      #fffdf8;
+  --surface-2:    #f4efe5;
+  --surface-3:    #e9e2d4;
+  --border:       #e3dccd;
+  --border-strong:#cdc4b0;
+  --fg:           #1c1a16;
+  --fg-muted:     #575247;
+  --fg-subtle:    #76705f;
 
-  --primary:      var(--iris-600);
-  --primary-hover:var(--iris-700);
+  --primary:      var(--ember-600);
+  --primary-hover:var(--ember-700);
   --primary-fg:   #ffffff;
-  --primary-soft: var(--iris-50);
-  --primary-soft-fg: var(--iris-700);
+  --primary-soft: var(--ember-100);
+  --primary-soft-fg: var(--ember-700);
 
-  --accent:       var(--aqua-500);
-  --accent-fg:    #06343c;
+  --accent:       var(--sage-500);
+  --accent-fg:    #0f1a0e;
 
-  --success: #0b9e63;
+  --success: #2f7d4f;
   --success-fg: #ffffff;
-  --success-soft: #d5f5e5;
-  --warning: #c87c02;
-  --warning-soft: #fbedca;
-  --danger:  #dc3355;
-  --danger-soft: #fbdde4;
+  --success-soft: #dcefe1;
+  --warning: #a86400;
+  --warning-soft: #f8e9c9;
+  --danger:  #c43c3c;
+  --danger-soft: #f9dede;
 
-  --ring: var(--iris-500);
+  --ring: var(--ember-500);
 
-  /* Column stage color language (board columns): intake is misty & unfocused,
-     backlog neutral aqua-slate, active carries the brand iris, done is a softer
-     completed-state violet — still Kanbai, not green. */
-  --stage-intake:  #9aa0b4;
-  --stage-backlog: #0e97ad;
-  --stage-active:  var(--iris-500);
-  --stage-done:    var(--iris-600);
-  /* The wash that fills the done column: light lavender on light, deep iris on dark. */
-  --stage-done-tint: var(--iris-100);
+  /* Column stage colour language */
+  --stage-intake:  #9a9486;
+  --stage-backlog: var(--sage-500);
+  --stage-active:  var(--ember-500);
+  --stage-done:    var(--success);
+  --stage-done-tint: var(--success-soft);
 
-  /* Chip tones (labels, board colors, due chips) — bg / fg / dot per tone.
-     fg targets ≥4:1 on the chip bg; dots stay saturated for identity. */
-  --tone-slate-bg: rgba(100,116,139,0.15);  --tone-slate-fg: #52607b;  --tone-slate-dot: #64748b;
+  /* Chip tones (labels, board colours, due chips) — bg / fg / dot per tone.
+     fg targets ≥4.5:1 on the chip bg; dots stay saturated for identity. */
+  --tone-slate-bg: rgba(100,110,125,0.15);  --tone-slate-fg: #4d5668;  --tone-slate-dot: #6b7587;
   --tone-iris-bg: rgba(91,69,240,0.12);     --tone-iris-fg: #4f3bdd;   --tone-iris-dot: #6d5dfb;
   --tone-aqua-bg: rgba(14,151,173,0.13);    --tone-aqua-fg: #096b7c;   --tone-aqua-dot: #15bcd6;
   --tone-emerald-bg: rgba(13,158,99,0.14);  --tone-emerald-fg: #087146; --tone-emerald-dot: #0ea96b;
@@ -98,53 +92,53 @@
   --tone-blue-bg: rgba(47,143,237,0.13);    --tone-blue-fg: #1d6cc0;   --tone-blue-dot: #2f8fed;
 
   /* Ticket priority (dots + labels) */
-  --priority-low:    #64748b;
+  --priority-low:    #6b7587;
   --priority-medium: #2e7ce0;
   --priority-high:   #c97501;
-  --priority-urgent: #dc3355;
+  --priority-urgent: #c43c3c;
 
-  --shadow-sm: 0 1px 2px 0 rgb(16 19 34 / 0.06);
-  --shadow-md: 0 4px 16px -4px rgb(16 19 34 / 0.12), 0 2px 6px -2px rgb(16 19 34 / 0.07);
-  --shadow-lg: 0 16px 48px -12px rgb(16 19 34 / 0.22);
-  --shadow-card: 0 1px 2px rgb(16 19 34 / 0.05), 0 1px 3px rgb(16 19 34 / 0.07);
+  --shadow-sm: 0 1px 2px 0 rgb(40 30 16 / 0.06);
+  --shadow-md: 0 4px 16px -4px rgb(40 30 16 / 0.12), 0 2px 6px -2px rgb(40 30 16 / 0.07);
+  --shadow-lg: 0 16px 48px -12px rgb(40 30 16 / 0.22);
+  --shadow-card: 0 1px 2px rgb(40 30 16 / 0.05), 0 1px 3px rgb(40 30 16 / 0.07);
 }
 
 .dark {
-  --bg:           #0b0d15;
-  --bg-subtle:    #10121d;
-  --surface:      #151928;
-  --surface-2:    #1c2134;
-  --surface-3:    #262c42;
-  --border:       #2b3049;
-  --border-strong:#3b4262;
-  --fg:           #f3f4fa;
-  --fg-muted:     #aeb4cd;
-  --fg-subtle:    #7d85a6;
+  --bg:           #0e1118;
+  --bg-subtle:    #121622;
+  --surface:      #171b26;
+  --surface-2:    #1f2431;
+  --surface-3:    #2a3040;
+  --border:       #2b3142;
+  --border-strong:#3d4458;
+  --fg:           #f1ece2;
+  --fg-muted:     #b5afa2;
+  --fg-subtle:    #8a857a;
 
-  --primary:      var(--iris-400);
-  --primary-hover:var(--iris-300);
-  --primary-fg:   #0b0d15;
-  --primary-soft: #232051;
-  --primary-soft-fg: #cdd1ff;
+  --primary:      #f0875a;
+  --primary-hover:#f6a07a;
+  --primary-fg:   #1b0d06;
+  --primary-soft: #3a2418;
+  --primary-soft-fg: #ffc2a6;
 
-  --accent:       var(--aqua-400);
-  --accent-fg:    #04282e;
+  --accent:       var(--sage-300);
+  --accent-fg:    #0f1a0e;
 
-  --success: #32da98;
+  --success: #5cc48a;
   --success-fg: #06301f;
-  --success-soft: #0e3324;
+  --success-soft: #16321f;
   --warning: #f3bb47;
   --warning-soft: #332812;
-  --danger:  #ff6f86;
-  --danger-soft: #331521;
+  --danger:  #ff7474;
+  --danger-soft: #3a1818;
 
-  --ring: var(--iris-400);
+  --ring: #f0875a;
 
-  --stage-intake:  #7d85a6;
-  --stage-backlog: #34d6ee;
-  --stage-active:  var(--iris-400);
-  --stage-done:    var(--iris-300);
-  --stage-done-tint: var(--iris-700);
+  --stage-intake:  #8a857a;
+  --stage-backlog: var(--sage-300);
+  --stage-active:  #f0875a;
+  --stage-done:    #5cc48a;
+  --stage-done-tint: #16321f;
 
   --tone-slate-bg: rgba(148,163,184,0.16);  --tone-slate-fg: #aab4c9;  --tone-slate-dot: #8b98ae;
   --tone-iris-bg: rgba(131,127,251,0.21);   --tone-iris-fg: #b6b9ff;   --tone-iris-dot: #918eff;
@@ -158,7 +152,7 @@
   --priority-low:    #8b98ae;
   --priority-medium: #5aa3f7;
   --priority-high:   #f5a83c;
-  --priority-urgent: #ff6f86;
+  --priority-urgent: #ff7474;
 
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
   --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.4);
@@ -203,6 +197,7 @@
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
 }
 
 * {
@@ -230,6 +225,13 @@ body {
   overscroll-behavior: none;
 }
 
+/* Display type: page titles, greetings, numbers that deserve a voice. */
+.font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 72, "SOFT" 30, "WONK" 0;
+  letter-spacing: -0.015em;
+}
+
 /* Thin, unobtrusive scrollbars */
 * {
   scrollbar-width: thin;
@@ -253,20 +255,28 @@ body {
 
 /* Utility: subtle brand gradient text */
 .text-gradient {
-  background: linear-gradient(100deg, var(--iris-500), var(--aqua-500));
+  background: linear-gradient(100deg, var(--ember-600), var(--ember-400));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 .dark .text-gradient {
-  background: linear-gradient(100deg, var(--iris-300), var(--aqua-400));
+  background: linear-gradient(100deg, var(--ember-300), var(--ember-200));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
 .bg-brand-gradient {
-  background: linear-gradient(135deg, var(--iris-500) 0%, var(--iris-600) 45%, var(--aqua-500) 130%);
+  background: linear-gradient(135deg, var(--ember-500) 0%, var(--ember-600) 55%, var(--ember-800) 130%);
+}
+
+/* Paper grain — a very faint noise so large cream surfaces don't read flat. */
+.kb-paper {
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(circle at 20% 0%, color-mix(in oklab, var(--primary) 7%, transparent), transparent 42%),
+    radial-gradient(circle at 100% 100%, color-mix(in oklab, var(--accent) 9%, transparent), transparent 46%);
 }
 
 /* Animations */
@@ -284,22 +294,21 @@ body {
 @keyframes ai-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
 /* A note being handed off to an agent: a quick ring pulse (reads over the queued bg). */
 @keyframes ai-handoff { 0% { box-shadow: 0 0 0 0 var(--color-primary) } 30% { box-shadow: 0 0 0 2px var(--color-primary) } 100% { box-shadow: 0 0 0 0 transparent } }
-
-@keyframes done-slide {
-  0% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
-  45% { opacity: 0.88; transform: translate3d(0,3px,0) scale(0.997); }
-  100% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+/* A row leaving the list after completion: settle down and fade. */
+@keyframes row-done {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(6px); }
 }
-@keyframes confetti-pop {
-  0% { opacity: 0; transform: translate(-50%, -20%) scale(0.5); }
-  35% { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%, -95%) scale(1.25); }
+@keyframes row-in {
+  0% { opacity: 0; transform: translateY(-4px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 @keyframes ticket-done-close {
   0% { opacity: 1; transform: translateY(0) scale(1); }
   52% { opacity: 1; transform: translateY(-2px) scale(0.992); }
   100% { opacity: 0; transform: translateY(18px) scale(0.965); }
 }
+@keyframes hero-in { from { opacity: 0; transform: scale(1.03) } to { opacity: 1; transform: scale(1) } }
 
 .animate-fade-in { animation: fade-in 0.18s ease-out both; }
 .animate-scale-in { animation: scale-in 0.16s var(--ease-out-emph) both; }
@@ -311,8 +320,9 @@ body {
 .animate-toast-in { animation: toast-in 0.22s var(--ease-out-emph) both; }
 .animate-check-pop { animation: check-pop 0.32s var(--ease-out-emph) both; }
 .animate-ai-handoff { animation: ai-handoff 0.9s ease-out both; }
-.animate-done-slide { animation: done-slide 0.46s cubic-bezier(0.22,1,0.36,1) both; transform-origin: 50% 50%; }
-.animate-confetti-pop { animation: confetti-pop 0.7s ease-out both; }
+.animate-row-done { animation: row-done 0.32s var(--ease-out-soft) both; }
+.animate-row-in { animation: row-in 0.22s var(--ease-out-soft) both; }
+.animate-hero-in { animation: hero-in 0.9s var(--ease-out-soft) both; }
 .kb-ticket-modal-done-close { animation: ticket-done-close 0.72s var(--ease-out-emph) both; }
 .ai-shimmer {
   background-image: linear-gradient(100deg, var(--color-primary) 30%, var(--color-primary-soft-fg) 50%, var(--color-primary) 70%);
@@ -321,20 +331,6 @@ body {
   -webkit-background-clip: text;
   color: transparent;
   animation: ai-shimmer 1.6s linear infinite;
-}
-
-/* My Day "Done" celebration: while the done form is submitting, the host card
-   blooms — a soft success ring swells off the border while the button's check
-   pops. Purely presentational: the row only leaves the list after the server
-   action revalidates, so a failed action ends with the card intact. The
-   reduced-motion block below collapses it like every other animation. */
-@keyframes kb-done-bloom {
-  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-success) 45%, transparent); }
-  100% { box-shadow: 0 0 0 14px transparent; }
-}
-.kb-done-host:has(button[data-done-celebrating]) {
-  border-color: color-mix(in oklab, var(--color-success) 45%, transparent);
-  animation: kb-done-bloom 0.8s var(--ease-out-soft) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -351,12 +347,35 @@ body {
 /* Card drag affordance */
 .kb-dragging { box-shadow: var(--shadow-lg); transform: rotate(1.5deg) scale(1.02); cursor: grabbing; }
 
+/* ── Task rows (Today) ───────────────────────────────────────────────────────
+   One row language for notes and tickets: a round check, the title, quiet
+   meta. The check is the only thing that completes — tapping text opens. */
+.kb-check {
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--color-border-strong);
+  background: var(--color-surface);
+  display: grid;
+  place-items: center;
+  color: transparent;
+  flex-shrink: 0;
+  transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease, color var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out-emph);
+}
+.kb-check:hover { border-color: var(--color-success); color: var(--color-success); }
+.kb-check:active { transform: scale(0.9); }
+.kb-check[data-checked="true"] {
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: var(--color-success-fg);
+}
+.kb-row-done .kb-row-title { color: var(--color-fg-subtle); text-decoration: line-through; text-decoration-thickness: 1px; }
+
 /* ── Board column stage surfaces ─────────────────────────────────────────────
-   One clear signal per stage, layered on the shared column surface:
    intake  — dashed, faded, low-focus ("not real work yet")
    backlog — neutral, quiet
-   active  — brand-tinted hairline + slightly elevated ("this is the focus")
-   done    — softly violet-filled: completed, elegant, still Kanbai purple    */
+   active  — ember hairline + slightly elevated ("this is the focus")
+   done    — softly sage-filled                                                 */
 .kb-col-intake {
   background: color-mix(in oklab, var(--color-surface-2) 42%, transparent);
   border-style: dashed;
@@ -380,7 +399,7 @@ body {
 .kb-col-done {
   background:
     linear-gradient(180deg, color-mix(in oklab, var(--stage-done-tint) 42%, transparent), transparent 58%),
-    color-mix(in oklab, var(--primary-soft) 62%, var(--color-surface) 38%);
+    color-mix(in oklab, var(--success-soft) 62%, var(--color-surface) 38%);
   border-color: color-mix(in oklab, var(--stage-done) 26%, transparent);
   box-shadow:
     inset 0 1px 0 color-mix(in oklab, var(--stage-done) 40%, transparent),
@@ -401,7 +420,7 @@ body {
   border-color: color-mix(in oklab, var(--stage-active) 22%, transparent);
 }
 .kb-band-done {
-  background: color-mix(in oklab, var(--primary-soft) 56%, transparent);
+  background: color-mix(in oklab, var(--success-soft) 56%, transparent);
   border-color: color-mix(in oklab, var(--stage-done) 18%, transparent);
 }
 
@@ -429,177 +448,53 @@ body {
 }
 
 /* "Today" bucket (week view / day groupings): the one place on a calendar
-   surface that carries the brand — iris-washed with a crisp top hairline. */
+   surface that carries the brand — ember-washed with a crisp top hairline. */
 .kb-today {
-  background: color-mix(in oklab, var(--primary-soft) 55%, var(--color-surface) 45%);
-  border-color: color-mix(in oklab, var(--color-primary) 45%, transparent);
+  background: color-mix(in oklab, var(--primary-soft) 30%, var(--color-surface) 70%);
+  border-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
   box-shadow:
     inset 0 1.5px 0 color-mix(in oklab, var(--color-primary) 55%, transparent),
     var(--shadow-sm);
 }
 
-/* ── My Day hero — the day's command surface ─────────────────────────────────
-   The same inverted-iris capture language as the Notes composer (.kb-composer),
-   tuned calmer: My Day's hero states the plan rather than taking input, so the
-   glow is softer and there is no focus ring choreography. One large iris
-   surface per page, always. */
-.kb-day-hero {
+/* ── Hero art (Today, login, board covers) ───────────────────────────────────
+   Illustrations sit under a gradient that fades into the page canvas, so the
+   image feels like part of the paper rather than a banner stuck on top. */
+.kb-hero {
   position: relative;
   overflow: hidden;
   isolation: isolate;
-  color: #f8f7ff;
-  border: 1px solid color-mix(in oklab, var(--iris-300) 38%, transparent);
-  background:
-    radial-gradient(circle at 14% 0%, color-mix(in oklab, var(--iris-400) 38%, transparent), transparent 38%),
-    radial-gradient(circle at 100% 100%, color-mix(in oklab, var(--aqua-500) 12%, transparent), transparent 44%),
-    linear-gradient(145deg, #2a1765 0%, #211052 52%, #171033 100%);
-  box-shadow:
-    0 18px 44px -26px color-mix(in oklab, var(--iris-500) 65%, black),
-    0 10px 28px -20px rgb(0 0 0 / 0.65),
-    inset 0 1px 0 rgb(255 255 255 / 0.14);
 }
-.kb-day-hero::before {
+.kb-hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.kb-hero::after {
   content: "";
   position: absolute;
-  inset: 1px;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.09), transparent 42%);
-}
-
-/* ── Chart series (My Day momentum) — validated per dataviz checks:
-   light  #6d5dfb + #0e97ad on #ffffff · dark #837ffb + #0e97ad on #151928 */
-:root {
-  --chart-ticket: var(--iris-500);
-  --chart-note: var(--aqua-600);
-}
-.dark {
-  --chart-ticket: var(--iris-400);
-  --chart-note: var(--aqua-600);
-}
-
-/* ── Notes composer — the page's primary capture surface ─────────────────────
-   A deliberately inverted capture panel: the composer is the only large iris
-   surface on Notes, so it reads as the active command area instead of another
-   neutral card. The inner contrast stays quiet and legible; focus adds a crisp
-   violet/aqua ring and lift without changing layout. */
-.kb-composer {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  color: #f8f7ff;
-  border: 1px solid color-mix(in oklab, var(--iris-300) 42%, transparent);
+  inset: 0;
   background:
-    radial-gradient(circle at 12% 0%, color-mix(in oklab, var(--iris-400) 42%, transparent), transparent 36%),
-    radial-gradient(circle at 100% 100%, color-mix(in oklab, var(--aqua-500) 14%, transparent), transparent 42%),
-    linear-gradient(145deg, #2a1765 0%, #211052 52%, #171033 100%);
-  box-shadow:
-    0 18px 44px -24px color-mix(in oklab, var(--iris-500) 72%, black),
-    0 10px 28px -18px rgb(0 0 0 / 0.72),
-    inset 0 1px 0 rgb(255 255 255 / 0.16);
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
+    linear-gradient(180deg, transparent 20%, var(--color-bg) 100%),
+    linear-gradient(90deg, color-mix(in oklab, var(--color-bg) 40%, transparent), transparent 55%);
+  pointer-events: none;
 }
-.kb-composer::before {
+.kb-cover::after {
   content: "";
   position: absolute;
-  inset: 1px;
-  z-index: -1;
-  border-radius: inherit;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 45%, color-mix(in oklab, var(--color-surface) 92%, transparent) 100%);
   pointer-events: none;
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.10), transparent 42%);
 }
-/* Focus: ONE soft aqua halo/frame on the outer composer only — no nested
-   textarea/input focus rings or inner border choreography. */
-.kb-composer:focus-within {
-  border-color: color-mix(in oklab, var(--aqua-400) 62%, var(--iris-200));
-  box-shadow:
-    0 0 0 3px color-mix(in oklab, var(--aqua-400) 18%, transparent),
-    0 24px 58px -26px color-mix(in oklab, var(--iris-500) 88%, black),
-    0 12px 30px -18px rgb(0 0 0 / 0.78),
-    inset 0 1px 0 rgb(255 255 255 / 0.20);
+
+/* Quick-add bar: a writing well that looks like paper, not a form field. */
+.kb-quickadd {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--motion-base) ease, box-shadow var(--motion-base) ease;
 }
-/* The inset writing well: makes the panel legible as an INPUT at rest without
-   extra chrome, and brightens gently when writing starts. */
-.kb-composer-field {
-  border-radius: 0.9rem;
-  background: rgb(255 255 255 / 0.07);
-  border: 1px solid rgb(255 255 255 / 0.10);
-  box-shadow: inset 0 1.5px 3px rgb(0 0 0 / 0.22);
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease;
+.kb-quickadd:focus-within {
+  border-color: color-mix(in oklab, var(--color-primary) 55%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 14%, transparent), var(--shadow-md);
 }
-.kb-composer:focus-within .kb-composer-field {
-  background: rgb(255 255 255 / 0.10);
-}
-.kb-composer textarea {
-  color: #fbfaff;
-  caret-color: var(--aqua-400);
-  text-shadow: 0 1px 0 rgb(0 0 0 / 0.18);
-  /* Expand/shrink animates the min-height floor only — the inline height that
-     AutoGrow sets while typing stays instant, so keystrokes never feel laggy. */
-  transition: min-height var(--motion-slow) var(--ease-out-emph);
-}
-.kb-composer :where(textarea, input):focus-visible {
-  outline: none;
-}
-.kb-composer textarea::placeholder {
-  color: color-mix(in oklab, #ffffff 68%, var(--iris-200));
-  opacity: 1;
-}
-.kb-composer textarea::selection {
-  color: #ffffff;
-  background: color-mix(in oklab, var(--aqua-400) 38%, var(--iris-600));
-}
-.kb-composer-icon-button,
-.kb-composer-day-chip {
-  color: color-mix(in oklab, #ffffff 86%, var(--iris-100));
-  background: rgb(255 255 255 / 0.12);
-  border: 1px solid rgb(255 255 255 / 0.12);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.10);
-}
-.kb-composer-icon-button:hover,
-.kb-composer-day-chip:hover {
-  color: #ffffff;
-  background: rgb(255 255 255 / 0.18);
-  border-color: rgb(255 255 255 / 0.20);
-}
-/* Formatting chips: quieter than the action buttons — borderless until hover
-   so the bar stays a whisper under the field, not a second toolbar. */
-.kb-composer-format-button {
-  color: color-mix(in oklab, #ffffff 76%, var(--iris-100));
-  background: transparent;
-  border: 1px solid transparent;
-}
-.kb-composer-format-button:hover {
-  color: #ffffff;
-  background: rgb(255 255 255 / 0.14);
-  border-color: rgb(255 255 255 / 0.14);
-}
-.kb-composer-submit {
-  color: #160d36;
-  background: linear-gradient(180deg, #ffffff, color-mix(in oklab, var(--iris-50) 72%, var(--aqua-400)));
-  box-shadow:
-    0 8px 18px -12px rgb(0 0 0 / 0.75),
-    inset 0 1px 0 rgb(255 255 255 / 0.85);
-}
-.kb-composer-submit:hover {
-  background: linear-gradient(180deg, #ffffff, color-mix(in oklab, var(--aqua-400) 38%, var(--iris-50)));
-}
-.kb-composer-hint,
-.kb-composer-status {
-  color: color-mix(in oklab, #ffffff 66%, var(--iris-200));
-}
-.kb-composer-progress {
-  background: rgb(255 255 255 / 0.14);
-}
-.kb-composer-progress > span {
-  background: linear-gradient(90deg, var(--aqua-400), var(--iris-100));
-}
+.kb-quickadd textarea { transition: min-height var(--motion-slow) var(--ease-out-emph); }
 
 /* Markdown rendering */
 .md { font-size: 0.95rem; line-height: 1.6; color: var(--color-fg); word-break: break-word; }

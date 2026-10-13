@@ -16,6 +16,16 @@ const constants = readFileSync("src/lib/constants.ts", "utf8");
 const meRoute = readFileSync("src/app/api/v1/me/route.ts", "utf8");
 const docs = readFileSync("docs/AGENT_PROTOCOL.md", "utf8");
 
+test("The protocol is pull-only: no webhooks anywhere in the code or docs", () => {
+  assert.doesNotMatch(docs, /webhook/i);
+  assert.doesNotMatch(constants, /webhook/i);
+  assert.doesNotMatch(meRoute, /webhook/i);
+  assert.doesNotMatch(notesSvc, /webhook/i);
+  assert.match(constants, /agenda: true/);
+  assert.match(constants, /ticketsList: true/);
+  assert.match(meRoute, /quickstart: buildQuickstart/);
+});
+
 test("Note → ticket promotion is one action, dual-scoped, and never deletes the note", () => {
   assert.match(promoteRoute, /requireScope\(agent, "notes:write"\)/);
   assert.match(promoteRoute, /requireScope\(agent, "tickets:write"\)/);
@@ -33,13 +43,15 @@ test("fulfillNote links the ticket and marks the note sorted atomically", () => 
   assert.match(notesSvc, /db\.\$transaction\(\[\s*db\.ticket\.update\(\{ where: \{ id: ticket\.id \}, data: \{ sourceNoteId: noteId \} \}\),\s*db\.note\.update\(\{ where: \{ id: noteId \}, data: \{ status: "sorted" \} \}\),\s*\]\)/);
 });
 
-test("Agents archive boards instead of deleting them (reversible, no DELETE export)", () => {
+test("Agents archive boards instead of deleting them (DELETE is a reversible archive)", () => {
   assert.match(boardRoute, /export const PATCH = handler/);
   assert.match(boardRoute, /requireScope\(agent, "boards:write"\)/);
   assert.match(boardRoute, /archived/);
   assert.match(boardRoute, /guardAgentSnapshot/);
-  assert.doesNotMatch(boardRoute, /export const DELETE/);
-  assert.doesNotMatch(boardRoute, /board\.delete/);
+  // DELETE exists for ergonomics but only archives — never a hard delete.
+  assert.match(boardRoute, /export const DELETE = handler/);
+  assert.match(boardRoute, /updateBoard\(boardId, \{ archived: true \}/);
+  assert.doesNotMatch(boardRoute, /board\.delete\(/);
 });
 
 test("Agents manage columns: create, reorder, and delete only when empty", () => {
@@ -77,7 +89,7 @@ test("New powers are advertised via /v1/me capabilities and documented", () => {
   assert.match(constants, /columnStages: true/);
   assert.match(constants, /"columns"/);
   assert.match(meRoute, /columnStages: COLUMN_STAGES\.map/);
-  assert.match(docs, /POST {3}\/notes\/\{noteId\}\/promote/);
+  assert.match(docs, /POST {3}\/notes\/\{id\}\/promote/);
   assert.match(docs, /PATCH {2}\/boards\/\{boardId\}/);
   assert.match(docs, /DELETE \/boards\/\{boardId\}\/columns\/\{columnId\}/);
   assert.match(docs, /DELETE \/members\/\{userId\}/);

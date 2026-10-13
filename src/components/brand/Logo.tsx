@@ -1,6 +1,7 @@
+import { useId } from "react";
 import { cn } from "@/lib/utils";
 
-/** The Kanbai glyph: a captured note card filed down into a kanban lane, with an AI spark. */
+/** The Kanbai mark: a warm tile with a rising sun and a check — "today, done". */
 export function KanbaiMark({
   className,
   variant = "gradient",
@@ -9,8 +10,10 @@ export function KanbaiMark({
   variant?: "gradient" | "mono";
 }) {
   const isGradient = variant === "gradient";
-  const fg = isGradient ? "#fff" : "var(--color-surface)";
-  const lineFill = isGradient ? "#6d5dfb" : "currentColor";
+  const fg = isGradient ? "#fff7ee" : "var(--color-surface)";
+  // Unique per instance: a shared id resolves to the FIRST match in the DOM,
+  // which may sit in a display:none sidebar and then paints nothing.
+  const gradId = `kb-bg-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   return (
     <svg
       viewBox="0 0 512 512"
@@ -21,30 +24,30 @@ export function KanbaiMark({
     >
       {isGradient && (
         <defs>
-          <linearGradient id="kb-bg-g" x1="48" y1="32" x2="464" y2="480" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stopColor="#7C6BF5" />
-            <stop offset="1" stopColor="#4A35C4" />
+          <linearGradient id={gradId} x1="48" y1="32" x2="464" y2="480" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#e97a4e" />
+            <stop offset="1" stopColor="#9a3715" />
           </linearGradient>
         </defs>
       )}
-      <rect x="16" y="16" width="480" height="480" rx="124" fill={isGradient ? "url(#kb-bg-g)" : "currentColor"} />
-      {/* lanes */}
-      <g fill={fg} fillOpacity={isGradient ? 0.3 : 0.45}>
-        <rect x="122" y="300" width="72" height="128" rx="22" />
-        <rect x="220" y="300" width="72" height="128" rx="22" />
-        <rect x="318" y="300" width="72" height="128" rx="22" />
+      <rect x="16" y="16" width="480" height="480" rx="124" fill={isGradient ? `url(#${gradId})` : "currentColor"} />
+      {/* horizon */}
+      <rect x="96" y="318" width="320" height="22" rx="11" fill={fg} fillOpacity={isGradient ? 0.55 : 0.6} />
+      {/* sun */}
+      <path d="M150 318 A106 106 0 0 1 362 318 Z" fill={fg} />
+      {/* rays */}
+      <g stroke={fg} strokeWidth="22" strokeLinecap="round" opacity={isGradient ? 0.9 : 1}>
+        <path d="M256 112 V150" />
+        <path d="M150 156 L176 182" />
+        <path d="M362 156 L336 182" />
       </g>
-      {/* chevron filing the card into the middle lane */}
-      <path d="M214 242 L256 276 L298 242" fill="none" stroke={fg} strokeWidth="20" strokeLinecap="round" strokeLinejoin="round" />
-      {/* the note card */}
-      <rect x="180" y="92" width="152" height="104" rx="24" fill={fg} />
-      <rect x="206" y="128" width="92" height="16" rx="8" fill={lineFill} />
-      <rect x="206" y="160" width="58" height="16" rx="8" fill={lineFill} fillOpacity={0.55} />
-      {/* AI spark */}
-      <path
-        d="M360 58 c5.6 21 8.4 23.8 28 28 c-19.6 4.2 -22.4 7 -28 28 c-5.6 -21 -8.4 -23.8 -28 -28 c19.6 -4.2 22.4 -7 28 -28 Z"
-        fill={fg}
-      />
+      {/* check */}
+      <path d="M212 262 L244 292 L304 232" stroke={isGradient ? "#9a3715" : "currentColor"} strokeWidth="26" strokeLinecap="round" strokeLinejoin="round" />
+      {/* ground lines (the list) */}
+      <g fill={fg} fillOpacity={isGradient ? 0.5 : 0.55}>
+        <rect x="128" y="370" width="256" height="18" rx="9" />
+        <rect x="168" y="410" width="176" height="18" rx="9" />
+      </g>
     </svg>
   );
 }
@@ -65,8 +68,8 @@ export function Logo({
     <span className={cn("inline-flex items-center gap-2.5", className)}>
       <KanbaiMark variant={variant} className={cn("h-8 w-8", markClassName)} />
       {showWordmark && (
-        <span className="text-[1.35rem] font-bold tracking-tight leading-none">
-          Kanb<span className="text-gradient">ai</span>
+        <span className="font-display text-[1.45rem] font-medium leading-none tracking-tight">
+          Kanbai
         </span>
       )}
     </span>

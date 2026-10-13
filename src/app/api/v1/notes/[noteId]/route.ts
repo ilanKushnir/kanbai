@@ -29,7 +29,7 @@ export const PATCH = handler(
     const { noteId } = await params;
     await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent)); // 404s outside the workspace
     const input = parse(updateNoteSchema, await readJson(req));
-    const note = await updateNote(noteId, input);
+    const note = await updateNote(noteId, input, { type: "agent", id: agent.id, name: agent.name });
     return ok({ note });
   },
 );
@@ -40,7 +40,7 @@ export const DELETE = handler(
     requireScope(agent, "notes:write");
     const { noteId } = await params;
     await getWorkspaceNote(noteId, agent.workspaceId, await agentNoteScope(agent)); // 404s outside the workspace
-    await deleteNote(noteId);
+    await deleteNote(noteId, { type: "agent", id: agent.id, name: agent.name });
     return ok({ ok: true });
   },
 );

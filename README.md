@@ -1,53 +1,54 @@
 <div align="center">
   <img src="./public/icon.svg" width="84" height="84" alt="Kanbai logo" />
   <h1>Kanbai</h1>
-  <p><strong>Capture fast. Let agents sort. Keep serious Kanban when it counts.</strong></p>
-  <p>The bridge between fast human capture and serious agentic execution.</p>
+  <p><strong>Your day, one list. Projects on boards. An agent that keeps it current.</strong></p>
   <p><sub><strong>Self-hosted</strong> · open source (MIT) · Docker-ready · Next.js + Prisma</sub></p>
 </div>
 
 ---
 
-Kanbai closes the gap between how humans capture work (a line here, a voice memo
-there) and where serious work actually lives (structured boards). You jot scraps
-on the go; an **AI agent** turns them into well-formed tickets on the right board
-— with a priority, labels, and a due date — while you keep full control.
+Kanbai is a calm place for one person's work. You open **Today** and see what
+is overdue, what is due, what is coming, and what you captured but haven't
+placed yet — notes and board tickets in one list, one checkbox each. Projects
+live on **Boards** (real Kanban). An **AI agent** (Astra, Hermes, Claude Code,
+…) talks to Kanbai over a plain REST API: it reads your day, adds what you
+dictate, moves things along and marks them done — and everything it does is
+listed under its name. Kanbai is the source of truth; agents pull, Kanbai never
+calls them back.
 
-Three surfaces, one brain:
+## The three surfaces
 
-- **📝 Notes (mobile-first)** — Apple-Notes-fast capture, organised as one
-  running note split into **when-buckets** (Today · Tomorrow · Next week · Next
-  month · General). Drag a line to when it matters, set a priority, then **mark
-  it for an agent** — it stays in place while the agent files it as a ticket
-  (right board, due date, priority), optionally with a typed instruction or a
-  **voice memo**.
-- **📋 Boards (desktop-serious)** — real Kanban: drag-and-drop columns, priorities,
-  labels, due dates, assignees (human *or* agent), comments, activity.
-- **🤖 Agents (the connective tissue)** — Hermes, Open Claw, Claude Code, Codex,
-  or any custom agent. They authenticate with a key and receive events via a
-  webhook they self-register — **optionally signed** (HMAC, recommended).
-
-## Why it's different
-
-Most tools make you choose: a frictionless notes app *or* a heavyweight project
-tool. Kanbai is both, joined by agents. The agent does the tedious part —
-**triage and filing** — so capture stays instant and the board stays trustworthy.
+- **☀️ Today** — the only page you need in the morning. Quick-add understands
+  dates, priority and boards in English and Hebrew (`Call the bank tomorrow
+  !high #Personal`, `לקבוע תור לרופא מחר`), with server-side Whisper dictation.
+  Sections: Overdue · Today · Tomorrow · This week · Later · Inbox · Done today.
+  Tickets with a due date show up here automatically; a note becomes a board
+  ticket with one menu action.
+- **📋 Boards** — one board per project: columns with semantic stages
+  (Ideas / Backlog / In Work / Done), drag-and-drop, sub-states, WIP limits,
+  labels, priorities, due dates, subtasks, comments, a week view, cover art,
+  public read-only links.
+- **✨ Agents** — mint a key, paste the brief, done. `GET /api/v1/today` gives
+  the whole day in one call; `POST /tickets`, `/move {"stage":"done"}`,
+  `/comments` do the rest. No webhooks, no signing secrets. An activity feed
+  shows every agent action, and every write is undoable (snapshots, 30-day
+  trash, archive-not-delete).
 
 ## Features
 
+- Today list mixing notes and tickets, natural-language quick-add (EN/HE), undo
+  on every completion, midnight rollover without a reload
 - Drag-and-drop Kanban with optimistic updates (dnd-kit), keyboard & touch support
-- Fast notes capture in draggable **when-buckets** with per-line priority, pin /
-  archive / inline edit, and a one-tap **mark-for-ingestion** that an agent picks up
-- Voice-memo recording attached to the sort request
 - Secure agent API (`/api/v1`) with scoped, hashed **Bearer keys**
-- Agent **self-registered webhooks** with **optional HMAC-SHA256 signing**
-  (recommended), timestamp replay protection + delivery log
+- `GET /api/v1/today` — the whole day (overdue / today / tomorrow / upcoming,
+  note inbox, done today) in one call, computed in the workspace timezone
+- Forgiving writes: address columns by name or stage, labels by name, dates as
+  `YYYY-MM-DD`; every agent action lands in the activity feed and is undoable
 - Human-or-agent assignees, labels, priorities, due dates, comments, activity log
-- Polished, minimalist UI with light/dark themes and a responsive shell
+- Warm "paper & ember" design with light/dark themes, serif display type and
+  illustrated heroes, board covers and empty states
 - **Public, read-only board links** to share progress without a login
 - Per-board ticket **#numbers**, WIP limits, custom columns
-- **Migrate from Kanboard** via the agent API (boards, columns, labels, tasks,
-  members) — see [docs/AGENT_PROTOCOL.md](./docs/AGENT_PROTOCOL.md#6-migrating-from-kanboard)
 - SQLite for zero-config local dev; swap to Postgres for production
 
 ## Tech stack
@@ -81,7 +82,7 @@ The seed prints a **Hermes API key** once — copy it to try the agent API:
 curl http://localhost:3000/api/v1/me -H "Authorization: Bearer <key>"
 ```
 
-On desktop you land on **Boards**; on mobile, on **Notes**.
+You land on **Today** on every device.
 
 ## Self-host with Docker
 
@@ -146,39 +147,33 @@ just open the app; you'll be sent to `/signup` to create your admin account.
 
 ## Connecting an agent
 
-1. Go to **Agents → Add agent** (Hermes is the recommended primary).
-2. Copy the API key (shown once).
-3. Set the agent's **webhook URL** (its own endpoint).
-4. Set a **signing secret** — Kanbai signs every webhook with it so your agent can
-   trust the payload. Hit **Send test** to verify.
+1. Go to **Agents → Add agent**, pick an owner (whose boards it may touch).
+2. Copy the API key (shown once) and the agent brief.
+3. The agent calls `GET /api/v1/me` — the badge turns **Active**. Done.
 
-Full spec, endpoints, and copy-paste verification code (Node & Python):
-**[docs/AGENT_PROTOCOL.md](./docs/AGENT_PROTOCOL.md)**.
+Full spec and a daily playbook: **[docs/AGENT_PROTOCOL.md](./docs/AGENT_PROTOCOL.md)**.
 
 The core loop:
 
 ```
-human captures a note → marks it for ingestion → agent receives note.queued (signed)
-   → agent reads /api/v1/inbox (with bucket, priority & suggested due date)
-   → POST /api/v1/inbox/{id}/sort
-   → a real ticket appears on the right board, the note is marked sorted
+morning   → GET  /api/v1/today                     overdue / today / tomorrow / inbox
+dictate   → POST /api/v1/tickets {"boardId","title","column":"Backlog","dueDate":"2026-10-20"}
+done      → POST /api/v1/tickets/{id}/done
+capture   → POST /api/v1/notes {"body":"…"}  …later  POST /api/v1/notes/{id}/promote
 ```
 
-You can verify the signing end-to-end with the included harness:
-
-```bash
-APP_URL=http://localhost:3000 npx tsx scripts/verify-webhook.ts
-# → ✅ HMAC signature VERIFIED
-```
+Set `KANBAI_TZ` (default `Asia/Jerusalem`) so "today" follows your calendar,
+not the server's.
 
 ## Security model
 
 - API keys are random, prefixed (`kbai_live_…`), and stored only as a **salted
   SHA-256 hash** — the plaintext is shown once.
-- Keys are **scoped**; calls without the needed scope get `403`.
-- Outbound webhooks are signed `HMAC_SHA256(secret, "{timestamp}.{body}")` and
-  verified in constant time with a ±5-minute replay window.
+- Keys are **scoped**; calls without the needed scope get `403`. An agent with
+  an owner is capped to that user's boards and notes.
 - Every resource is workspace-scoped; cross-workspace access returns `404`.
+- Agents never hard-delete: boards archive, tickets/notes go to a 30-day trash,
+  and the first agent write of a session takes a restorable snapshot.
 
 ## Scripts
 
@@ -201,11 +196,10 @@ src/
     api/                internal API (UI) + /api/v1 (agents)
   components/           brand, ui primitives, board, notes, agents
   lib/
-    services/           tickets, notes, boards, agents (shared business logic)
-    crypto.ts           key hashing, HMAC signing/verification
-    webhooks.ts         signed delivery + retries
-docs/AGENT_PROTOCOL.md  the agent integration spec
-scripts/verify-webhook.ts  end-to-end signature check harness
+    services/           tickets, notes, boards, agenda, activity-feed (shared business logic)
+    crypto.ts           API-key hashing
+    tz.ts               workspace-timezone calendar helpers
+docs/AGENT_PROTOCOL.md  the agent integration spec + daily playbook
 ```
 
 ## Roadmap

@@ -1,11 +1,38 @@
 import { Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { dispatchWebhook } from "@/lib/webhooks";
 import { HttpError } from "@/lib/api";
 import { ticketInclude, serializeTicket } from "@/lib/serialize";
 import { coarseBucket, dueFromDay, dayFromBucket } from "@/lib/notes-schedule";
-import { createTicket, type Actor } from "./tickets";
+import { zonedTime, todayYmd, workspaceTz } from "@/lib/tz";
+import { htmlToPlainText } from "@/lib/utils";
+import { createTicket, type Actor, type ColumnRef } from "./tickets";
+
+/**
+ * "Now" as seen from the workspace timezone (KANBAI_TZ, default
+ * Asia/Jerusalem). The coarse-bucket helpers in notes-schedule do calendar
+ * math in the host's local zone, so they're handed a Date whose local fields
+ * equal the workspace's wall clock — "today" then follows the workspace, not
+ * the (usually UTC) server.
+ */
+function workspaceNow(now = new Date()): Date {
+  const day = todayYmd(workspaceTz(), now);
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0, 0);
+}
+
+/** The workspace's current "YYYY-MM-DD". */
+export function notesToday(now = new Date()): string {
+  return todayYmd(workspaceTz(), now);
+}
+
+/** A "YYYY-MM-DD" as an instant at noon in the workspace timezone. */
+export function dayToInstant(day: string): Date {
+  return zonedTime(day, 12, 0, workspaceTz());
+}
+
+const noteActor = (actor?: Actor | null): Actor => actor ?? { type: "system", name: "Kanbai" };
+const excerpt = (body: string) => htmlToPlainText(body).slice(0, 120);
 
 const noteInclude = {
   attachments: true,
@@ -87,7 +114,7 @@ export async function listInboxForAgent(agentId: string) {
  */
 export async function getWorkspaceNote(noteId: string, workspaceId: string, restrictToUserId?: string | null) {
   const note = await db.note.findUnique({ where: { id: noteId }, include: noteInclude });
-  if (!note) throw new HttpError(404, "Note not found");
+  if (!note || note.deletedAt) throw new HttpError(404, "Note not found");
   if (restrictToUserId != null && note.userId !== restrictToUserId) throw new HttpError(404, "Note not found");
   const member = await db.workspaceMember.findFirst({
     where: { workspaceId, userId: note.userId },
@@ -105,6 +132,8 @@ export async function listNotesForWorkspace(
   const where: Prisma.NoteWhereInput = {
     user: { workspaces: { some: { workspaceId } } },
   };
+  // Soft-deleted notes live in the trash (GET /trash) — never in a listing.
+  where.deletedAt = null;
   if (filters.userId) where.userId = filters.userId;
   if (filters.status) where.status = filters.status;
   if (filters.bucket) where.bucket = filters.bucket;
@@ -171,10 +200,12 @@ export async function createNote(
   userId: string,
   body: string,
   opts?: { scheduledDay?: string | null; bucket?: string; priority?: string },
+  actor?: Actor | null,
 ) {
-  // Prefer an explicit scheduledDay; fall back to mapping a legacy bucket.
+  // Prefer an explicit scheduledDay; fall back to mapping a legacy bucket
+  // (computed against the workspace's calendar day, not the host's).
   const scheduledDay =
-    opts?.scheduledDay !== undefined ? opts.scheduledDay : dayFromBucket(opts?.bucket);
+    opts?.scheduledDay !== undefined ? opts.scheduledDay : dayFromBucket(opts?.bucket, workspaceNow());
   const last = await db.note.findFirst({
     where: { userId, scheduledDay },
     orderBy: { position: "desc" },
@@ -185,11 +216,16 @@ export async function createNote(
       userId,
       body,
       scheduledDay,
-      bucket: coarseBucket(scheduledDay),
+      bucket: coarseBucket(scheduledDay, workspaceNow()),
       priority: opts?.priority ?? "none",
       position: (last?.position ?? -1) + 1,
     },
     include: noteInclude,
+  });
+  await logActivity({
+    actor: noteActor(actor),
+    action: "note.created",
+    meta: { noteId: note.id, excerpt: excerpt(body), scheduledDay, userId },
   });
   return serializeNote(note);
 }
@@ -204,11 +240,21 @@ export async function updateNote(
     doneOn: string | null;
     priority: string;
   }>,
+  actor?: Actor | null,
 ) {
+  const before = await db.note.findUnique({ where: { id: noteId }, select: { doneOn: true, body: true } });
   const data: Record<string, unknown> = { ...input };
   // Keep the coarse bucket cache in sync when the schedule changes.
-  if (input.scheduledDay !== undefined) data.bucket = coarseBucket(input.scheduledDay);
+  if (input.scheduledDay !== undefined) data.bucket = coarseBucket(input.scheduledDay, workspaceNow());
   const note = await db.note.update({ where: { id: noteId }, data, include: noteInclude });
+  const fields = Object.keys(input).filter((k) => (input as Record<string, unknown>)[k] !== undefined);
+  const nowDone = input.doneOn !== undefined && input.doneOn != null && before?.doneOn == null;
+  const reopened = input.doneOn !== undefined && input.doneOn == null && before?.doneOn != null;
+  await logActivity({
+    actor: noteActor(actor),
+    action: nowDone ? "note.done" : reopened ? "note.reopened" : "note.updated",
+    meta: { noteId, excerpt: excerpt(note.body), fields, ...(nowDone ? { doneOn: input.doneOn } : {}) },
+  });
   return serializeNote(note);
 }
 
@@ -218,6 +264,7 @@ export async function moveNote(
   userId: string,
   scheduledDay: string | null,
   position: number,
+  actor?: Actor | null,
 ) {
   const targetIds = (
     await db.note.findMany({
@@ -230,16 +277,23 @@ export async function moveNote(
     .filter((id) => id !== noteId);
   const clamped = Math.max(0, Math.min(position, targetIds.length));
   targetIds.splice(clamped, 0, noteId);
-  const bucket = coarseBucket(scheduledDay);
+  const bucket = coarseBucket(scheduledDay, workspaceNow());
   await db.$transaction(
     targetIds.map((id, i) => db.note.update({ where: { id }, data: { scheduledDay, bucket, position: i } })),
   );
-  return serializeNote(await loadNote(noteId));
+  const note = await loadNote(noteId);
+  await logActivity({
+    actor: noteActor(actor),
+    action: "note.moved",
+    meta: { noteId, excerpt: excerpt(note.body), scheduledDay, position: clamped },
+  });
+  return serializeNote(note);
 }
 
 /** Soft-delete: move to "Recently deleted" (restorable for 30 days, then purged). */
-export async function deleteNote(noteId: string) {
-  await db.note.update({ where: { id: noteId }, data: { deletedAt: new Date() } });
+export async function deleteNote(noteId: string, actor?: Actor | null) {
+  const note = await db.note.update({ where: { id: noteId }, data: { deletedAt: new Date() } });
+  await logActivity({ actor: noteActor(actor), action: "note.deleted", meta: { noteId, excerpt: excerpt(note.body) } });
 }
 
 export async function addAttachment(
@@ -285,8 +339,7 @@ export async function ingestNote(
     include: noteInclude,
   });
   const serialized = serializeNote(note);
-  await logActivity({ actor, action: "note.queued", meta: { noteId } });
-  if (agentId) await dispatchWebhook(agentId, "note.queued", { note: serialized }, { actor });
+  await logActivity({ actor, action: "note.queued", meta: { noteId, excerpt: excerpt(note.body), agentId } });
   return serialized;
 }
 
@@ -307,22 +360,21 @@ export async function queueNoteToAgent(
     include: noteInclude,
   });
   const serialized = serializeNote(note);
-  await logActivity({ actor, action: "note.queued", meta: { noteId, agent: agent.name } });
-  await dispatchWebhook(agentId, "note.queued", { note: serialized }, { actor });
+  await logActivity({ actor, action: "note.queued", meta: { noteId, excerpt: excerpt(note.body), agent: agent.name, agentId } });
   return serialized;
 }
 
 /** An agent turns a queued note into a real ticket and marks the note sorted. */
 export async function fulfillNote(
   noteId: string,
-  input: {
+  input: ColumnRef & {
     boardId: string;
-    columnId?: string;
     title: string;
     description?: string;
     priority?: string;
     dueDate?: string | null;
     labelIds?: string[];
+    labelNames?: string[];
   },
   actor: Actor,
 ) {
@@ -332,12 +384,16 @@ export async function fulfillNote(
   const ticket = await createTicket(
     {
       boardId: input.boardId,
-      columnId: input.columnId,
+      columnId: input.columnId ?? undefined,
+      column: input.column ?? undefined,
+      columnName: input.columnName ?? undefined,
+      stage: input.stage ?? undefined,
       title: input.title,
       description: input.description,
       priority: input.priority,
       dueDate: input.dueDate,
       labelIds: input.labelIds,
+      labelNames: input.labelNames,
     },
     actor,
   );
@@ -349,22 +405,13 @@ export async function fulfillNote(
     db.ticket.update({ where: { id: ticket.id }, data: { sourceNoteId: noteId } }),
     db.note.update({ where: { id: noteId }, data: { status: "sorted" } }),
   ]);
-  await logActivity({ actor, action: "note.sorted", boardId: input.boardId, ticketId: ticket.id, meta: { noteId } });
-
-  // Close the loop: tell the agent the note was queued to that it's been filed,
-  // so it can stop polling/churning on it after note.queued. shouldDeliver()
-  // suppresses the echo when that same agent did the sorting itself.
-  if (note.assignedAgentId) {
-    await dispatchWebhook(
-      note.assignedAgentId,
-      "note.sorted",
-      {
-        note: { id: note.id, status: "sorted" },
-        ticket: { id: ticket.id, number: ticket.number, boardId: ticket.boardId, title: ticket.title },
-      },
-      { actor },
-    );
-  }
+  await logActivity({
+    actor,
+    action: "note.sorted",
+    boardId: input.boardId,
+    ticketId: ticket.id,
+    meta: { noteId, excerpt: excerpt(note.body), title: ticket.title },
+  });
 
   const linked = await db.ticket.findUnique({ where: { id: ticket.id }, include: ticketInclude });
   return linked ? serializeTicket(linked) : ticket;

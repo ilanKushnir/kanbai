@@ -14,7 +14,7 @@ export const POST = handler(
     const { ticketId } = await params;
     await assertAgentTicketAccess(agent, ticketId);
     const { orderedIds } = parse(reorderSubtasksSchema, await readJson(req));
-    const ticket = await reorderSubtasks(ticketId, orderedIds, { type: "agent", id: agent.id, name: agent.name });
-    return ok({ ticket });
+    const result = await reorderSubtasks(ticketId, orderedIds, { type: "agent", id: agent.id, name: agent.name });
+    return ok(result);
   },
 );

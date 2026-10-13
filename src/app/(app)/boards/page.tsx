@@ -1,12 +1,12 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Columns3, NotebookPen, Bot, Users } from "lucide-react";
+import Image from "next/image";
+import { Sparkles, Sun, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { boardWhereForContext } from "@/lib/authz";
 import { parseUserSettings } from "@/lib/user-settings";
 import type { BoardCardData } from "@/lib/board-directory";
-import { KanbaiMark } from "@/components/brand/Logo";
 import { NewBoardButton } from "@/components/board/new-board-modal";
 import { ArchivedBoards } from "@/components/board/archived-boards";
 import { BoardsDirectory } from "@/components/board/boards-directory";
@@ -66,10 +66,8 @@ export default async function BoardsPage({
     <div className="px-4 py-6 md:px-8 md:py-8 max-w-6xl mx-auto w-full">
       <header className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Boards</h1>
-          <p className="mt-1 text-sm text-fg-muted">
-            Serious Kanban for projects you and your agents run together.
-          </p>
+          <h1 className="font-display text-[2rem] font-medium leading-tight">Boards</h1>
+          <p className="mt-1 text-sm text-fg-muted">One board per project. Dated tickets show up on Today.</p>
         </div>
         {ctx.isManager && <NewBoardButton defaultOpen={sp.new === "1"} />}
       </header>
@@ -82,51 +80,33 @@ export default async function BoardsPage({
           description="You'll see boards here once a workspace owner or admin shares one with you."
           action={
             <Link
-              href="/notes"
+              href="/today"
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-2"
             >
-              <NotebookPen className="h-4 w-4" /> Capture a note meanwhile
+              <Sun className="h-4 w-4" /> Back to Today
             </Link>
           }
         />
       ) : cards.length === 0 ? (
-        <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-surface">
-          <div className="bg-brand-gradient px-6 py-8 text-white sm:px-8">
-            <KanbaiMark variant="mono" className="h-10 w-10 text-white/90" />
-            <h2 className="mt-3 text-xl font-bold tracking-tight">Welcome to Kanbai</h2>
-            <p className="mt-1 max-w-md text-sm text-white/85">
-              Capture fast, let agents sort, and keep serious Kanban when it counts. Here&apos;s how to start.
+        <div className="mt-6 grid gap-6 overflow-hidden rounded-2xl border border-border bg-surface md:grid-cols-[18rem_1fr]">
+          <div className="relative h-48 md:h-auto">
+            <Image src="/art/empty-board.webp" alt="" fill sizes="(min-width: 768px) 288px, 100vw" className="object-cover" />
+          </div>
+          <div className="p-6 md:py-8">
+            <h2 className="font-display text-2xl font-medium">Your first board</h2>
+            <p className="mt-2 max-w-md text-sm text-fg-muted">
+              A board is a project: a few columns, tickets that move left to right, and a Done column. Anything with a due date
+              also shows up on Today, so you never have to open a board to know what&apos;s next.
             </p>
-          </div>
-          <div className="grid gap-3 p-5 sm:grid-cols-3 sm:p-6">
-            <div className="rounded-xl border border-border p-4">
-              <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary-soft text-primary-soft-fg">
-                <Columns3 className="h-4.5 w-4.5" />
-              </span>
-              <h3 className="mt-2.5 text-sm font-semibold">Create a board</h3>
-              <p className="mt-1 text-xs text-fg-muted">Columns, drag-and-drop, priorities, due dates.</p>
-              <div className="mt-3">
-                <NewBoardButton />
-              </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <NewBoardButton />
+              {ctx.isManager && (
+                <Link href="/agents" className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium transition-colors hover:bg-surface-2">
+                  <Sparkles className="h-4 w-4" /> Or let your agent create one
+                </Link>
+              )}
             </div>
-            <Link href="/notes" className="rounded-xl border border-border p-4 transition-colors hover:bg-surface-2">
-              <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary-soft text-primary-soft-fg">
-                <NotebookPen className="h-4.5 w-4.5" />
-              </span>
-              <h3 className="mt-2.5 text-sm font-semibold">Capture a note</h3>
-              <p className="mt-1 text-xs text-fg-muted">Jot anything; send it to an agent to file it.</p>
-            </Link>
-            <Link href="/agents" className="rounded-xl border border-border p-4 transition-colors hover:bg-surface-2">
-              <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary-soft text-primary-soft-fg">
-                <Bot className="h-4.5 w-4.5" />
-              </span>
-              <h3 className="mt-2.5 text-sm font-semibold">Connect an agent</h3>
-              <p className="mt-1 text-xs text-fg-muted">Hermes &amp; friends, via self-registered webhooks.</p>
-            </Link>
           </div>
-          <p className="hidden border-t border-border px-6 py-3 text-center text-xs text-fg-subtle md:block">
-            Tip: press <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5">⌘K</kbd> anywhere to search or jump.
-          </p>
         </div>
       ) : (
         <BoardsDirectory boards={cards} pinnedBoardIds={pinnedBoardIds} isManager={ctx.isManager} />

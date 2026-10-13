@@ -1,18 +1,100 @@
-import { handler, created, HttpError } from "@/lib/api";
+import { Prisma } from "@/generated/prisma";
+import { handler, ok, created, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertAgentBoardAccess } from "@/lib/access";
+import { agentBoardWhere, assertAgentBoardAccess } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
-import { createTicketV1Schema } from "@/lib/validation";
+import { createTicketV1Schema, listTicketsQuerySchema } from "@/lib/validation";
 import { createTicket } from "@/lib/services/tickets";
+import { compareAgendaTickets, ticketListInclude, toAgendaTicket, workspaceUsersById } from "@/lib/services/agenda";
 import { guardAgentSnapshot } from "@/lib/snapshots";
-import { LABEL_COLORS } from "@/lib/constants";
+import { addDaysYmd, endOfDayInTz, startOfDayInTz, todayYmd, workspaceTz } from "@/lib/tz";
 import { db } from "@/lib/db";
 
-function hash(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
+export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/v1/tickets — cross-board ticket list.
+ *   boardId   limit to one board
+ *   status    open (default) | done | all
+ *   due       overdue | today | tomorrow | week | none | any (default)
+ *   assigned  me (the agent itself / its owner) | any (default) | unassigned | <userId>
+ *   q         case-insensitive substring on the title
+ *   limit     default 200
+ * Each ticket carries `board` {id,name,slug,color,doneColumnId} and `column`
+ * {id,name,isDone,stage}. Respects the agent's board access cap.
+ */
+export const GET = handler(async (req: Request) => {
+  const agent = await requireAgent(req);
+  requireScope(agent, "tickets:read");
+  const url = new URL(req.url);
+  const q = parse(listTicketsQuerySchema, Object.fromEntries(url.searchParams.entries()));
+
+  if (q.boardId) await assertAgentBoardAccess(agent, q.boardId);
+  const board: Prisma.BoardWhereInput = { ...(await agentBoardWhere(agent)), ...(q.boardId ? { id: q.boardId } : {}) };
+
+  const where: Prisma.TicketWhereInput = { board, deletedAt: null };
+  if (q.status === "open") where.column = { isDone: false };
+  else if (q.status === "done") where.column = { isDone: true };
+
+  const tz = workspaceTz();
+  const today = todayYmd(tz);
+  const startToday = startOfDayInTz(today, tz);
+  const startTomorrow = endOfDayInTz(today, tz);
+  switch (q.due) {
+    case "overdue":
+      where.dueDate = { lt: startToday };
+      break;
+    case "today":
+      where.dueDate = { gte: startToday, lt: startTomorrow };
+      break;
+    case "tomorrow":
+      where.dueDate = { gte: startTomorrow, lt: endOfDayInTz(addDaysYmd(today, 1), tz) };
+      break;
+    case "week":
+      where.dueDate = { gte: startToday, lt: endOfDayInTz(addDaysYmd(today, 7), tz) };
+      break;
+    case "none":
+      where.dueDate = null;
+      break;
+  }
+
+  if (q.assigned === "me") {
+    // "me" is the acting agent, or — for an owned agent — its owner as well.
+    where.OR = [
+      { assigneeType: "agent", assigneeAgentId: agent.id },
+      ...(agent.ownerUserId
+        ? [
+            { assigneeType: "user", assigneeUserId: agent.ownerUserId },
+            { assigneeType: "user", assignees: { some: { userId: agent.ownerUserId } } },
+          ]
+        : []),
+    ];
+  } else if (q.assigned === "unassigned") {
+    where.OR = [{ assigneeType: null }, { assigneeType: "user", assigneeUserId: null, assignees: { none: {} } }];
+  } else if (q.assigned !== "any") {
+    where.OR = [
+      { assigneeType: "user", assigneeUserId: q.assigned },
+      { assigneeType: "user", assignees: { some: { userId: q.assigned } } },
+      { assigneeType: "agent", assigneeAgentId: q.assigned },
+    ];
+  }
+  // SQLite has no case-insensitive `contains`; filter titles in JS below.
+  const needle = q.q?.toLowerCase();
+
+  const rows = await db.ticket.findMany({
+    where,
+    include: ticketListInclude,
+    orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
+    take: needle ? Math.max(q.limit * 5, 1000) : q.limit,
+  });
+  const usersById = await workspaceUsersById(agent.workspaceId);
+  const tickets = rows
+    .filter((t) => !needle || t.title.toLowerCase().includes(needle))
+    .map((t) => toAgendaTicket(t, usersById))
+    .sort(compareAgendaTickets)
+    .slice(0, q.limit);
+  return ok({ tickets, count: tickets.length });
+});
 
 export const POST = handler(async (req: Request) => {
   const agent = await requireAgent(req);
@@ -20,23 +102,12 @@ export const POST = handler(async (req: Request) => {
   const input = parse(createTicketV1Schema, await readJson(req));
   await assertAgentBoardAccess(agent, input.boardId);
   // Snapshot before ANY write this session — including the label find-or-create
-  // below — so a restore can fully undo agent-created labels too.
+  // inside createTicket — so a restore can fully undo agent-created labels too.
   await guardAgentSnapshot(agent.workspaceId, { id: agent.id, name: agent.name });
-
-  // Resolve a column by name (migration) if no id given.
-  let columnId = input.columnId;
-  if (!columnId && input.columnName) {
-    const cols = await db.column.findMany({ where: { boardId: input.boardId } });
-    columnId = cols.find((c) => c.name.toLowerCase() === input.columnName!.toLowerCase())?.id;
-    if (!columnId) {
-      throw new HttpError(422, `No column named "${input.columnName}" on this board`);
-    }
-  }
 
   // Assignee: agent, or a human by user id / workspace email (migration).
   // A human assignee must be an assignable board member — createTicket's
   // resolveAssignee rejects outsiders and members the board isn't shared with.
-  // Resolved before the label find-or-create so a bad assignee 422s cleanly.
   let assigneeType: "user" | "agent" | null = null;
   let assigneeUserId: string | null = null;
   let assigneeAgentId: string | null = null;
@@ -58,34 +129,19 @@ export const POST = handler(async (req: Request) => {
     assigneeUserId = member.userId;
   }
 
-  // Labels: explicit ids + find-or-create by name.
-  const labelIds = [...(input.labelIds ?? [])];
-  if (input.labelNames?.length) {
-    const existing = await db.label.findMany({ where: { boardId: input.boardId } });
-    for (const raw of input.labelNames) {
-      const name = raw.trim();
-      if (!name) continue;
-      const match = existing.find((l) => l.name.toLowerCase() === name.toLowerCase());
-      if (match) {
-        labelIds.push(match.id);
-        continue;
-      }
-      const color = LABEL_COLORS[hash(name) % LABEL_COLORS.length];
-      const createdLabel = await db.label.create({ data: { boardId: input.boardId, name, color } });
-      existing.push(createdLabel);
-      labelIds.push(createdLabel.id);
-    }
-  }
-
   const ticket = await createTicket(
     {
       boardId: input.boardId,
-      columnId,
+      columnId: input.columnId,
+      column: input.column,
+      columnName: input.columnName,
+      stage: input.stage,
       title: input.title,
       description: input.description,
       priority: input.priority,
       dueDate: input.dueDate ?? null,
-      labelIds,
+      labelIds: input.labelIds,
+      labelNames: input.labelNames,
       assigneeType,
       assigneeUserId,
       assigneeAgentId,

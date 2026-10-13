@@ -1,25 +1,37 @@
 import { db } from "@/lib/db";
 import { HttpError } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
-import { broadcast } from "@/lib/webhooks";
 import { ticketInclude, serializeTicket } from "@/lib/serialize";
 import { onMutation } from "@/lib/snapshots";
 import type { Actor } from "./tickets";
 
 /**
  * Subtasks — a persistent, ordered checklist inside a ticket. Every mutation
- * returns the full serialized ticket (subtasks included) so callers can swap
- * their ticket state in one go, and broadcasts `ticket.updated` so other
- * clients/webhooks stay in sync.
+ * returns `{ subtask, ticket }`: the touched row (null after a delete) plus the
+ * full serialized ticket (subtasks included) so callers can swap their ticket
+ * state in one go.
  */
+
+export type SerializedSubtask = {
+  id: string;
+  title: string;
+  completed: boolean;
+  position: number;
+  createdAt: string;
+};
+
+export type SubtaskResult = {
+  subtask: SerializedSubtask | null;
+  ticket: ReturnType<typeof serializeTicket>;
+};
 
 async function ticketCtx(ticketId: string) {
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
-    select: { id: true, boardId: true, board: { select: { workspaceId: true } } },
+    select: { id: true, title: true, boardId: true, board: { select: { workspaceId: true } } },
   });
   if (!ticket) throw new HttpError(404, "Ticket not found");
-  return { id: ticket.id, boardId: ticket.boardId, workspaceId: ticket.board.workspaceId };
+  return { id: ticket.id, title: ticket.title, boardId: ticket.boardId, workspaceId: ticket.board.workspaceId };
 }
 
 /** The subtask must belong to the ticket named in the route (404 otherwise). */
@@ -29,20 +41,30 @@ async function loadSubtaskOf(ticketId: string, subtaskId: string) {
   return subtask;
 }
 
+function serializeSubtask(s: { id: string; title: string; completed: boolean; position: number; createdAt: Date }): SerializedSubtask {
+  return { id: s.id, title: s.title, completed: s.completed, position: s.position, createdAt: s.createdAt.toISOString() };
+}
+
 async function serializedTicket(ticketId: string) {
   const t = await db.ticket.findUnique({ where: { id: ticketId }, include: ticketInclude });
   if (!t) throw new HttpError(404, "Ticket not found");
   return serializeTicket(t);
 }
 
-async function finish(action: string, ticket: { id: string; boardId: string; workspaceId: string }, actor: Actor, meta?: Record<string, unknown>) {
+async function finish(
+  action: string,
+  ticket: { id: string; title: string; boardId: string; workspaceId: string },
+  actor: Actor,
+  subtaskId: string | null,
+  meta?: Record<string, unknown>,
+): Promise<SubtaskResult> {
   const serialized = await serializedTicket(ticket.id);
-  await logActivity({ actor, action, boardId: ticket.boardId, ticketId: ticket.id, meta });
-  await broadcast(ticket.workspaceId, "ticket.updated", { ticket: serialized }, { actor });
-  return serialized;
+  await logActivity({ actor, action, boardId: ticket.boardId, ticketId: ticket.id, meta: { ticketTitle: ticket.title, ...meta } });
+  const subtask = subtaskId ? serialized.subtasks.find((s) => s.id === subtaskId) ?? null : null;
+  return { subtask, ticket: serialized };
 }
 
-export async function createSubtask(ticketId: string, title: string, actor: Actor) {
+export async function createSubtask(ticketId: string, title: string, actor: Actor): Promise<SubtaskResult> {
   const ticket = await ticketCtx(ticketId);
   await onMutation(actor, ticket.workspaceId);
   const last = await db.subtask.findFirst({
@@ -50,7 +72,7 @@ export async function createSubtask(ticketId: string, title: string, actor: Acto
     orderBy: { position: "desc" },
     select: { position: true },
   });
-  await db.subtask.create({
+  const row = await db.subtask.create({
     data: {
       ticketId,
       title,
@@ -59,7 +81,7 @@ export async function createSubtask(ticketId: string, title: string, actor: Acto
       createdById: actor.id ?? null,
     },
   });
-  return finish("subtask.created", ticket, actor, { title });
+  return finish("subtask.created", ticket, actor, row.id, { title });
 }
 
 export async function updateSubtask(
@@ -67,7 +89,7 @@ export async function updateSubtask(
   subtaskId: string,
   input: { title?: string; completed?: boolean },
   actor: Actor,
-) {
+): Promise<SubtaskResult> {
   const ticket = await ticketCtx(ticketId);
   const subtask = await loadSubtaskOf(ticketId, subtaskId);
   await onMutation(actor, ticket.workspaceId);
@@ -80,10 +102,10 @@ export async function updateSubtask(
   });
   const action =
     input.completed === undefined ? "subtask.updated" : input.completed ? "subtask.completed" : "subtask.reopened";
-  return finish(action, ticket, actor, { title: input.title ?? subtask.title });
+  return finish(action, ticket, actor, subtaskId, { title: input.title ?? subtask.title });
 }
 
-export async function deleteSubtask(ticketId: string, subtaskId: string, actor: Actor) {
+export async function deleteSubtask(ticketId: string, subtaskId: string, actor: Actor): Promise<SubtaskResult> {
   const ticket = await ticketCtx(ticketId);
   const subtask = await loadSubtaskOf(ticketId, subtaskId);
   await onMutation(actor, ticket.workspaceId);
@@ -100,7 +122,8 @@ export async function deleteSubtask(ticketId: string, subtaskId: string, actor: 
       .filter(({ s, idx }) => s.position !== idx)
       .map(({ s, idx }) => db.subtask.update({ where: { id: s.id }, data: { position: idx } })),
   );
-  return finish("subtask.deleted", ticket, actor, { title: subtask.title });
+  const result = await finish("subtask.deleted", ticket, actor, null, { title: subtask.title });
+  return { ...result, subtask: { ...serializeSubtask(subtask), position: -1 } };
 }
 
 /**
@@ -108,7 +131,7 @@ export async function deleteSubtask(ticketId: string, subtaskId: string, actor: 
  * ticket's current subtasks (any order) — a stale or partial list is a 422 so
  * two racing clients can't silently drop items.
  */
-export async function reorderSubtasks(ticketId: string, orderedIds: string[], actor: Actor) {
+export async function reorderSubtasks(ticketId: string, orderedIds: string[], actor: Actor): Promise<SubtaskResult> {
   const ticket = await ticketCtx(ticketId);
   const current = await db.subtask.findMany({ where: { ticketId }, select: { id: true } });
   const currentIds = new Set(current.map((s) => s.id));
@@ -119,5 +142,5 @@ export async function reorderSubtasks(ticketId: string, orderedIds: string[], ac
   await db.$transaction(
     orderedIds.map((id, position) => db.subtask.update({ where: { id }, data: { position } })),
   );
-  return finish("subtask.reordered", ticket, actor);
+  return finish("subtask.reordered", ticket, actor, null);
 }

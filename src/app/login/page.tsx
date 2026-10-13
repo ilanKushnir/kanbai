@@ -14,8 +14,8 @@ export default async function LoginPage() {
   if ((await db.user.count()) === 0) redirect("/signup");
   return (
     <AuthShell
-      title="Welcome back"
-      subtitle="Sign in to your Kanbai workspace."
+      title="Welcome back."
+      subtitle="Your day is waiting."
       footer={<>Need access? Ask a workspace admin to send you an invite.</>}
     >
       <AuthForm mode="login" submitLabel="Sign in" />

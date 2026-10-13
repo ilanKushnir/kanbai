@@ -8,14 +8,9 @@ import test from "node:test";
  * settle) holds app-wide — and prefers-reduced-motion silences all of it.
  */
 const css = readFileSync("src/app/globals.css", "utf8");
-const notesView = readFileSync("src/components/notes/notes-view.tsx", "utf8");
 const menu = readFileSync("src/components/ui/menu.tsx", "utf8");
 const button = readFileSync("src/components/ui/button.tsx", "utf8");
-
-const composer = notesView.slice(
-  notesView.indexOf("{/* Composer"),
-  notesView.indexOf("<DndContext"),
-);
+const todayView = readFileSync("src/components/today/today-view.tsx", "utf8");
 
 test("globals.css defines the shared motion tokens", () => {
   for (const token of ["--motion-fast", "--motion-base", "--motion-slow", "--ease-out-soft", "--ease-out-emph"]) {
@@ -30,23 +25,17 @@ test("animation utilities ease through the tokens, not inline curves", () => {
   assert.equal(css.split("cubic-bezier(0.16, 1, 0.3, 1)").length, 2, "expo-out curve declared exactly once");
 });
 
-test("composer expand/collapse animates the min-height floor only", () => {
-  // Animating min-height (not height) keeps AutoGrow's per-keystroke inline
-  // height changes instant while the expand toggle glides.
-  const block = css.slice(css.indexOf(".kb-composer textarea {"), css.indexOf(".kb-composer textarea::placeholder"));
-  assert.match(block, /transition: min-height var\(--motion-slow\) var\(--ease-out-emph\)/);
+test("quick-add well animates its min-height floor only", () => {
+  // Animating min-height (not height) keeps the per-keystroke auto-grow instant.
+  assert.match(css, /\.kb-quickadd textarea \{ transition: min-height var\(--motion-slow\) var\(--ease-out-emph\); \}/);
 });
 
-test("composer expand actually grows the canvas on desktop too", () => {
-  // md:min-h-40 must ride along — the base md:min-h-8 otherwise wins the
-  // cascade at md+ and desktop "Expand" changes nothing but the placeholder.
-  assert.match(composer, /min-h-40 md:min-h-40/);
-});
-
-test("composer expand toggle stays accessible and hands focus to the textarea", () => {
-  assert.match(composer, /aria-expanded=\{expanded\}/);
-  assert.match(notesView, /function toggleExpanded/);
-  assert.match(notesView, /querySelector\("textarea"\)\?\.focus\(\{ preventScroll: true \}\)/);
+test("task check gives tactile feedback and completed rows settle out through the shared curve", () => {
+  const check = css.slice(css.indexOf(".kb-check {"), css.indexOf(".kb-row-done"));
+  assert.match(check, /transform var\(--motion-fast\) var\(--ease-out-emph\)/);
+  assert.match(check, /\.kb-check:active \{ transform: scale\(0\.9\); \}/);
+  assert.match(css, /\.animate-row-done \{ animation: row-done [\d.]+s var\(--ease-out-soft\)/);
+  assert.match(todayView, /justDone && "animate-row-done"/);
 });
 
 test("menus enter from the edge they open on", () => {
@@ -70,8 +59,8 @@ test("prefers-reduced-motion flattens animations, transitions, loops, and smooth
   assert.match(block, /scroll-behavior: auto/);
 });
 
-test("notes section reveals are opacity-only so dnd-kit measurements stay true", () => {
-  const reveal = notesView.slice(notesView.indexOf("{open && ("), notesView.indexOf("<SortableContext"));
+test("today section reveals are opacity-only so row geometry stays true", () => {
+  const reveal = todayView.slice(todayView.indexOf("{open && ("), todayView.indexOf("{isEmptyToday && ("));
   assert.match(reveal, /animate-fade-in/);
   assert.doesNotMatch(reveal, /animate-slide|animate-scale/);
 });

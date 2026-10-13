@@ -12,7 +12,7 @@ export function HomeRedirect({ preferred }: { preferred?: string | null }) {
       router.replace(`/${preferred}`);
       return;
     }
-    router.replace("/my-day");
+    router.replace("/today");
   }, [router, preferred]);
 
   return (

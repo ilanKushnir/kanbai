@@ -12,10 +12,7 @@ export const PATCH = handler(
     const { agentId } = await params;
     await assertAgentInWorkspace(agentId, ctx.workspace.id);
     const input = parse(updateAgentSchema, await readJson(req));
-    const agent = await updateAgent(agentId, {
-      ...input,
-      webhookUrl: input.webhookUrl === "" ? null : input.webhookUrl,
-    });
+    const agent = await updateAgent(agentId, input);
     return ok({ agent });
   },
 );

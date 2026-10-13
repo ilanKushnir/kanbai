@@ -337,19 +337,11 @@ model Agent {
   // Null = legacy workspace-wide agent.
   ownerUserId String?
 
-  // API key (for the agent → Kanbai). Only the hash is stored.
+  // API key (for the agent → Kanbai). Only the hash is stored. Agents talk to
+  // Kanbai over the REST API only — there are no outbound callbacks.
   apiKeyHash   String?  @unique
   apiKeyPrefix String?  // e.g. "kbai_live_a1b2" for display
   apiKeyLast4  String?
-
-  // Webhook (Kanbai → agent). The agent sets the URL to itself.
-  webhookUrl    String?
-  // Signing secret the USER sets; Kanbai signs payloads, the agent verifies.
-  webhookSecret String?
-  webhookActive Boolean @default(true)
-  // Event subscriptions: "*" = every event, else a comma list of WEBHOOK_EVENTS.
-  // "ping" is always delivered so Send test works regardless of the selection.
-  webhookEvents String  @default("*")
 
   scopes    String   @default("boards:read,boards:write,tickets:read,tickets:write,inbox:read,inbox:write,notes:read,notes:write")
   lastSeenAt DateTime?
@@ -359,24 +351,6 @@ model Agent {
   ownerUser User?     @relation("AgentOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   tickets   Ticket[]
   notes     Note[]
-  deliveries WebhookDelivery[]
-}
-
-model WebhookDelivery {
-  id         String   @id @default(cuid())
-  agentId    String
-  event      String
-  payload    String   // JSON
-  signature  String   // hex HMAC sent in X-Kanbai-Signature
-  status     String   @default("pending") // pending | success | failed
-  statusCode Int?
-  error      String?
-  attempts   Int      @default(0)
-  createdAt  DateTime @default(now())
-
-  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-
-  @@index([agentId, createdAt])
 }
 
 model ActivityLog {

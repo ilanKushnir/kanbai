@@ -11,7 +11,7 @@ export const POST = handler(
     const { ticketId } = await params;
     await assertTicketAccess(ctx, ticketId, true);
     const { title } = parse(createSubtaskSchema, await readJson(req));
-    const ticket = await createSubtask(ticketId, title, { type: "user", id: ctx.user.id, name: ctx.user.name });
-    return created({ ticket });
+    const result = await createSubtask(ticketId, title, { type: "user", id: ctx.user.id, name: ctx.user.name });
+    return created(result);
   },
 );

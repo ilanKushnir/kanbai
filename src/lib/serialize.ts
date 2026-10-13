@@ -1,6 +1,5 @@
 import { Prisma } from "@/generated/prisma";
 import { toRichHtml } from "@/lib/sanitize";
-import { secretFingerprint } from "@/lib/crypto";
 
 export const ticketInclude = {
   labels: { include: { label: true } },
@@ -163,33 +162,4 @@ export function serializeAgentPublic(a: {
   status: string;
 }) {
   return { id: a.id, name: a.name, kind: a.kind, color: a.color, status: a.status };
-}
-
-/**
- * Webhook status for an agent, as reported to the agent itself (GET /api/v1/me,
- * the self-setup endpoint). Never leaks the signing secret — only whether one
- * is configured. `signed` reflects optional HMAC: callbacks still fire when
- * false, just unsigned.
- */
-export function serializeWebhookStatus(a: {
-  webhookUrl: string | null;
-  webhookActive: boolean;
-  webhookSecret: string | null;
-  webhookEvents?: string;
-}) {
-  const configured = !!a.webhookUrl;
-  const signed = !!a.webhookSecret;
-  return {
-    url: a.webhookUrl,
-    active: a.webhookActive,
-    configured,
-    signed,
-    // Short hash of the signing secret (never the secret). Compare with your
-    // own sha256(secret).slice(0,8) to detect a mismatch — the usual 401 cause.
-    secretFingerprint: a.webhookSecret ? secretFingerprint(a.webhookSecret) : null,
-    // "*" = all events; otherwise a comma list. "ping" is always delivered.
-    events: a.webhookEvents ?? "*",
-    // Human-readable status mirroring the Agents UI labels.
-    status: !configured ? "not_configured" : !a.webhookActive ? "disabled" : signed ? "signed" : "unsigned",
-  };
 }

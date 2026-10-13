@@ -1,18 +1,59 @@
 import { z } from "zod";
-import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS, NOTE_BUCKETS, WEBHOOK_EVENTS } from "./constants";
+import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS, NOTE_BUCKETS } from "./constants";
 import { COLUMN_STAGES } from "./column-stage";
 import { isAvatarColor } from "./avatar-colors";
+import { zonedTime, workspaceTz } from "./tz";
 
 /**
  * A due date in ISO 8601, accepted in any of three unambiguous shapes:
- *   • date-only      "2026-06-20"            (interpreted as UTC midnight)
+ *   • date-only      "2026-06-20"            (→ 12:00 local in KANBAI_TZ)
  *   • UTC instant    "2026-06-20T17:00:00Z"
  *   • zoned instant  "2026-06-20T17:00:00+02:00"
- * All normalize to a stable `Date` server-side via `new Date(value)`. A bare
- * local datetime with no zone ("2026-06-20T17:00:00") is rejected as ambiguous.
- * Keep this in sync with docs/AGENT_PROTOCOL.md (§ dueDate).
+ * A bare local datetime with no zone ("2026-06-20T17:00:00") is rejected as
+ * ambiguous. Every write path runs the accepted string through
+ * {@link normalizeDueDate}. Keep in sync with docs/AGENT_PROTOCOL.md.
  */
 export const dueDateSchema = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
+
+/**
+ * The dueDate INPUT contract shared by every create/patch/sort/promote body:
+ * one of the shapes above, or `null` to clear. Parsed values are already
+ * normalized to a canonical ISO instant (`normalizeDueDate`), so services can
+ * do `new Date(value)` blindly.
+ */
+export const dueDateInput = dueDateSchema.transform((v) => normalizeDueDate(v)).nullable();
+
+/**
+ * Normalize an accepted dueDate string to a canonical UTC ISO instant. A plain
+ * "YYYY-MM-DD" lands at noon in the workspace timezone (KANBAI_TZ, default
+ * Asia/Jerusalem) so it reads as the same calendar day everywhere nearby and
+ * never slips to the previous day in a UTC host. Instants pass through as-is.
+ * `null`/`undefined` are returned unchanged (clear / untouched).
+ */
+export function normalizeDueDate(v: string): string;
+export function normalizeDueDate(v: null): null;
+export function normalizeDueDate(v: undefined): undefined;
+export function normalizeDueDate(v: string | null | undefined): string | null | undefined;
+export function normalizeDueDate(v: string | null | undefined): string | null | undefined {
+  if (v == null) return v;
+  const s = v.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return zonedTime(s, 12, 0, workspaceTz()).toISOString();
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) throw new Error(`Invalid dueDate: ${v}`);
+  return d.toISOString();
+}
+
+/**
+ * Column aliases accepted on every ticket write: a `columnId`, a column name
+ * (`column` or `columnName`, case-insensitive), or a semantic `stage`.
+ * Resolved to an id by `resolveColumnRef` in the ticket service.
+ */
+export const columnRefFields = {
+  columnId: z.string().min(1).optional(),
+  column: z.string().trim().min(1).max(40).optional(),
+  columnName: z.string().trim().min(1).max(40).optional(),
+  stage: z.enum(COLUMN_STAGES).optional(),
+};
 
 export const signupSchema = z.object({
   email: z.email().max(200),
@@ -92,12 +133,11 @@ export const updateBoardV1Schema = z
 
 export const createTicketV1Schema = z.object({
   boardId: z.string().min(1),
-  columnId: z.string().optional(),
-  columnName: z.string().max(40).optional(),
+  ...columnRefFields,
   title: z.string().trim().min(1).max(200),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: dueDateSchema.nullable().optional(),
+  dueDate: dueDateInput.optional(),
   assigneeAgentId: z.string().optional(),
   // Human assignee, by id (preferred) or workspace email (migration). Must be
   // an assignable board member — validated in the route/service, not here.
@@ -118,11 +158,11 @@ export const createMemberV1Schema = z.object({
 
 export const createTicketSchema = z.object({
   boardId: z.string().min(1),
-  columnId: z.string().min(1).optional(),
+  ...columnRefFields,
   title: z.string().trim().min(1).max(200),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: dueDateSchema.nullable().optional(),
+  dueDate: dueDateInput.optional(),
   assigneeType: z.enum(["user", "agent"]).nullable().optional(),
   assigneeUserId: z.string().nullable().optional(),
   // Multi-assign (humans): full ordered list; first entry = primary assignee.
@@ -135,27 +175,42 @@ export const updateTicketSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: dueDateSchema.nullable().optional(),
+  dueDate: dueDateInput.optional(),
   assigneeType: z.enum(["user", "agent"]).nullable().optional(),
   assigneeUserId: z.string().nullable().optional(),
   // Multi-assign (humans): replaces the whole list; [] or null unassigns.
   assigneeUserIds: z.array(z.string().min(1)).max(20).nullable().optional(),
   assigneeAgentId: z.string().nullable().optional(),
-  columnId: z.string().optional(),
+  ...columnRefFields,
   position: z.number().optional(),
   subState: z.string().max(24).nullable().optional(),
   labelIds: z.array(z.string()).optional(),
+  // Replaces the whole label set by name; unknown names are created on the board.
+  labelNames: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
 });
 
-export const moveTicketSchema = z.object({
-  columnId: z.string().min(1),
-  position: z.number().int().min(0),
-  subState: z.string().max(24).nullable().optional(),
-});
+/**
+ * Move: address the target column by id, name (`column`/`columnName`,
+ * case-insensitive) or `stage`; `position` defaults to the end of the column.
+ */
+export const moveTicketSchema = z
+  .object({
+    ...columnRefFields,
+    position: z.number().int().min(0).optional(),
+    subState: z.string().max(24).nullable().optional(),
+  })
+  .refine((v) => v.columnId || v.column || v.columnName || v.stage, {
+    message: "Provide a target column: columnId, column (name) or stage.",
+  });
 
-export const createCommentSchema = z.object({
-  body: z.string().trim().min(1).max(10_000),
-});
+/** A comment body — `body` or its alias `content`. */
+export const createCommentSchema = z
+  .object({
+    body: z.string().trim().min(1).max(10_000).optional(),
+    content: z.string().trim().min(1).max(10_000).optional(),
+  })
+  .transform((v) => ({ body: (v.body ?? v.content ?? "").trim() }))
+  .refine((v) => v.body.length > 0, { message: "body: comment text is required" });
 
 // ── Subtasks ──
 export const createSubtaskSchema = z.object({
@@ -251,6 +306,8 @@ export const moveNoteSchema = z.object({
 /** Agent creates a note on behalf of a workspace user (defaults to the owner). */
 export const createNoteV1Schema = z.object({
   body: z.string().trim().min(1).max(10_000),
+  // Concrete local day ("YYYY-MM-DD", null = unscheduled) wins over the coarse bucket.
+  scheduledDay: dayString.nullable().optional(),
   bucket: z.enum(NOTE_BUCKETS).optional(),
   priority: z.enum(PRIORITIES).optional(),
   userId: z.string().min(1).optional(),
@@ -281,25 +338,26 @@ export const sortNoteSchema = z.object({
   sortContext: z.string().max(4000).optional(),
 });
 
-/** Agent uses this to turn a queued note into a real ticket. */
+/** Agent uses this to turn a queued note into a real ticket (same aliases as promote). */
 export const fulfillNoteSchema = z.object({
   boardId: z.string().min(1),
-  columnId: z.string().optional(),
+  ...columnRefFields,
   title: z.string().trim().min(1).max(200),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: dueDateSchema.nullable().optional(),
+  dueDate: dueDateInput.optional(),
   labelIds: z.array(z.string()).optional(),
+  labelNames: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
 });
 
 /** User files a note into a ticket themselves (no agent), with label names resolved/created. */
 export const promoteNoteSchema = z.object({
   boardId: z.string().min(1),
-  columnId: z.string().optional(),
+  ...columnRefFields,
   title: z.string().trim().min(1).max(200),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: dueDateSchema.nullable().optional(),
+  dueDate: dueDateInput.optional(),
   labelNames: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
 });
 
@@ -310,12 +368,11 @@ export const promoteNoteSchema = z.object({
  */
 export const promoteNoteV1Schema = z.object({
   boardId: z.string().min(1),
-  columnId: z.string().optional(),
-  columnName: z.string().max(40).optional(),
+  ...columnRefFields,
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(20_000).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  dueDate: dueDateSchema.nullable().optional(),
+  dueDate: dueDateInput.optional(),
   labelIds: z.array(z.string()).optional(),
   labelNames: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
 });
@@ -336,34 +393,19 @@ export const createAgentSchema = z.object({
   color: z.string().optional(),
 });
 
-/**
- * Agent self-setup: an authenticated agent registers/updates its OWN webhook
- * via its bearer key (POST /api/v1/agent/webhook). URL is required to register;
- * `active` toggles delivery; `secret` is optional (signing is recommended, not
- * required) — omit it to keep the current secret, send "" or null to clear it.
- */
-export const registerWebhookV1Schema = z.object({
-  url: z.url().max(2000).nullable().optional().or(z.literal("")),
-  active: z.boolean().optional(),
-  secret: z.string().min(8).max(200).nullable().optional().or(z.literal("")),
-  /** Event subscription list; omit to keep current ("*" = everything by default). */
-  events: z.array(z.enum(WEBHOOK_EVENTS)).optional(),
-});
-
 export const updateAgentSchema = z.object({
   name: z.string().trim().min(1).max(60).optional(),
   ownerUserId: z.string().max(60).nullable().optional().or(z.literal("")),
-  webhookUrl: z.url().nullable().optional().or(z.literal("")),
-  // Signing secrets shorter than 8 chars are trivially guessable — reject them
-  // rather than sign with a weak key. null clears (unsigned).
-  webhookSecret: z.string().min(8).max(200).nullable().optional(),
-  webhookActive: z.boolean().optional(),
-  webhookEvents: z.array(z.enum(WEBHOOK_EVENTS)).optional(),
   status: z.enum(["active", "disabled"]).optional(),
   scopes: z.array(z.enum(ALL_SCOPES)).optional(),
 });
 
-export const LANDING_PAGES = ["my-day", "notes", "boards"] as const;
+export const LANDING_PAGES = ["today", "boards"] as const;
+/** Legacy landing names still sent by older clients — folded into "today". */
+const LEGACY_LANDING_PAGES = ["my-day", "notes"] as const;
+const landingPageInput = z
+  .enum([...LANDING_PAGES, ...LEGACY_LANDING_PAGES])
+  .transform((v): (typeof LANDING_PAGES)[number] => (v === "my-day" || v === "notes" ? "today" : v));
 export const DICTATION_LANGUAGE_VALUES = ["auto", "en", "he", "es", "fr", "de", "it", "pt", "ar", "ru", "zh", "ja", "ko"] as const;
 
 export const updateAccountSchema = z.object({
@@ -376,7 +418,7 @@ export const updateAccountSchema = z.object({
     .nullable()
     .optional()
     .or(z.literal("")),
-  defaultLanding: z.enum(LANDING_PAGES).optional(),
+  defaultLanding: landingPageInput.optional(),
   weekStartsOn: z.number().int().min(0).max(6).optional(),
   handedness: z.enum(["right", "left"]).optional(),
   dictationLanguage: z.enum(DICTATION_LANGUAGE_VALUES).optional(),
@@ -397,6 +439,17 @@ export const updateWorkspaceSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   defaultAgentId: z.string().max(60).nullable().optional().or(z.literal("")),
   snapshotLimit: z.number().int().min(1).max(200).optional(),
+});
+
+/** GET /api/v1/tickets query filters. */
+export const listTicketsQuerySchema = z.object({
+  boardId: z.string().min(1).optional(),
+  status: z.enum(["open", "done", "all"]).default("open"),
+  due: z.enum(["overdue", "today", "tomorrow", "week", "none", "any"]).default("any"),
+  // "me" | "any" | "unassigned" | a user id
+  assigned: z.string().min(1).max(64).default("any"),
+  q: z.string().trim().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).default(200),
 });
 
 export function formatZodError(err: z.ZodError) {

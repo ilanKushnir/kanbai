@@ -85,6 +85,36 @@ export async function createBoard(
   return board;
 }
 
+/**
+ * Update board metadata and/or archive state. Archiving is the reversible
+ * "delete": the board (and every ticket) stays intact and `archived: false`
+ * brings it back. Logs board.updated / board.archived / board.unarchived.
+ */
+export async function updateBoard(
+  boardId: string,
+  input: { name?: string; description?: string | null; color?: string; archived?: boolean },
+  actor: Actor,
+) {
+  const board = await db.board.update({
+    where: { id: boardId },
+    data: {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.color !== undefined ? { color: input.color } : {}),
+      ...(input.archived !== undefined ? { archived: input.archived } : {}),
+    },
+    select: { id: true, name: true, slug: true, description: true, color: true, archived: true },
+  });
+  const fields = Object.keys(input).filter((k) => (input as Record<string, unknown>)[k] !== undefined);
+  await logActivity({
+    actor,
+    action: input.archived === true ? "board.archived" : input.archived === false ? "board.unarchived" : "board.updated",
+    boardId,
+    meta: { name: board.name, fields },
+  });
+  return board;
+}
+
 /** Full board payload for the Kanban page or agent API. */
 export async function getBoardWithData(
   workspaceId: string,

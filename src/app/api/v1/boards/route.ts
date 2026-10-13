@@ -10,13 +10,15 @@ import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+/** List boards. Archived boards are hidden unless `?archived=true` (then included, flagged). */
 export const GET = handler(async (req: Request) => {
   const agent = await requireAgent(req);
   requireScope(agent, "boards:read");
+  const includeArchived = new URL(req.url).searchParams.get("archived") === "true";
 
   const boards = await db.board.findMany({
     // Owner-mapped agents only see the boards their owning user can access.
-    where: { ...(await agentBoardWhere(agent)), archived: false },
+    where: { ...(await agentBoardWhere(agent)), ...(includeArchived ? {} : { archived: false }) },
     orderBy: { position: "asc" },
     include: {
       labels: { select: { id: true, name: true, color: true } },
@@ -34,6 +36,7 @@ export const GET = handler(async (req: Request) => {
       slug: b.slug,
       description: b.description,
       color: b.color,
+      archived: b.archived,
       labels: b.labels,
       columns: b.columns.map((c) => ({
         id: c.id,

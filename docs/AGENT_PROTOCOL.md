@@ -1,837 +1,224 @@
 # Kanbai Agent Protocol
 
-How an AI agent — **Hermes** (primary), Open Claw, Claude Code, Codex, or any
-custom agent — connects to Kanbai, manages boards & tickets, and processes the
-"to-sort" inbox. The protocol is designed to be secure by default and trivial to
-implement on either side.
+Kanbai is the single source of truth for tasks. An AI agent (Astra, Hermes,
+Claude Code, …) drives it **only** through the REST API under `/api/v1` with a
+Bearer key. There are no callbacks: when the agent wants to know the state of
+the day, it asks. Every write is logged to the activity feed under the agent's
+name and is undoable from the UI (snapshots, 30-day trash, archive-not-delete).
 
-There are two channels:
+Base URL: `http://<kanbai-host>:3000/api/v1` (prefer the LAN address). All
+bodies are JSON. Error shape: `{ "error": { "message", "code" } }` with the
+usual statuses (400 bad JSON · 401 bad key · 403 disabled/missing scope ·
+404 not in your workspace/access · 409 conflict · 422 validation, see `message`).
 
-| Direction | Channel | Trust mechanism |
-| --- | --- | --- |
-| **Agent → Kanbai** | REST API under `/api/v1` | Bearer **API key** |
-| **Kanbai → Agent** | Webhook to the agent's own URL | **HMAC signature** — optional, recommended (secret you set) |
-
-Kanbai and its agents typically run locally/on the same network, so **prefer
-internal/LAN URLs** (e.g. `http://<host-lan-ip>:3000`) for both the API base URL
-and the agent's webhook URL over public hostnames.
-
----
-
-## 1. Authentication (Agent → Kanbai)
-
-Every `/api/v1` request must include the agent's API key:
+## 1. Auth and `/me`
 
 ```
-Authorization: Bearer kbai_live_xxxxxxxxxxxxxxxxxxxxxxxx
+Authorization: Bearer kbai_live_…        # created in Agents → Add agent (shown once)
 ```
 
-- Create the key in **Agents → Add agent** (or rotate an existing one). The
-  plaintext is shown **once**; Kanbai stores only a salted SHA-256 hash.
-- Keys are scoped. A call missing the required scope returns `403`.
-
-**Scopes:** `boards:read`, `boards:write`, `tickets:read`, `tickets:write`,
-`inbox:read`, `inbox:write`, `notes:read`, `notes:write`, `comments:write`,
-`members:read`, `members:write`.
-
-> New agents are granted every scope by default. Agents created before
-> `notes:read`/`notes:write` existed won't have them until you re-grant scopes
-> in **Agents → Scopes** — their existing flows (inbox, tickets, boards) are
-> unaffected.
-
-### Quick check
-
-```bash
-curl https://your-kanbai.app/api/v1/me \
-  -H "Authorization: Bearer $KANBAI_KEY"
-# → {
-#   "service": { "name": "Kanbai", "version": "0.5.1" },
-#   "apiVersion": "v1",
-#   "baseUrl": "https://your-kanbai.app/api/v1",
-#   "agent": {...}, "workspaceId": "...", "scopes": [...],
-#   "capabilities": {
-#     "resources": ["boards","columns","tickets","inbox","notes","comments","members","trash"],
-#     "lifecycle": { "ticketDone": true, "noteDone": true, "notePromote": true,
-#                    "softDelete": true, "trashRestore": true, "boardArchive": true },
-#     "boards": { "update": true, "columns": { "create": true, "update": true,
-#                 "reorder": true, "deleteEmptyOnly": true }, "columnStages": true },
-#     "members": { "manage": true },
-#     "webhook": { "selfRegister": true, "test": true, "signing": "optional" },
-#     "events": ["note.queued","note.sorted","ticket.created", ...]
-#   },
-#   "webhook": { "url": "...", "active": true, "configured": true,
-#                "signed": true, "status": "signed" },
-#   "conventions": {
-#     "descriptionFormat": "html",
-#     "descriptionAllowedTags": ["p","b","i","u","h3","ul","ol","li","blockquote","a", ...],
-#     "priorities": ["none","low","medium","high","urgent"],
-#     "noteBuckets": ["today","tomorrow","next_week","next_month","general"],
-#     "columnStages": [{ "stage":"intake", "label":"Ideas", "hint":"…" }, ...]
-#   }
-# }
-```
-
-Read this on connect: `service`/`apiVersion` tell you what you're talking to,
-`scopes`/`capabilities` what you may do, `webhook` your current callback status,
-and `conventions` is self-describing so you format ticket descriptions (simple
-**HTML**, sanitized server-side) and set priorities correctly without hardcoding.
-
----
-
-## 2. REST API
-
-Base URL: `https://your-kanbai.app/api/v1`. All bodies are JSON.
-
-### Boards
+Scopes: `boards:read|write`, `tickets:read|write`, `inbox:read|write`,
+`notes:read|write`, `comments:write`, `members:read|write`. New agents get all.
 
 ```
-GET    /boards                                # list boards (+ columns, labels)   scope: boards:read
-GET    /boards/{boardId}                      # board with all columns & tickets  scope: boards:read
-POST   /boards                                # create a board w/ columns+labels  scope: boards:write
-PATCH  /boards/{boardId}                      # update name/description/color, or archive/unarchive  scope: boards:write
-GET    /boards/{boardId}/columns              # list the board's columns          scope: boards:read
-POST   /boards/{boardId}/columns              # add a column                      scope: boards:write
-POST   /boards/{boardId}/columns/reorder      # reorder columns (all ids, once)   scope: boards:write
-GET    /boards/{boardId}/columns/{columnId}   # read one column                   scope: boards:read
-PATCH  /boards/{boardId}/columns/{columnId}   # rename / stage / sub-states / flags  scope: boards:write
-DELETE /boards/{boardId}/columns/{columnId}   # delete an EMPTY column only       scope: boards:write
+GET /me   →  { service:{name,version}, apiVersion, baseUrl, agent, workspaceId,
+               ownerUserId, scopes, capabilities:{ agenda:true, ticketsList:true, … },
+               conventions:{ priorities, columnStages, dueDateFormats, timezone,
+                             descriptionFormat:"html", descriptionAllowedTags },
+               quickstart:[ five curl one-liners ] }
 ```
 
-**Archive, don't delete.** `PATCH /boards/{id} { "archived": true }` is the
-agent-safe way to retire a board — fully reversible with `{ "archived": false }`,
-every ticket intact. There is deliberately **no board `DELETE`** for agents, and
-`DELETE` on a column is refused (`422 column_not_empty`) while any card lives in
-it — including trashed ones — so nothing restorable can ever be destroyed.
+Call it once on connect. `ownerUserId` is the person you act for (their boards
+and notes are what you see); `conventions.timezone` is the zone every "today"
+is computed in (`KANBAI_TZ`, default `Asia/Jerusalem`).
 
-**Create a board** (migration-friendly — define columns & labels up front):
-
-```bash
-curl -X POST https://your-kanbai.app/api/v1/boards \
-  -H "Authorization: Bearer ***" \
-  -H "content-type: application/json" \
-  -d '{
-    "name": "Roadmap",
-    "columns": [{"name":"Backlog"},{"name":"Doing"},{"name":"Done","isDone":true}],
-    "labels": [{"name":"bug","color":"rose"},{"name":"feature","color":"iris"}],
-    "createdAt": "2024-01-02T00:00:00.000Z"
-  }'
-# → { board: { id, slug, columns:[{id,name,isDone}], labels:[{id,name,color}] } }
-```
-
-#### Columns: rename, stage & sub-states
-
-Manage an existing board's columns without recreating it. A **column** has a
-`name`, a semantic **`stage`**, an `isDone` flag (tickets there count as
-completed), an optional `wipLimit`, and an ordered list of **sub-states** —
-lightweight stages *within* the column (e.g. `In progress` / `Blocked`) that a
-ticket can sit in.
-
-**Column stages** describe what a column *means* and drive the board's visual
-language (also self-described in `/me` → `conventions.columnStages`):
-
-| Stage | UI label | Meaning |
-| --- | --- | --- |
-| `intake` | Ideas | raw ideas / ungroomed intake, not reviewed yet |
-| `backlog` | Backlog | reviewed, ready to pick up |
-| `active` | In Work | being worked on right now |
-| `done` | Done | completed — implies `isDone: true` |
-
-`stage` and `isDone` are kept in lockstep server-side: setting
-`stage: "done"` flips `isDone` on, any other stage flips it off, and setting
-`isDone` directly adjusts the stage. Columns created before stages existed
-resolve to a sensible stage from their name + `isDone` flag.
-
-```bash
-# Rename a column and give it two sub-states
-curl -X PATCH https://your-kanbai.app/api/v1/boards/brd_123/columns/col_doing \
-  -H "Authorization: Bearer ***" \
-  -H "content-type: application/json" \
-  -d '{ "name": "In Progress", "subStates": ["Working", "Blocked"] }'
-# → { column: { id, name, isDone, wipLimit, position, subStates:["Working","Blocked"] } }
-
-# Read a single column back
-curl https://your-kanbai.app/api/v1/boards/brd_123/columns/col_doing \
-  -H "Authorization: Bearer ***"
-```
-
-`PATCH` is partial — send only the fields you want to change; the rest are left
-untouched. Accepted fields (**at least one is required** — an empty body is
-`422`, so a write is never a silent no-op):
-
-| Field | Rule |
-| --- | --- |
-| `name` | trimmed, non-empty, ≤ 40 chars, unique per board (case-insensitive); duplicate returns `409` |
-| `stage` | `intake` \| `backlog` \| `active` \| `done` — semantic column type; `done` implies `isDone: true` |
-| `subStates` | array of trimmed names (each 1–24 chars), **max 8**; normalized server-side: blanks dropped, **de-duped case-insensitively**, order preserved. Send `[]` to clear all sub-states |
-| `isDone` | boolean — whether tickets in this column count as done (kept in lockstep with `stage`) |
-| `wipLimit` | integer 1–99, or `null` to remove the limit |
-
-Sending `subStates` replaces the column's whole list (it's not a merge), but
-because only the fields you include are written, omitting `subStates` leaves the
-existing ones intact. Sub-state names are not required to be unique across
-*different* columns; within a column they're de-duped for you.
-
-Errors: `403` if the key lacks `boards:write`; `404` if the board isn't in your
-workspace or the column doesn't belong to that board.
-
-### Tickets
+## 2. `/today` — the day in one call
 
 ```
-POST   /tickets                # create a ticket                    scope: tickets:write
-GET    /tickets/{id}           # fetch a ticket                     scope: tickets:read
-PATCH  /tickets/{id}           # update fields / status / sub-state scope: tickets:write
-POST   /tickets/{id}/move      # move to column + position          scope: tickets:write
-POST   /tickets/{id}/done      # close: move to the done column     scope: tickets:write
-DELETE /tickets/{id}           # soft-delete → 30-day trash         scope: tickets:write
-POST   /tickets/{id}/comments  # add a comment (as the agent)       scope: comments:write
-GET    /tickets/{id}/subtasks             # list the ticket's subtasks    scope: tickets:read
-POST   /tickets/{id}/subtasks             # add a subtask                 scope: tickets:write
-PATCH  /tickets/{id}/subtasks/{subId}     # rename / toggle completed     scope: tickets:write
-DELETE /tickets/{id}/subtasks/{subId}     # remove a subtask              scope: tickets:write
-POST   /tickets/{id}/subtasks/reorder     # reorder (full orderedIds)     scope: tickets:write
-```
-
-**Create a ticket**
-
-```bash
-curl -X POST https://your-kanbai.app/api/v1/tickets \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{
-    "boardId": "brd_123",
-    "title": "Investigate flaky webhook retries",
-    "description": "<p>Simple <b>HTML</b> supported.</p>",
-    "priority": "high",
-    "dueDate": "2026-06-20T17:00:00.000Z",
-    "labelIds": ["lbl_bug"]
-  }'
-```
-
-Fields: `boardId` (required), `title` (required), `columnId` (defaults to the
-first column), `description` (**simple HTML** — `<p> <b> <i> <u> <h3> <ul>/<ol>/<li>
-<blockquote> <a>`; sanitized server-side, anything else is stripped; plain text is
-fine too), `priority` (`none|low|medium|high|urgent`), `dueDate` (ISO 8601 — see
-below — or null), `assigneeAgentId`, `assigneeUserId`, `assigneeEmail`,
-`labelIds[]`.
-
-#### Assigning tickets
-
-On create, set exactly one of:
-
-- `assigneeAgentId` — assign to an agent in the workspace;
-- `assigneeUserId` — assign to a human by user id (discover ids via
-  `GET /members`, scope `members:read`);
-- `assigneeEmail` — migration convenience: resolves a workspace member by email.
-
-A human assignee must be an **assignable board member**: a workspace
-owner/admin (implicit access to every board), or a member the board is shared
-with — e.g. someone invited into the workspace with access to that board.
-Anyone else is rejected with `422`: an id/email that matches no workspace
-member → `assignee_not_member`; a workspace member the board is *not* shared
-with → `assignee_no_board_access`.
-
-An **agent assignee is subject to ownership**. An agent with an owning user
-(`ownerUserId`) belongs to that user: only the owner — or an agent acting for
-the same owner — may assign tickets to it. As a caller you may set
-`assigneeAgentId` to yourself, to any ownerless workspace agent, or (if you
-are owner-mapped) to another agent of your own owner; a *legacy ownerless
-agent* is workspace-level automation and may dispatch to any workspace agent.
-Assigning another owner's agent → `422 assignee_agent_not_owned`. Everyone can
-still *read* such assignments — tickets serialize agent assignees with owner
-context (`assignee.ownerUserId`, `assignee.ownerName`).
-
-`PATCH /tickets/{id}` follows the same rule — send `assigneeType` (`user|agent`)
-with the matching `assigneeUserId` / `assigneeAgentId`, or `assigneeType: null`
-to unassign:
-
-```bash
-curl -X PATCH https://your-kanbai.app/api/v1/tickets/tkt_123 \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{ "assigneeType": "user", "assigneeUserId": "usr_abc" }'
-```
-
-#### `dueDate` contract
-
-`dueDate` accepts ISO 8601 in any of these shapes and normalizes to a stable
-instant server-side:
-
-| Form | Example | Interpreted as |
-| --- | --- | --- |
-| date-only | `2026-06-20` | UTC midnight of that day |
-| UTC instant | `2026-06-20T17:00:00.000Z` | as given |
-| zoned instant | `2026-06-20T17:00:00+02:00` | the equivalent UTC instant |
-
-`null` clears the due date. A **bare local datetime with no zone**
-(`2026-06-20T17:00:00`) is rejected with `422` because it's ambiguous — append
-`Z` or an offset, or send the date-only form. The same contract applies
-everywhere `dueDate` is accepted (`POST /tickets`, `PATCH /tickets/{id}`,
-`POST /inbox/{noteId}/sort`).
-
-**Move a ticket**
-
-```bash
-curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/move \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{ "columnId": "col_done", "position": 0 }'
-```
-
-**Progress statuses (columns & sub-states).** A ticket's status is its column;
-columns can define sub-states (e.g. `In progress` / `Blocked`). Set either via
-`PATCH` — a `columnId` change renumbers both columns properly, and `subState`
-is validated against the target column's list (invalid values resolve to the
-column's first sub-state):
-
-```bash
-curl -X PATCH https://your-kanbai.app/api/v1/tickets/tkt_123 \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{ "columnId": "col_inprogress", "subState": "Blocked" }'
-```
-
-**Close a ticket** — one call, no need to look up the done column
-(`422 no done column` if the board doesn't have one):
-
-```bash
-curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/done \
-  -H "Authorization: Bearer $KANBAI_KEY"
-```
-
-**Delete a ticket** — a soft-delete into the workspace trash, restorable for
-30 days (see [Trash](#trash-30-day-restore)):
-
-```bash
-curl -X DELETE https://your-kanbai.app/api/v1/tickets/tkt_123 \
-  -H "Authorization: Bearer $KANBAI_KEY"
-# → { ok: true, restorableFor: "30 days" }
-```
-
-**Subtasks** — an ordered checklist inside a ticket. Every write returns the
-full ticket (with `subtasks:[{id,title,completed,position,createdAt}]`) so you
-always have the fresh state:
-
-```bash
-# Add a subtask
-curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/subtasks \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{ "title": "Write the failing test" }'
-
-# Complete it
-curl -X PATCH https://your-kanbai.app/api/v1/tickets/tkt_123/subtasks/sub_1 \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{ "completed": true }'
-
-# Reorder — send EVERY subtask id in the desired order (a partial or stale
-# list is rejected with 422 so racing writers can't drop items)
-curl -X POST https://your-kanbai.app/api/v1/tickets/tkt_123/subtasks/reorder \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{ "orderedIds": ["sub_2", "sub_1"] }'
-```
-
-**Board access cap.** An agent can be tied to an owning user (its
-`ownerUserId`, set by a human in Kanbai). Such an agent only sees and edits
-the boards its owner can access — `GET /boards` filters the list, and any
-board/ticket outside that access answers `404`. Agents without an owner keep
-workspace-wide access.
-
-### Inbox (the "sort" queue)
-
-When a human marks a captured note for ingestion (or sends it explicitly), it
-lands in that agent's inbox.
-
-```
-GET  /inbox                   # notes queued to this agent          scope: inbox:read
-POST /inbox/{noteId}/sort     # turn a note into a ticket           scope: inbox:write
-```
-
-A queued note includes the raw text, optional free-text `sortContext` from the
-user, and any `attachments` (e.g. a voice memo as a base64 data URL). Each note
-is scheduled for a **local calendar day** — the agent gets that plus coarse
-hints so it can pick the right board/column and a sensible due date:
-
-| Field | Meaning |
-| --- | --- |
-| `scheduledDay` | the local day the note is slated for, as `"YYYY-MM-DD"`, or `null` for unscheduled |
-| `bucket` | coarse hint derived from `scheduledDay`: `today` · `tomorrow` · `next_week` · `next_month` · `general` |
-| `priority` | user-set line priority: `none/low/medium/high/urgent` |
-| `suggestedDueDate` | ISO 8601 due date (noon local) derived from `scheduledDay`, or `null` when unscheduled — apply it as-is or override |
-
-The agent decides the board, column, priority, labels, and due date, then files
-it (a good default: carry `priority` through and use `suggestedDueDate` as the
-`dueDate` unless the note text implies otherwise):
-
-```bash
-curl -X POST https://your-kanbai.app/api/v1/inbox/note_123/sort \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{
-    "boardId": "brd_product",
-    "title": "Follow up with design contractor on the icon set",
-    "description": "From a captured note + voice memo.",
-    "priority": "medium",
-    "labelIds": ["lbl_design"]
-  }'
-```
-
-This creates the ticket, links it to the note, and marks the note **sorted**.
-
-### Notes (full management)
-
-The inbox above is the read-and-file queue for notes a human routed to *this*
-agent. The endpoints below let an agent manage **all** notes across its
-workspace — captured ideas before they become tickets. Every note belongs to a
-workspace member; an agent only ever sees notes whose owner is in its workspace.
-
-```
-GET    /notes                  # list workspace notes (filterable)        scope: notes:read
-POST   /notes                  # create a note (for a workspace user)      scope: notes:write
-GET    /notes/{noteId}         # fetch one note                           scope: notes:read
-PATCH  /notes/{noteId}         # edit body/pinned/status/schedule/done/priority  scope: notes:write
-DELETE /notes/{noteId}         # soft-delete → 30-day trash               scope: notes:write
-POST   /notes/{noteId}/move    # move to a bucket + position              scope: notes:write
-POST   /notes/{noteId}/queue   # queue the note to an agent to sort       scope: notes:write
-POST   /notes/{noteId}/promote # note → ticket in ONE action              scope: notes:write + tickets:write
-POST   /notes/{noteId}/attachments  # attach audio/image/file (data URL)  scope: notes:write
-```
-
-**Promote a note into a ticket — one action.** `POST /notes/{noteId}/promote`
-creates the ticket and atomically marks the note **sorted** (linked to the
-ticket, hidden from the inbox, fully recoverable — the note is *not* deleted).
-Never emulate this with create-ticket + delete-note. Unlike
-`POST /inbox/{id}/sort`, it works on **any** workspace note, queued to you or
-not. All fields are optional except `boardId`: `title` defaults to the note's
-first line, the full body carries over as the description, and the note's
-priority is inherited. Also accepts `columnId`/`columnName`, `description`,
-`priority`, `dueDate`, `labelIds`, and `labelNames` (auto-created).
-
-```bash
-curl -X POST https://your-kanbai.app/api/v1/notes/note_123/promote \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "content-type: application/json" \
-  -d '{ "boardId":"brd_product", "columnName":"Backlog", "labelNames":["idea"] }'
-# → 201 { ticket: {...}, note: { id: "note_123", status: "sorted" } }
-```
-
-Promoting a note that is already sorted returns `409`.
-
-**List** supports query filters (all optional, combinable):
-
-| Param | Effect |
-| --- | --- |
-| `status` | `inbox` · `queued` · `sorting` · `sorted` · `archived` |
-| `bucket` | `today` · `tomorrow` · `next_week` · `next_month` · `general` |
-| `userId` | only notes owned by this workspace member |
-| `assigned=me` | only notes currently queued to the calling agent |
-
-```bash
-curl "https://your-kanbai.app/api/v1/notes?status=inbox&bucket=today" \
-  -H "Authorization: Bearer <TOKEN>"
-# → { notes: [ { id, body, status, bucket, priority, suggestedDueDate, attachments, ... } ] }
-```
-
-**Create** a note. Owner resolution: `userId` or `userEmail` (must be a member
-of this workspace), otherwise it defaults to the workspace owner.
-
-```bash
-curl -X POST https://your-kanbai.app/api/v1/notes \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "content-type: application/json" \
-  -d '{ "body":"Draft Q3 roadmap", "bucket":"next_week", "priority":"high",
-        "userEmail":"jo@example.com" }'
-# → { note: { id, body, bucket, priority, ... } }
-```
-
-**Edit / complete / sort / move / queue / attach**
-
-`PATCH` accepts any subset of: `body`, `pinned`, `priority`, `status`
-(`inbox` | `archived`), `scheduledDay` (`"YYYY-MM-DD"` sorts the note into that
-day's section; `null` returns it to Unsorted), and `doneOn` (`"YYYY-MM-DD"`
-marks it done as of that local day; `null` un-does it).
-
-```bash
-# Edit fields (any subset)
-curl -X PATCH https://your-kanbai.app/api/v1/notes/note_123 \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "content-type: application/json" \
-  -d '{ "priority":"urgent", "pinned":true }'
-
-# Mark a note done (today) / un-done
-curl -X PATCH https://your-kanbai.app/api/v1/notes/note_123 \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "content-type: application/json" \
-  -d '{ "doneOn":"2026-07-14" }'          # { "doneOn": null } to undo
-
-# Sort a note into a day (or back to Unsorted with null)
-curl -X PATCH https://your-kanbai.app/api/v1/notes/note_123 \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "content-type: application/json" \
-  -d '{ "scheduledDay":"2026-07-20" }'
-
-# Archive a note (reversible; distinct from delete)
-curl -X PATCH https://your-kanbai.app/api/v1/notes/note_123 \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "content-type: application/json" \
-  -d '{ "status":"archived" }'
-
-# Reorder within a bucket
-curl -X POST https://your-kanbai.app/api/v1/notes/note_123/move \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "content-type: application/json" \
-  -d '{ "bucket":"today", "position":0 }'
-
-# Queue to an agent to sort (omit agentId to queue to yourself)
-curl -X POST https://your-kanbai.app/api/v1/notes/note_123/queue \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "content-type: application/json" \
-  -d '{ "agentId":"agt_hermes", "sortContext":"File under the product board" }'
-```
-
-A note queued this way fires the same `note.queued` webhook to the target agent,
-which then files it with `POST /inbox/{noteId}/sort` exactly as above.
-
-### Trash (30-day restore)
-
-Deleting a ticket or note (via `DELETE`) is always a **soft-delete**: the item
-sits in the workspace trash for 30 days and can be restored by an agent or by a
-human (Settings → Recently deleted). Permanent purge is deliberately **not**
-exposed to agents — only humans can destroy data for good.
-
-```
-GET  /trash                   # list recently deleted notes+tickets      scope: notes:read / tickets:read
-POST /trash                   # restore one item                         scope: notes:write / tickets:write
-```
-
-The list is filtered to what your scopes allow (tickets need `tickets:read`,
-notes need `notes:read`); each restore action needs the matching write scope.
-
-```bash
-curl https://your-kanbai.app/api/v1/trash \
-  -H "Authorization: Bearer <TOKEN>"
-# → { notes: [{ id, body, deletedAt }], tickets: [{ id, title, number, board, boardSlug, deletedAt }], retentionDays: 30 }
-
-curl -X POST https://your-kanbai.app/api/v1/trash \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "content-type: application/json" \
-  -d '{ "action":"restore", "type":"ticket", "id":"tkt_123" }'
-# → { ok: true, restored: { type: "ticket", id: "tkt_123" } }
-```
-
-Restoring an item that isn't in the trash returns `422 not_deleted`; an item
-past the 30-day window is gone (`404`).
-
-### Members
-
-```
-GET    /members               # list workspace members (map assignees)   scope: members:read
-POST   /members               # add an EXISTING user to this workspace   scope: members:write
-PATCH  /members/{userId}      # change role and/or per-board access      scope: members:write
-DELETE /members/{userId}      # remove from THIS workspace (membership only)  scope: members:write
-```
-
-`PATCH` accepts `role` (`admin` | `member`) and/or `boardAccess`
-(`[{ boardId, level: "view"|"edit" }]` — replaces the member's grant list).
-`DELETE` removes the **membership only**: the user account, their notes, and
-every ticket survive intact, and `POST /members` with the same email restores
-access. The workspace **owner** can never be changed or removed (`403`).
-
-`POST /members` adds an **existing** Kanbai account to the workspace by email.
-It never creates accounts — an unknown email returns `422 unknown_email` (only a
-system admin can invite new accounts via a system invite):
-
-```bash
-curl -X POST https://your-kanbai.app/api/v1/members \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{ "email":"jo@example.com", "role":"member",
-        "boardAccess":[{"boardId":"brd_123","level":"edit"}] }'
-# → { userId, email }
-```
-
----
-
-## 3. Webhooks (Kanbai → Agent)
-
-The agent registers **its own** webhook URL so Kanbai can POST events there and the
-agent can react in real time instead of polling. Two ways to register it:
-
-- **Self-setup (recommended)** — the agent registers itself with its bearer key.
-- **Manually** — a workspace manager sets it in **Agents → Webhook URL**.
-
-### Self-setup (Agent → Kanbai)
-
-```
-GET  /api/v1/agent/webhook        # current webhook status (url, active, signed, secretFingerprint, events)
-POST /api/v1/agent/webhook        # register/update url, active, optional secret + events
-POST /api/v1/agent/webhook/test   # fire a `ping` to your own URL and get the delivery outcome
-```
-
-No extra scope is required — an agent may always manage its own webhook. Prefer an
-**internal/LAN URL** (both sides run on the same network):
-
-```bash
-# Register (prefer an internal/LAN URL)
-curl -X POST https://your-kanbai.app/api/v1/agent/webhook \
-  -H "Authorization: Bearer $KANBAI_KEY" \
-  -H "content-type: application/json" \
-  -d '{ "url": "http://10.0.0.7:8080/kanbai/webhook", "secret": "<your-signing-secret>" }'
-# → { "webhook": { "url": "...", "active": true, "configured": true, "signed": true,
-#                  "secretFingerprint": "ab12cd34", "events": "*", "status": "signed" } }
-
-# Verify with a self-test ping — waits for YOUR response and reports it back
-curl -X POST https://your-kanbai.app/api/v1/agent/webhook/test \
-  -H "Authorization: Bearer $KANBAI_KEY"
-# → { "deliveryId": "...",
-#     "result": { "status": "failed", "statusCode": 401,
-#                 "error": "HTTP 401 — invalid signature · not retried (terminal response)",
-#                 "attempts": 1, "signed": true, "durationMs": 42 },
-#     "secretFingerprint": "ab12cd34" }   # sha256(secret) first 8 hex — never the secret
-```
-
-`secret` is optional in the register body (min 8 chars): include a value to sign
-callbacks with **your** secret, send `""`/`null` to clear it (unsigned), or omit it
-to keep the current one. `events` is an optional array of event names to subscribe
-to (default: everything). `active:false` pauses delivery without forgetting the URL.
-
-### Signing — sync the secret or you'll see 401s
-
-**Every agent is created with an auto-generated signing secret**, so deliveries are
-signed from day one with a value only Kanbai knows. If your verifier uses a
-*different* secret, every delivery fails with 401 (terminal — not retried). Fix it
-one of two ways:
-
-- copy Kanbai's secret (**Agents → Signing secret → copy**) into the agent's config, or
-- register the agent's own secret via the `secret` field above — Kanbai signs with it from then on.
-
-To detect a mismatch without exchanging secrets, compare **fingerprints** — the
-first 8 hex chars of `sha256(secret)`. Kanbai reports its fingerprint in
-`GET /agent/webhook` and in every test-ping result; compute the same from the
-secret you hold and compare.
-
-If **no** secret is set (cleared explicitly), callbacks are delivered **unsigned** —
-they carry no signature header, so accept them only on a trusted/internal listener
-path. A secret gives you spoofing/misroute protection for a small operational cost;
-prefer it.
-
-### Events
-
-`note.queued` · `note.sorted` · `ticket.created` · `ticket.updated` ·
-`ticket.moved` · `ticket.assigned` · `comment.created` · `ping`
-
-- **`note.sorted`** fires to the agent a note was **queued to** once that note
-  is filed into a ticket (by anyone — a human, that agent, or another agent).
-  Use it to stop polling/churning on a note you received via `note.queued`. The
-  payload carries the identifiers you need to reconcile:
-  ```json
-  { "event": "note.sorted",
-    "data": { "note": { "id": "note_123", "status": "sorted" },
-              "ticket": { "id": "tkt_456", "number": 12, "boardId": "brd_1", "title": "…" } } }
-  ```
-
-#### Fan-out & self-events
-
-Workspace events (`ticket.*`, `comment.created`) are broadcast to every active
-agent with a webhook **except the agent that caused the event** — you never
-receive an echo of your own writes, so an agent can't loop on its own changes.
-Targeted events (`note.queued`, `note.sorted`, `ticket.assigned`) go only to the
-relevant agent, and are likewise suppressed when that agent is itself the actor.
-
-Per-agent **event subscriptions** filter what is delivered: the default is
-everything (`"*"`, including event types added later), or an explicit list chosen
-in **Agents → Events it receives** / the `events` field on registration. `ping`
-is always delivered so test pings keep working. Every event is also typed via
-`X-Kanbai-Event` and the `event` field for easy client-side filtering.
-
-### Request headers
-
-```
-Content-Type: application/json
-X-Kanbai-Event:      ticket.assigned
-X-Kanbai-Timestamp:  1781636734            # unix seconds
-X-Kanbai-Signature:  sha256=<hex hmac>     # only when a signing secret is set
-X-Kanbai-Delivery:   <delivery id>         # idempotency key
-```
-
-> When no signing secret is configured the `X-Kanbai-Signature` header is **absent**
-> (unsigned delivery). Treat its presence as the signal to verify; on a trusted
-> internal path you may accept unsigned events, but signing is recommended.
-
-### Signature & verification
-
-Kanbai computes `HMAC_SHA256(secret, "{timestamp}.{rawBody}")` and sends it as
-`X-Kanbai-Signature: sha256=<hex>`. **You** choose the `secret` (Agents →
-Signing secret) and give the same value to your agent.
-
-> **Sign the raw body — not re-serialized JSON.** `rawBody` is the exact byte
-> string Kanbai sent, character-for-character. You **must** capture the raw
-> request body *before* any JSON parsing and HMAC **that**. Parsing then
-> re-stringifying (`JSON.stringify(JSON.parse(body))`) reorders keys and changes
-> whitespace, so the HMAC won't match and verification will fail. In Express use
-> `express.raw()` (or `req.rawBody`); in Next.js route handlers use
-> `await req.text()`; in frameworks that auto-parse, configure a raw-body hook.
-
-The agent must:
-1. Capture the **raw request body** (bytes/string as received, pre-parse).
-2. Recompute the HMAC over `` `${timestamp}.${rawRequestBody}` ``.
-3. Compare in **constant time** to the signature header.
-4. Reject if the timestamp is older than ~5 minutes (replay protection).
-
-**Node.js**
-
-```js
-import crypto from "node:crypto";
-
-function verify(req, rawBody, secret) {
-  const ts = req.headers["x-kanbai-timestamp"];
-  const sig = (req.headers["x-kanbai-signature"] || "").replace(/^sha256=/, "");
-  const expected = crypto.createHmac("sha256", secret).update(`${ts}.${rawBody}`).digest("hex");
-  const a = Buffer.from(expected), b = Buffer.from(sig);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
-  return Math.abs(Date.now() / 1000 - Number(ts)) < 300;
+GET /today[?scope=all|mine]       scope: tickets:read
+→ {
+  "date": "2026-10-13", "timezone": "Asia/Jerusalem",
+  "overdue":  [Ticket], "today": [Ticket], "tomorrow": [Ticket],
+  "upcoming": [Ticket],                    // due in the next 7 days, after tomorrow
+  "inbox":    [Note],                      // open, unscheduled notes
+  "notesToday": [Note],                    // scheduledDay <= today, not done
+  "doneToday": { "tickets": [Ticket], "notes": [Note] }
 }
 ```
 
-**Python**
+Tickets here (and in `GET /tickets`) are the normal ticket object **plus**
+`board: {id,name,slug,color,doneColumnId}` and `column: {id,name,isDone,stage}`
+(`columnName` is the plain name). Lists are sorted soonest-due first, then
+priority. `scope=mine` keeps only tickets assigned to the owner; the default
+`all` is every ticket on the boards you can see. Day boundaries follow the
+workspace timezone, so a ticket due `23:30` Jerusalem time is still "today".
 
-```python
-import hmac, hashlib, time
-
-def verify(headers, raw_body: bytes, secret: str) -> bool:
-    ts = headers["X-Kanbai-Timestamp"]
-    sig = headers.get("X-Kanbai-Signature", "").removeprefix("sha256=")
-    expected = hmac.new(secret.encode(), f"{ts}.".encode() + raw_body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, sig):
-        return False
-    return abs(time.time() - int(ts)) < 300
-```
-
-Use **Send test** in the Agents UI to fire a signed `ping` and confirm your
-verification works. Delivery results (status, code, signature) are logged per
-agent.
-
-### Delivery & retries
-
-Each delivery is attempted up to **3 times** with linear backoff (~0.4s, then
-~0.8s), and times out after 8s per attempt. What gets retried is decided by the
-response:
-
-| Outcome | Retried? |
-| --- | --- |
-| `2xx` | — (success) |
-| Timeout / connection error | ✅ yes |
-| `429`, any `5xx` | ✅ yes (transient) |
-| `400`, `401`, `403`, `404`, `422` (and other `4xx`) | ❌ no — terminal |
-
-A terminal `4xx` means the request itself is unacceptable (bad signature config,
-auth, validation) and won't succeed on replay, so Kanbai stops immediately and
-records the delivery as `failed`. **Return `2xx` quickly** once you've verified
-the signature and accepted the event (idempotently, keyed on
-`X-Kanbai-Delivery`); do heavy work asynchronously. Returning a `4xx` for a
-transient problem will drop the event with no retry.
-
----
-
-## 4. Hermes quickstart (recommended setup)
-
-Hermes is the primary orchestration agent. Wiring it up:
-
-1. **Create the agent** — Agents → Add agent → *Hermes*. Copy the brief + API key.
-2. **Register the webhook** — Hermes self-registers its own endpoint (prefer an
-   internal/LAN URL like `http://10.0.0.7:8080/kanbai/webhook`):
-   `POST /api/v1/agent/webhook { "url": "…" }`.
-3. **(Recommended) Sign it** — set a signing secret in Kanbai (or send `secret` in
-   the register call) and configure the *same* secret in Hermes. Skip this only on
-   a trusted internal path; callbacks then arrive unsigned.
-4. **Verify** — `POST /api/v1/agent/webhook/test` (or click **Send test** in the
-   UI); Hermes should accept the `ping`.
-5. **Go** — Hermes now receives `note.queued` events, reads the inbox, and files
-   tickets via `POST /inbox/{id}/sort`. It can also self-assign work and comment.
-
-A minimal Hermes loop:
+## 3. Boards and columns
 
 ```
-on webhook "note.queued":            # or poll GET /api/v1/inbox
-    verify signature → 401 if bad
-    note = event.data.note
-    plan = llm.decide(note.body, note.sortContext, note.attachments)
-    POST /api/v1/inbox/{note.id}/sort  with plan(board, title, priority, ...)
-    optionally POST a comment explaining the decision
+GET    /boards[?archived=true]                 list (columns, labels, ticketCount)   boards:read
+GET    /boards/{boardId}                       board with every column + ticket      boards:read
+POST   /boards                                 { name, description?, color?,          boards:write
+                                                 columns?:[{name,stage?|isDone?}], labels?:[{name,color?}] }
+PATCH  /boards/{boardId}                       { name?, description?, color?, archived? }
+DELETE /boards/{boardId}                       archives (soft) → { ok, archived:true, board }
+GET    /boards/{boardId}/columns               ordered columns
+POST   /boards/{boardId}/columns               { name, stage? | isDone? }
+PATCH  /boards/{boardId}/columns/{columnId}    { name?, stage?, isDone?, wipLimit?, subStates? }
+DELETE /boards/{boardId}/columns/{columnId}    only when EMPTY (422 column_not_empty otherwise)
+POST   /boards/{boardId}/columns/reorder       { orderedIds:[every column id once] }
 ```
 
----
+Boards are never destroyed by agents: `DELETE` and `{ archived: true }` are the
+same reversible archive; `PATCH { archived: false }` brings everything back.
+A new board gets `Ideas / Backlog / In Work / Done` unless you pass `columns`.
+Column **stages** are semantic: `intake` (Ideas) · `backlog` · `active` (In
+Work) · `done` (implies `isDone`). Address a column anywhere by `columnId`, by
+name (`column` / `columnName`, case-insensitive) or by `stage`.
 
-## 5. Errors
+## 4. Tickets
+
+```
+GET    /tickets?boardId=&status=open|done|all&due=overdue|today|tomorrow|week|none|any
+               &assigned=me|any|unassigned|<userId>&q=<title substring>&limit=200   tickets:read
+POST   /tickets                                create                                   tickets:write
+GET    /tickets/{id}                           read (comments, subtasks, labels inline)  tickets:read
+PATCH  /tickets/{id}                           update any field, move, relabel           tickets:write
+POST   /tickets/{id}/move                      { columnId | column | stage, position?, subState? }
+POST   /tickets/{id}/done                      straight to the board's done column
+DELETE /tickets/{id}                           soft-delete → trash, restorable 30 days
+POST   /tickets/{id}/comments                  { body } or { content }                   comments:write
+GET    /tickets/{id}/subtasks                  checklist                                 tickets:read
+POST   /tickets/{id}/subtasks                  { title }           → { subtask, ticket } tickets:write
+PATCH  /tickets/{id}/subtasks/{subId}          { title?, completed? } → { subtask, ticket }
+DELETE /tickets/{id}/subtasks/{subId}          → { ok, subtask, ticket }
+POST   /tickets/{id}/subtasks/reorder          { orderedIds } → { subtask:null, ticket }
+```
+
+**Create** (`boardId` + `title` are the only required fields):
 
 ```json
-{ "error": { "message": "Missing required scope: tickets:write", "code": "missing_scope" } }
+{ "boardId": "…", "title": "Renew passport",
+  "column": "Backlog",            // or "columnId": "…" or "stage": "backlog"; default: first column
+  "priority": "high",             // none | low | medium | high | urgent (default medium)
+  "dueDate": "2026-10-20",        // see §7; null = none
+  "description": "<p>Bring two photos.</p>",
+  "labelNames": ["errand"],       // created on the board if missing (or "labelIds")
+  "assigneeUserId": "…" }         // or "assigneeEmail" / "assigneeAgentId"; default: unassigned
+→ 201 { "ticket": {...} }
 ```
 
-| Status | Meaning |
-| --- | --- |
-| 400 | malformed JSON |
-| 401 | missing / invalid API key |
-| 403 | agent disabled or missing scope |
-| 404 | resource not in this agent's workspace |
-| 422 | validation error (see `message`) |
+**Update** — `PATCH /tickets/{id}` takes any subset of the create fields plus
+`subState`, `position`, `assigneeType` (`null` unassigns), `assigneeUserIds`.
+`column` / `stage` / `columnId` on a PATCH move the ticket (end of the target).
+`labelNames` **replaces** the whole label set. `dueDate: null` clears it.
 
-All resources are scoped to the agent's workspace; cross-workspace access returns
-`404` rather than leaking existence.
+**Move** — `POST /tickets/{id}/move { "stage": "done" }` or
+`{ "column": "In Work", "position": 0 }`. `position` defaults to the end.
+Landing in a done column stamps `completedAt` and logs `ticket.done`; leaving
+one clears it (`ticket.reopened`). `POST /tickets/{id}/done` is the shortcut.
 
----
+A ticket object: `id, number, boardId, columnId, column (name), title,
+description (sanitized HTML), priority, subState, dueDate, completedAt, isDone,
+assignee, assignees[], labels[], subtasks[], comments[], commentCount,
+sourceNoteId, createdAt, updatedAt`.
 
-## 6. Migrating from Kanboard
+## 5. Notes and the inbox
 
-An agent can move a whole [Kanboard](https://github.com/kanboard/kanboard)
-instance into one Kanbai workspace. Read from Kanboard's JSON-RPC API
-(`/jsonrpc.php`, Application/admin token), then write with the endpoints above.
+Notes are the owner's quick captures (one line each). They live on a local
+calendar day (`scheduledDay: "YYYY-MM-DD"`, `null` = unscheduled "General") and
+carry `doneOn` (day completed, `null` = open), `priority`, `pinned`, `status`
+(`inbox | queued | sorted | archived`) and `suggestedDueDate`.
 
-### Recommended flow
+```
+GET    /notes?status=&bucket=&userId=&assigned=me     notes:read   (never shows deleted notes)
+POST   /notes            { body, scheduledDay? | bucket?, priority?, userId?|userEmail? }   notes:write
+GET    /notes/{id}
+PATCH  /notes/{id}       { body?, scheduledDay?, doneOn?, priority?, pinned?, status?:"inbox"|"archived" }
+DELETE /notes/{id}       soft-delete → trash
+POST   /notes/{id}/move  { scheduledDay, position }
+POST   /notes/{id}/queue { agentId?, sortContext? }   hand a note to an agent to sort
+POST   /notes/{id}/promote   note → ticket in ONE atomic action (any note)   notes:write + tickets:write
+GET    /inbox            notes queued to YOU (status "queued")             inbox:read
+POST   /inbox/{id}/sort  same body as promote, for a note queued to you     inbox:write
+```
 
-1. **Users** → for each Kanboard user (`getAllUsers` / `getProjectUsers`), call
-   `POST /api/v1/members` with their `email`, `name`, and `role`
-   (`app-manager` → `admin`, else `member`). Keep a map `email → userId`.
-2. **Project → Board** → for each project (`getAllProjects` + `getColumns`), call
-   `POST /api/v1/boards` with the columns (mark the last/closed column
-   `isDone: true`) and the project's categories+tags as `labels`.
-3. **Tasks → Tickets** → `getAllTasks` (call with `status_id` **1 and 0** to get
-   open + closed), then `POST /api/v1/tickets` per task, mapping:
+Mark a note done: `PATCH /notes/{id} {"doneOn":"2026-07-14"}` (logs
+`note.done`); `{"doneOn": null}` reopens it. **Promote** takes the ticket
+fields of §4 (`boardId` required; `title` defaults to the note's first line;
+`column`/`columnName`/`stage`, `labelNames`, `dueDate`, `priority` all work) and
+returns `{ ticket, note:{id,status:"sorted"} }`. The note is linked to the
+ticket and hidden from the inbox but never deleted.
+Never emulate this with create-ticket + delete-note.
 
-| Kanboard | Kanbai field |
-| --- | --- |
-| `title`, `description` (Markdown) | `title`, `description` (convert Markdown → simple HTML) |
-| `column` name | `columnName` (resolved on the board) |
-| `category` name + `tags` | `labelNames` (auto-created) |
-| `color` | add as a `labelNames` entry, or fold into description |
-| `priority` | `priority` (`none/low/medium/high/urgent`) |
-| `date_due` (epoch) | `dueDate` (ISO 8601) |
-| `owner` email | `assigneeEmail` |
-| `id` (per project) | `number` (preserves the task reference) |
-| `date_creation` (epoch) | `createdAt` (ISO 8601) |
-| `position` | order — create tasks in `position` order |
+## 6. Trash (30-day restore)
 
-   Assignees must be able to access the board (see [Assigning
-   tickets](#assigning-tickets)): after step 2, grant each project's users
-   access to its board — `PATCH /api/v1/members/{userId}` with
-   `boardAccess: [{ "boardId": "...", "level": "edit" }]` (`getProjectUsers`
-   tells you who belongs where) — *before* creating that board's tickets.
-   An `assigneeEmail` naming a member without access to the board is rejected
-   with `422`; workspace owners/admins are always assignable.
+```
+GET  /trash                                   { notes:[…], tickets:[…], retentionDays:30 }
+POST /trash  { action:"restore", type:"note"|"ticket", id }
+```
 
-4. **Comments** → `getAllComments(task_id)` → `POST /api/v1/tickets/{id}/comments`.
+Soft-deleted notes/tickets sit here for 30 days. Agents can restore; permanent
+purge is human-only.
 
-### Mapping the concepts Kanbai models differently (lossless folds)
+## 7. Conventions
 
-- **Subtasks** → append an HTML list to the ticket description
-  (`<ul><li>done item</li></ul>`). Per-subtask assignee/time, if used, go inline in the line.
-- **Swimlanes** → add the swimlane name as a `labelNames` entry (e.g. `lane:backend`).
-- **Categories** (one per task) → a label; **tags** (many) → labels too.
-- **Task links / relations** (blocks, relates) → a line in the description referencing
-  the other ticket number (e.g. `Blocks #42`).
-- **Time tracking** (estimated/spent) → a description line (e.g. `⏱ est 5h / spent 2h`).
+- **Priorities:** `none | low | medium | high | urgent`.
+- **dueDate:** `"YYYY-MM-DD"` (→ 12:00 in the workspace timezone), ISO with an
+  offset (`2026-10-20T17:00:00+03:00`), or UTC (`…T14:00:00Z`). `null` clears.
+  A bare local datetime without a zone is rejected (422). Responses always
+  return a UTC instant.
+- **Stages:** `intake | backlog | active | done`; `done` ⇔ `isDone`.
+- **Description:** simple HTML — `p b i u h3 ul ol li blockquote a` (sanitized;
+  plain text is fine). Not Markdown.
+- **Column by name** is case-insensitive; a miss is `422 column_not_found` and
+  the message lists the board's columns.
+- **Timezone:** every "today" (agenda, `due=` filters, date-only due dates,
+  note days) uses `KANBAI_TZ` (default `Asia/Jerusalem`) — never the server's.
+- **Access:** an agent with an owner sees only that user's boards and notes; a
+  workspace-wide agent sees everything. Out-of-scope ids are `404`.
+- **Members:** `GET/POST /members`, `PATCH/DELETE /members/{userId}` (role and
+  per-board access; the workspace owner can't be changed or removed).
 
-This keeps every field — nothing is dropped, even where Kanbai has no native
-column for it. Kanbai's per-board `#number` and done-column flag have **no
-Kanboard equivalent**, so you gain referenceable IDs for free.
+## 8. Daily agent playbook (Astra)
+
+**Morning.** `GET /today`. Read `overdue` first, then `today`, `notesToday`
+and `inbox`. Summarize for Ilan in that order: what slipped, what is due, what
+is captured but unplanned. Do not reschedule anything unasked. If the agenda
+is empty, say so and offer `upcoming`.
+
+**Ilan dictates a task.** Pick the board (`GET /boards` once per session and
+cache `id`/`name`/columns; "personal", "home", "work" map to board names).
+Then one call:
+
+```bash
+curl -X POST $BASE/tickets -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -d '{"boardId":"<id>","title":"Call the dentist","column":"Backlog","priority":"medium","dueDate":"2026-10-15"}'
+```
+
+Dates in speech ("Thursday", "next week") become a `YYYY-MM-DD` in the
+workspace timezone; no date → omit `dueDate`. A quick thought with no board is a
+note: `POST /notes {"body":"…"}` (optionally `scheduledDay`). Confirm with the
+ticket `number` and board name.
+
+**Mark done.** Find it (`GET /tickets?q=dentist&status=open`, or from the
+agenda you already hold), then `POST /tickets/{id}/done`. For a note:
+`PATCH /notes/{id} {"doneOn":"<today>"}`. Report what was closed.
+
+**Move between boards.** Tickets belong to one board; "move" across boards is
+create-on-target + `DELETE` the original (it stays restorable 30 days). Say so.
+Within a board use `POST /tickets/{id}/move {"column":"In Work"}`.
+
+**Create a project board.** `POST /boards {"name":"Kitchen reno",
+"columns":[{"name":"Ideas","stage":"intake"},{"name":"Next","stage":"backlog"},
+{"name":"Doing","stage":"active"},{"name":"Done","stage":"done"}]}`, then add
+the tickets Ilan lists with `"stage":"backlog"`. Retire a finished project with
+`DELETE /boards/{id}` (archive).
+
+**Comments.** Progress, context, links: `POST /tickets/{id}/comments
+{"content":"…"}`. Never edit a title to add status.
+
+**Rules.** Prefer the smallest write that expresses the intent. Never delete
+boards or purge trash. When a column or board name doesn't match, read the 422
+message (it lists the valid names) and ask rather than guessing. All your
+actions appear in the Activity feed as "Astra", so keep them deliberate.

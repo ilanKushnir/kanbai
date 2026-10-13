@@ -5,6 +5,7 @@ import { parse, readJson } from "@/lib/parse";
 import { createColumnSchema } from "@/lib/validation";
 import { markManualAction } from "@/lib/snapshots";
 import { resolveColumnStage } from "@/lib/column-stage";
+import { logActivity } from "@/lib/activity";
 import { db } from "@/lib/db";
 
 export const POST = handler(async (req: Request) => {
@@ -23,6 +24,12 @@ export const POST = handler(async (req: Request) => {
       stage: input.stage ?? (input.isDone ? "done" : null),
       position: count,
     },
+  });
+  await logActivity({
+    actor: { type: "user", id: ctx.user.id, name: ctx.user.name },
+    action: "column.created",
+    boardId: input.boardId,
+    meta: { columnId: column.id, name: column.name },
   });
   return created({
     column: {

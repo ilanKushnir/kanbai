@@ -14,8 +14,7 @@ import { DICTATION_LANGUAGES } from "@/lib/user-settings";
 import { cn } from "@/lib/utils";
 
 const LANDING_OPTIONS = [
-  { value: "my-day", label: "My Day" },
-  { value: "notes", label: "Notes" },
+  { value: "today", label: "Today" },
   { value: "boards", label: "Boards" },
 ];
 
@@ -126,17 +125,7 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
               ))}
             </select>
             <p className="mt-1.5 text-xs text-fg-subtle">
-              Sets how Notes splits “This week” into days and when next-week tasks roll into Today.
-            </p>
-          </div>
-          <div>
-            <Label htmlFor="handedness">Handedness</Label>
-            <select id="handedness" className={selectCls} value={hand} onChange={(e) => saveHand(e.target.value)}>
-              <option value="right">Right-handed</option>
-              <option value="left">Left-handed</option>
-            </select>
-            <p className="mt-1.5 text-xs text-fg-subtle">
-              Puts the mobile drag handles on the hand you hold your phone with.
+              Used by the board week view and the agent agenda.
             </p>
           </div>
           <div>

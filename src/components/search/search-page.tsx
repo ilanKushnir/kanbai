@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Search, Loader2, NotebookPen, Columns3, Ticket, Hash, ArrowUpRight } from "lucide-react";
 import { tone } from "@/components/ui/badge";
 import { priorityMeta } from "@/lib/display";
@@ -59,7 +60,7 @@ export function SearchPage() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-5 md:px-6 md:py-8">
       <header className="mb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Search</h1>
+        <h1 className="font-display text-[2rem] font-medium leading-tight">Search</h1>
         <p className="mt-1 text-sm text-fg-muted">Find boards, tickets, and notes across your workspace.</p>
       </header>
 
@@ -81,10 +82,12 @@ export function SearchPage() {
 
       <div className="mt-5 space-y-5 pb-6">
         {!hasQuery ? (
-          <div className="rounded-2xl border border-dashed border-border bg-surface/50 px-4 py-8 text-center">
-            <Search className="mx-auto h-7 w-7 text-fg-subtle" />
-            <p className="mt-2 text-sm font-medium text-fg">Start typing to search everything.</p>
-            <p className="mt-1 text-xs text-fg-subtle">Results match the desktop global search.</p>
+          <div className="flex flex-col items-center rounded-2xl border border-dashed border-border bg-surface/50 px-4 py-6 text-center">
+            <div className="relative h-36 w-36 overflow-hidden rounded-2xl">
+              <Image src="/art/empty-search.webp" alt="" fill sizes="144px" className="object-cover" />
+            </div>
+            <p className="mt-3 text-sm font-medium text-fg">Start typing to search everything.</p>
+            <p className="mt-1 text-xs text-fg-subtle">Boards, tickets and notes, across the workspace.</p>
           </div>
         ) : error ? (
           <p className="rounded-xl border border-danger/25 bg-danger-soft/40 px-3 py-2 text-sm text-danger">{error}</p>

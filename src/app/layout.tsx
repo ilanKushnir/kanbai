@@ -1,16 +1,26 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  axes: ["opsz", "SOFT", "WONK"],
+  style: ["normal", "italic"],
+});
+
+/** Canvas colours mirrored into the iOS status bar (see the no-flash script). */
+export const CANVAS_LIGHT = "#f6f2ea";
+export const CANVAS_DARK = "#0e1118";
 
 export const metadata: Metadata = {
-  title: { default: "Kanbai — capture fast, let agents sort", template: "%s · Kanbai" },
+  title: { default: "Kanbai — your day, one list", template: "%s · Kanbai" },
   description:
-    "The bridge between fast human capture and serious agentic execution. Notes on the go, Kanban when it counts, AI agents that sort the rest.",
+    "A calm place for your tasks and projects. Capture in one line, work from one list, and let your AI agent keep it current.",
   applicationName: "Kanbai",
   manifest: "/manifest.webmanifest",
   icons: {
@@ -25,8 +35,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f2f3f8" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b0d15" },
+    { media: "(prefers-color-scheme: light)", color: CANVAS_LIGHT },
+    { media: "(prefers-color-scheme: dark)", color: CANVAS_DARK },
   ],
   width: "device-width",
   initialScale: 1,
@@ -44,7 +54,7 @@ const themeScript = `
     var t = localStorage.getItem('kanbai-theme');
     var d = t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
     if (d) document.documentElement.classList.add('dark');
-    var c = d ? '#0b0d15' : '#f2f3f8';
+    var c = d ? '${CANVAS_DARK}' : '${CANVAS_LIGHT}';
     document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
       m.setAttribute('content', c);
     });
@@ -57,7 +67,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full`}
       suppressHydrationWarning
     >
       <body className="min-h-full">

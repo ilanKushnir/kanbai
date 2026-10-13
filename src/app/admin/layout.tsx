@@ -18,7 +18,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <ShieldCheck className="h-3.5 w-3.5" /> Global admin
           </span>
         </div>
-        <Link href="/my-day" className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg">
+        <Link href="/today" className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg">
           <ArrowLeft className="h-4 w-4" /> Back to Kanbai
         </Link>
       </header>

@@ -18,7 +18,7 @@ export function ThemeToggle({ className }: { className?: string }) {
     // Keep the PWA status bar in sync with the in-app theme (matches layout.tsx viewport colors).
     document
       .querySelectorAll('meta[name="theme-color"]')
-      .forEach((m) => m.setAttribute("content", next ? "#0b0d15" : "#f2f3f8"));
+      .forEach((m) => m.setAttribute("content", next ? "#0e1118" : "#f6f2ea"));
     try {
       localStorage.setItem("kanbai-theme", next ? "dark" : "light");
     } catch {}

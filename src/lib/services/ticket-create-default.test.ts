@@ -2,9 +2,13 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 
 import { db } from "@/lib/db";
-import { myDayTicketScope } from "@/lib/my-day";
 import { createTicket, type Actor } from "./tickets";
 import { fulfillNote } from "./notes";
+
+/** Tickets on a user's own plate: primary assignee or any co-assignee. */
+function myDayTicketScope(userId: string) {
+  return { assigneeType: "user", OR: [{ assigneeUserId: userId }, { assignees: { some: { userId } } }] };
+}
 
 // Creation-default semantics: a human creating a ticket takes it by default —
 // no assignee input at all lands the ticket on the creator's own plate. An

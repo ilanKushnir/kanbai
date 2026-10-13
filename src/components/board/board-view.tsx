@@ -741,6 +741,18 @@ export function BoardView({
     toast({ title: "Ticket deleted", variant: "default" });
   }
 
+  const hasDoneColumn = cols.some((c) => c.isDone);
+  async function quickDone(ticketId: string) {
+    if (ticketId.startsWith("tmp-")) return;
+    const title = ticketsById[ticketId]?.title ?? "Card";
+    try {
+      await moveTicketToDone(ticketId);
+      toast({ title: "Done", description: title, variant: "success" });
+    } catch (e) {
+      toast({ title: "Couldn't mark done", description: e instanceof Error ? e.message : undefined, variant: "error" });
+    }
+  }
+
   async function moveTicketToDone(ticketId: string): Promise<SerializedTicket> {
     const doneColumn = cols.find((c) => c.isDone);
     if (!doneColumn) throw new Error("No done column is configured for this board.");
@@ -770,7 +782,7 @@ export function BoardView({
       // board before navigating back to the Notes due section.
       setSelectedId(null);
       window.setTimeout(() => {
-        router.push("/notes");
+        router.push("/today");
         router.refresh();
       }, 650);
     }
@@ -914,6 +926,7 @@ export function BoardView({
               currentUser={currentUser}
               onMoveTo={moveTicketTo}
               onCardClick={(id) => !id.startsWith("tmp-") && setSelectedId(id)}
+              onDone={hasDoneColumn ? (id) => void quickDone(id) : undefined}
               onCreate={(title, assignee) => handleCreate(col.id, title, assignee)}
               onRename={(name) => renameColumn(col.id, name)}
               onSetWip={(n) => setWip(col.id, n)}
@@ -1107,6 +1120,7 @@ function Column({
   currentUser,
   onMoveTo,
   onCardClick,
+  onDone,
   onCreate,
   onRename,
   onSetWip,
@@ -1132,6 +1146,7 @@ function Column({
   currentUser?: { id: string; name: string } | null;
   onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
   onCardClick: (id: string) => void;
+  onDone?: (id: string) => void;
   onCreate: (title: string, assignee?: NewAssignee | null) => void;
   onRename: (name: string) => void;
   onSetWip: (n: number | null) => void;
@@ -1160,6 +1175,7 @@ function Column({
     allColumns,
     onMoveTo,
     onCardClick,
+    onDone,
   });
 
   return (
@@ -1351,6 +1367,7 @@ function Section({
   allColumns,
   onMoveTo,
   onCardClick,
+  onDone,
   footer,
 }: {
   id: string;
@@ -1369,6 +1386,7 @@ function Section({
   allColumns: ColumnMeta[];
   onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
   onCardClick: (id: string) => void;
+  onDone?: (id: string) => void;
   footer?: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
@@ -1444,6 +1462,7 @@ function Section({
               allColumns={allColumns}
               onMoveTo={onMoveTo}
               onClick={() => onCardClick(tid)}
+              onDone={onDone}
             />
           );
         })}
@@ -1610,6 +1629,7 @@ function SortableTicket({
   allColumns,
   onMoveTo,
   onClick,
+  onDone,
 }: {
   ticket: SerializedTicket;
   celebrate: boolean;
@@ -1617,6 +1637,8 @@ function SortableTicket({
   allColumns: ColumnMeta[];
   onMoveTo: (ticketId: string, columnId: string, subState?: string) => void;
   onClick: () => void;
+  /** Quick "done" without opening the card; absent when the board has no done column. */
+  onDone?: (ticketId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
@@ -1635,6 +1657,21 @@ function SortableTicket({
         dragging={isDragging}
         className={focused ? "ring-2 ring-primary ring-offset-2 ring-offset-surface-2" : undefined}
       />
+      {onDone && !ticket.isDone && (
+        <button
+          type="button"
+          onPointerDown={stop}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDone(ticket.id);
+          }}
+          aria-label="Mark done"
+          title="Mark done"
+          className="kb-check absolute right-2 top-2 h-5 w-5 opacity-0 transition-opacity group-hover/card:opacity-100 focus-visible:opacity-100 max-md:opacity-100 cursor-pointer"
+        >
+          <Check className="h-3 w-3" strokeWidth={3} />
+        </button>
+      )}
       {/* "Move to" — a no-drag way to change column/sub-state on touch devices,
           where drag-and-drop is fiddly. Phones/small screens only; hidden ≥ md. */}
       <div className="mt-1 flex items-center px-0.5 md:hidden">

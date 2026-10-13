@@ -47,11 +47,17 @@ export const API_VERSION = "v1";
 /**
  * Capabilities the Kanbai agent API exposes, independent of any one agent's
  * granted scopes. Reported by GET /api/v1/me so an agent can discover what the
- * service supports (resources to drive, webhook self-setup, optional signing)
- * without scraping the docs. Per-agent permissions are conveyed by `scopes`.
+ * service supports without scraping the docs. Per-agent permissions are
+ * conveyed by `scopes`. Everything is pull-based: the agent calls the REST API;
+ * Kanbai never calls the agent back.
  */
 export const AGENT_CAPABILITIES = {
-  resources: ["boards", "columns", "tickets", "subtasks", "inbox", "notes", "comments", "members", "trash"],
+  resources: ["boards", "columns", "tickets", "subtasks", "inbox", "notes", "comments", "members", "trash", "activity"],
+  // GET /today — the whole day's agenda (overdue / today / tomorrow / upcoming
+  // tickets, inbox + today's notes, done-today) in one call.
+  agenda: true,
+  // GET /tickets — cross-board ticket list with filters (status, due, assigned, q).
+  ticketsList: true,
   lifecycle: {
     // Full status management: PATCH columnId/subState, POST /tickets/:id/move,
     // and the one-call POST /tickets/:id/done (board's done column).
@@ -87,25 +93,10 @@ export const AGENT_CAPABILITIES = {
     // membership change only — accounts and their data are never deleted.
     manage: true,
   },
-  webhook: {
-    selfRegister: true, // POST /api/v1/agent/webhook with the agent's bearer key
-    test: true, // POST /api/v1/agent/webhook/test fires a ping to itself and reports the outcome
-    signing: "optional", // HMAC SHA-256 — recommended, not required
-    eventFilter: true, // per-agent event subscriptions ("events" on registration; ping always on)
-  },
+  // Aliases accepted everywhere a column is addressed: `columnId`, or
+  // `column` / `columnName` (case-insensitive name), or `stage`.
+  columnAliases: ["columnId", "column", "columnName", "stage"],
 } as const;
-
-export const WEBHOOK_EVENTS = [
-  "note.queued", // a note was sent to this agent to sort
-  "note.sorted", // a queued note was filed into a ticket — the agent can stop polling it
-  "ticket.created",
-  "ticket.updated",
-  "ticket.moved",
-  "ticket.assigned",
-  "comment.created",
-  "ping",
-] as const;
-export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export const LABEL_COLORS = [
   "slate", "iris", "aqua", "emerald", "amber", "rose", "violet", "blue",

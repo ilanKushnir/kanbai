@@ -11,8 +11,8 @@ export const PATCH = handler(
     const { ticketId, subtaskId } = await params;
     await assertTicketAccess(ctx, ticketId, true);
     const input = parse(updateSubtaskSchema, await readJson(req));
-    const ticket = await updateSubtask(ticketId, subtaskId, input, { type: "user", id: ctx.user.id, name: ctx.user.name });
-    return ok({ ticket });
+    const result = await updateSubtask(ticketId, subtaskId, input, { type: "user", id: ctx.user.id, name: ctx.user.name });
+    return ok(result);
   },
 );
 
@@ -21,7 +21,7 @@ export const DELETE = handler(
     const ctx = await getCurrentContext();
     const { ticketId, subtaskId } = await params;
     await assertTicketAccess(ctx, ticketId, true);
-    const ticket = await deleteSubtask(ticketId, subtaskId, { type: "user", id: ctx.user.id, name: ctx.user.name });
-    return ok({ ticket });
+    const result = await deleteSubtask(ticketId, subtaskId, { type: "user", id: ctx.user.id, name: ctx.user.name });
+    return ok(result);
   },
 );

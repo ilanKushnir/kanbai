@@ -36,12 +36,13 @@ function browserLang(language: string) {
 /** Foreground dictation: preferred path is server-side Whisper; Web Speech is fallback. */
 export function useDictation(onText: (text: string) => void, language = "auto") {
   const [listening, setListening] = React.useState(false);
-  const [supported] = React.useState(() => {
-    if (typeof window === "undefined") return false;
+  // Decided after mount so SSR markup (no mic) matches the first client render.
+  const [supported, setSupported] = React.useState(false);
+  React.useEffect(() => {
     const w = window as unknown as SpeechWindow;
     const mediaSupported = !!(navigator.mediaDevices && typeof MediaRecorder !== "undefined" && recordingMimeType());
-    return mediaSupported || !!(w.SpeechRecognition || w.webkitSpeechRecognition);
-  });
+    setSupported(mediaSupported || !!(w.SpeechRecognition || w.webkitSpeechRecognition));
+  }, []);
   const [status, setStatus] = React.useState("");
   const [progress, setProgress] = React.useState(0);
   const [serverConfigured, setServerConfigured] = React.useState(false);

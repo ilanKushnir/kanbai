@@ -17,7 +17,7 @@ export const PATCH = handler(
     const { noteId } = await params;
     await assertOwn(noteId, user!.id);
     const input = parse(updateNoteSchema, await readJson(req));
-    const note = await updateNote(noteId, input);
+    const note = await updateNote(noteId, input, { type: "user", id: user.id, name: user.name });
     return ok({ note });
   },
 );
@@ -27,7 +27,7 @@ export const DELETE = handler(
     const { user } = await getCurrentContext();
     const { noteId } = await params;
     await assertOwn(noteId, user!.id);
-    await deleteNote(noteId);
+    await deleteNote(noteId, { type: "user", id: user.id, name: user.name });
     return ok({ ok: true });
   },
 );

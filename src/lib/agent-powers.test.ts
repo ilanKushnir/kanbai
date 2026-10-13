@@ -50,6 +50,6 @@ test("New powers are advertised via /v1/me capabilities and documented", () => {
   assert.match(constants, /trashRestore: true/);
   assert.match(docs, /POST {3}\/tickets\/\{id\}\/done/);
   assert.match(docs, /DELETE \/tickets\/\{id\}/);
-  assert.match(docs, /### Trash \(30-day restore\)/);
+  assert.match(docs, /## 6\. Trash \(30-day restore\)/);
   assert.match(docs, /"doneOn":"2026-07-14"/); // notes done-marking is documented
 });

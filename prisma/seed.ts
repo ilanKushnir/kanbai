@@ -1,5 +1,5 @@
 import { PrismaClient } from "../src/generated/prisma";
-import { generateApiKey, generateWebhookSecret } from "../src/lib/crypto";
+import { generateApiKey } from "../src/lib/crypto";
 import { hashPassword } from "../src/lib/password";
 import { toRichHtml } from "../src/lib/sanitize";
 import { ALL_SCOPES } from "../src/lib/constants";
@@ -14,7 +14,6 @@ async function main() {
   const ticketCounters: Record<string, number> = {};
 
   // Clean slate (dev only)
-  await db.webhookDelivery.deleteMany();
   await db.activityLog.deleteMany();
   await db.invite.deleteMany();
   await db.boardAccess.deleteMany();
@@ -62,8 +61,6 @@ async function main() {
       apiKeyHash: hermesKey.hash,
       apiKeyPrefix: hermesKey.prefix,
       apiKeyLast4: hermesKey.last4,
-      webhookUrl: "https://hermes.example.com/kanbai/webhook",
-      webhookSecret: generateWebhookSecret(),
       scopes: ALL_SCOPES.join(","),
       lastSeenAt: new Date(),
     },
@@ -107,9 +104,9 @@ async function main() {
   ]);
 
   await createTicket(product.id, pCols["In Progress"], {
-    title: "Webhook signature verification",
+    title: "Morning agenda via GET /api/v1/today",
     description:
-      "<p>Sign outbound webhooks with <b>HMAC-SHA256</b> and document the verification recipe.</p><ul><li>Header: <u>X-Kanbai-Signature</u></li><li>Reject stale timestamps (±5 min)</li></ul>",
+      "<p>One call returns overdue / today / tomorrow / upcoming tickets plus the note inbox.</p><ul><li>Computed in the workspace timezone</li><li>Agents read it first thing</li></ul>",
     priority: "high",
     labels: [pLabels["Feature"], pLabels["Infra"]],
     assigneeAgentId: hermes.id,
@@ -166,7 +163,7 @@ async function main() {
   });
   await createTicket(product.id, pCols["Done"], {
     title: "Prisma schema + migrations",
-    description: "Boards, tickets, notes, agents, webhooks, activity.",
+    description: "Boards, tickets, notes, agents, activity.",
     priority: "medium",
     labels: [pLabels["Infra"]],
     position: 1,
@@ -233,7 +230,7 @@ async function main() {
     },
     { body: "Bug — dragging a card to an empty column sometimes snaps back", when: "tomorrow", priority: "high" },
     { body: "Prep the standup notes", when: "tomorrow" },
-    { body: "Blog post: how we sign webhooks so agents can trust Kanbai", when: "next_week", priority: "low" },
+    { body: "Blog post: how Astra runs my day through the Kanbai API", when: "next_week", priority: "low" },
     { body: "Book the offsite venue", when: "next_month", priority: "medium" },
     { body: "Idea: let agents propose due dates based on the note text", when: "general", pinned: true },
     { body: "Grocery: oat milk, coffee, eggs", when: "general" },

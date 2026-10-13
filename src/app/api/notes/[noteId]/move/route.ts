@@ -13,7 +13,7 @@ export const POST = handler(
     if (!note || note.userId !== user!.id) throw new HttpError(404, "Note not found");
 
     const { scheduledDay, position } = parse(moveNoteSchema, await readJson(req));
-    const updated = await moveNote(noteId, user!.id, scheduledDay, position);
+    const updated = await moveNote(noteId, user!.id, scheduledDay, position, { type: "user", id: user.id, name: user.name });
     return ok({ note: updated });
   },
 );

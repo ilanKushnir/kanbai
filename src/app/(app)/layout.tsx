@@ -10,14 +10,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const ctx = await getContext();
 
   const startTomorrow = addDays(startOfDay(new Date()), 1);
-  const [boards, badgeNotes, dueTickets] = await Promise.all([
+  const [boards, badgeNotes, dueTickets, agents] = await Promise.all([
     db.board.findMany({
       where: boardWhereForContext(ctx),
       orderBy: { position: "asc" },
       select: { id: true, name: true, slug: true, color: true },
     }),
     // Candidate notes for the badge; countNotesAttention applies the exact
-    // Notes-page section semantics (Today = due today or overdue).
+    // Today semantics (due today or overdue, not done).
     db.note.findMany({
       where: {
         userId: ctx.user.id,
@@ -28,8 +28,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       },
       select: { status: true, scheduledDay: true, bucket: true, doneOn: true },
     }),
-    // Open board tickets already due (today or overdue) — the same tickets the
-    // Notes page reflects into its Today section.
     db.ticket.findMany({
       where: {
         deletedAt: null,
@@ -39,9 +37,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       },
       select: { dueDate: true },
     }),
+    db.agent.findMany({ where: { workspaceId: ctx.workspace.id, status: "active" }, select: { name: true } }),
   ]);
 
-  const notesDueCount = countNotesAttention({
+  const todayCount = countNotesAttention({
     notes: badgeNotes,
     reflections: dueTickets.map((t) => ({ dueDate: t.dueDate!, done: false })),
   });
@@ -62,7 +61,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           role: m.role,
           active: m.workspace.id === ctx.workspace.id,
         }))}
-        notesDueCount={notesDueCount}
+        todayCount={todayCount}
+        agentLabel={agents.length === 1 ? agents[0].name : "Agents"}
       >
         {children}
       </AppShell>

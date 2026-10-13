@@ -6,15 +6,10 @@ import {
   Plus,
   Bot,
   KeyRound,
-  Webhook,
   Copy,
   Check,
   Download,
   RefreshCw,
-  Send,
-  Trash2,
-  Eye,
-  EyeOff,
   ShieldCheck,
   TriangleAlert,
   BookOpen,
@@ -29,12 +24,14 @@ import { Menu, MenuItem } from "@/components/ui/menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { api } from "@/lib/client-api";
 import { useToast } from "@/components/ui/toast";
-import { AGENT_KINDS, AGENT_META, ALL_SCOPES, type WebhookEvent } from "@/lib/constants";
-import { SELECTABLE_EVENTS, resolveEventSpec, toggleEventSpec } from "@/lib/webhook-events";
+import { AGENT_KINDS, AGENT_META, ALL_SCOPES } from "@/lib/constants";
 import { APP_VERSION } from "@/lib/version";
 import { agentConnection } from "@/lib/agent-status";
 import { timeAgo, cn } from "@/lib/utils";
-import type { AgentFull, TestSendResultT } from "@/lib/types";
+import type { AgentFull } from "@/lib/types";
+import Image from "next/image";
+import { ActivityList } from "@/components/activity/activity-list";
+import type { ActivityItem } from "@/lib/services/activity-feed";
 
 function useCopy() {
   const [copied, setCopied] = React.useState(false);
@@ -73,11 +70,14 @@ export function AgentsView({
   agents: initial,
   members = [],
   appUrl,
+  activity = [],
 }: {
   agents: AgentFull[];
   /** Workspace members an agent can be owned by (owner caps its board access). */
   members?: WorkspaceMemberLite[];
   appUrl: string;
+  /** What agents did recently — the trust feed. */
+  activity?: ActivityItem[];
 }) {
   const router = useRouter();
   const [agents, setAgents] = React.useState(initial);
@@ -120,40 +120,40 @@ export function AgentsView({
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6 md:py-8">
-      <header className="mb-5 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Agents</h1>
+      <header className="mb-6 flex items-center gap-4">
+        <div className="relative hidden h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-surface-2 sm:block">
+          <Image src="/art/astra.webp" alt="" fill sizes="64px" className="object-cover" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-[2rem] font-medium leading-tight">Agents</h1>
           <p className="mt-1 text-sm text-fg-muted">
-            Connect an AI agent to Kanbai. It authenticates with an API key and receives events
-            through an optional, signed webhook — keep everything on your LAN.
+            An agent gets a key and talks to Kanbai over plain REST — it reads your day, adds tasks, moves them,
+            marks them done. Nothing is pushed to it; everything it does shows up below.
           </p>
         </div>
-        <Button variant="primary" onClick={() => setCreating(true)}>
+        <Button variant="primary" onClick={() => setCreating(true)} className="shrink-0">
           <Plus className="h-4 w-4" /> Add agent
         </Button>
       </header>
 
-      {/* How it works — canonical 4-step flow, shared across apps */}
-      <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Step n={1} icon={Plus} title="Create agent">
-          Name it and choose its kind.
+      {/* How it works — three steps, no webhooks */}
+      <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-3">
+        <Step n={1} icon={Plus} title="Create">
+          Name it. Kanbai mints a key (shown once).
         </Step>
-        <Step n={2} icon={BookOpen} title="Agent brief">
-          Copy the one-time key and setup brief.
+        <Step n={2} icon={BookOpen} title="Paste the brief">
+          Give the agent the brief: base URL, key, and the five calls that cover a day.
         </Step>
-        <Step n={3} icon={Webhook} title="Webhook + secret">
-          Set the agent&apos;s LAN URL and give both sides the same signing secret.
-        </Step>
-        <Step n={4} icon={ShieldCheck} title="Verify">
-          Send a test ping — it reports exactly what the agent answered.
+        <Step n={3} icon={ShieldCheck} title="It calls /me">
+          The badge turns Active. From then on: GET /today in the morning, POST /tickets when you dictate.
         </Step>
       </div>
 
       {agents.length === 0 ? (
         <EmptyState
           icon={Bot}
-          title="No agents connected"
-          description="Add Hermes, Open Claw, Claude Code, Codex — or any agent that speaks the Kanbai protocol."
+          title="No agent connected"
+          description="Add Hermes, Claude Code, Codex — or anything that can call a REST API with a key."
           action={
             <Button variant="primary" onClick={() => setCreating(true)}>
               <Plus className="h-4 w-4" /> Add your first agent
@@ -176,6 +176,22 @@ export function AgentsView({
           ))}
         </div>
       )}
+
+      <section className="mt-8 rounded-2xl border border-border bg-surface">
+        <div className="flex items-baseline justify-between px-4 pt-4 pb-2">
+          <h2 className="font-display text-[1.25rem] font-medium">What your agents did</h2>
+          <span className="text-xs text-fg-subtle">Last {activity.length} actions</span>
+        </div>
+        {activity.length === 0 ? (
+          <p className="px-4 pb-5 text-sm text-fg-subtle">
+            Nothing yet. Once an agent creates, moves or completes something, it is listed here under its name.
+          </p>
+        ) : (
+          <div className="px-2 pb-2">
+            <ActivityList items={activity} />
+          </div>
+        )}
+      </section>
 
       <div className="mt-6 flex items-center justify-center gap-1.5 text-sm text-fg-subtle">
         <BookOpen className="h-4 w-4" />
@@ -245,11 +261,6 @@ function AgentCard({
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [webhookUrl, setWebhookUrl] = React.useState(agent.webhookUrl ?? "");
-  const [secret, setSecret] = React.useState(agent.webhookSecret ?? "");
-  const [secretDraft, setSecretDraft] = React.useState("");
-  const [showSecret, setShowSecret] = React.useState(false);
-  const [testResult, setTestResult] = React.useState<TestSendResultT | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
   const meta = AGENT_META[agent.kind as keyof typeof AGENT_META] ?? AGENT_META.custom;
 
@@ -260,15 +271,8 @@ function AgentCard({
         method: "PATCH",
         body: partial,
       });
-      onUpdate({ ...agent, ...next, webhookSecret: next.webhookSecret ?? secret });
-      if (tag === "save") toast({ title: "Webhook URL saved", variant: "success" });
+      onUpdate({ ...agent, ...next });
       if (tag === "owner") toast({ title: "Agent owner updated", variant: "success" });
-      if (tag === "secret")
-        toast({
-          title: "Signing secret saved",
-          description: "Make sure the agent verifies with this exact value, then send a test ping.",
-          variant: "success",
-        });
     } catch (e) {
       toast({ title: "Update failed", description: e instanceof Error ? e.message : undefined, variant: "error" });
     } finally {
@@ -289,56 +293,8 @@ function AgentCard({
     }
   }
 
-  async function regenSecret() {
-    setBusy("secret");
-    try {
-      const { secret: s } = await api<{ secret: string }>(`/api/agents/${agent.id}/secret`, { method: "POST" });
-      setSecret(s);
-      setShowSecret(true);
-      onUpdate({ ...agent, webhookSecret: s });
-      toast({ title: "New signing secret generated", variant: "success" });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function sendTest() {
-    setBusy("test");
-    setTestResult(null);
-    try {
-      // The server waits for the delivery, so this answer carries the
-      // receiver's real verdict (status code + its error body).
-      const res = await api<TestSendResultT>(`/api/agents/${agent.id}/test`, { method: "POST" });
-      setTestResult(res);
-      router.refresh();
-    } catch (e) {
-      toast({ title: "Couldn't send test", description: e instanceof Error ? e.message : undefined, variant: "error" });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function saveSecretDraft() {
-    const v = secretDraft.trim();
-    if (!v) return;
-    if (v.length < 8) {
-      toast({ title: "Secret too short", description: "Use at least 8 characters — shorter secrets are guessable.", variant: "error" });
-      return;
-    }
-    setSecret(v);
-    setSecretDraft("");
-    setTestResult(null);
-    await patch({ webhookSecret: v }, "secret");
-  }
-
-  async function toggleEvent(ev: WebhookEvent) {
-    const spec = toggleEventSpec(agent.webhookEvents, ev);
-    onUpdate({ ...agent, webhookEvents: spec });
-    await patch({ webhookEvents: resolveEventSpec(spec) }, "events");
-  }
-
   async function remove() {
-    if (!confirm(`Delete agent "${agent.name}"? This revokes its key and webhook.`)) return;
+    if (!confirm(`Delete agent "${agent.name}"? This revokes its API key.`)) return;
     await api(`/api/agents/${agent.id}`, { method: "DELETE" });
     onDeleted();
   }
@@ -352,7 +308,6 @@ function AgentCard({
   const disabled = agent.status !== "active";
   const conn = now == null ? null : agentConnection(agent, now);
   const owner = agent.ownerUserId ? members.find((m) => m.id === agent.ownerUserId) : null;
-  const subscribedEvents = resolveEventSpec(agent.webhookEvents);
 
   return (
     <div className={cn("rounded-2xl border border-border bg-surface p-4 shadow-card", disabled && "opacity-70")}>
@@ -477,147 +432,6 @@ function AgentCard({
         </p>
       </Field>
 
-      {/* Webhook URL */}
-      <Field icon={Webhook} label="Webhook URL (the agent's own endpoint)">
-        <div className="flex items-center gap-1">
-          <Input
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
-            placeholder="http://<your-lan-ip>:<port>/kanbai/webhook"
-            className="font-mono text-xs"
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={webhookUrl === (agent.webhookUrl ?? "") || busy === "save"}
-            onClick={() => patch({ webhookUrl })}
-          >
-            Save
-          </Button>
-        </div>
-        <p className="mt-1.5 text-xs text-fg-subtle">
-          Use an internal LAN address the agent can reach. Don&apos;t expose it to the public
-          internet.
-        </p>
-        {agent.webhookUrl && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {(() => {
-              const last = agent.deliveries[0];
-              const verified = last?.status === "success";
-              return (
-                <>
-                  <Badge tone={verified ? "emerald" : "slate"} dot>
-                    {verified ? "Verified" : "Not verified"}
-                  </Badge>
-                  <Badge tone={secret ? "emerald" : "amber"} dot>
-                    {secret ? "Signed (HMAC)" : "Unsigned"}
-                  </Badge>
-                  {last && (
-                    <Badge tone="slate">
-                      <span suppressHydrationWarning>
-                        last ping {timeAgo(last.createdAt)} ·{" "}
-                        {last.statusCode ? `HTTP ${last.statusCode}` : last.status}
-                      </span>
-                    </Badge>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        )}
-      </Field>
-
-      {/* Signing secret */}
-      <Field icon={ShieldCheck} label="Signing secret — both sides must hold the same value">
-        <div className="flex items-center gap-1">
-          <code className="flex-1 truncate rounded-lg bg-surface-2 px-2.5 py-1.5 font-mono text-xs">
-            {secret ? (showSecret ? secret : "•".repeat(Math.min(secret.length, 28))) : "none"}
-          </code>
-          {secret && (
-            <>
-              <button
-                onClick={() => setShowSecret((s) => !s)}
-                className="grid h-8 w-8 place-items-center rounded-lg text-fg-subtle hover:bg-surface-2 hover:text-fg cursor-pointer"
-                aria-label={showSecret ? "Hide secret" : "Reveal secret"}
-              >
-                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-              <CopyBtn value={secret} />
-            </>
-          )}
-          <Button size="sm" variant="outline" onClick={regenSecret} disabled={busy === "secret"} title="Generate a new secret">
-            <RefreshCw className={cn("h-3.5 w-3.5", busy === "secret" && "animate-spin")} />
-          </Button>
-        </div>
-        <p className="mt-1.5 text-xs text-fg-subtle">
-          Kanbai signs every delivery with this exact secret (HMAC-SHA256 of{" "}
-          <code className="rounded bg-surface-2 px-1 py-0.5 text-[0.6875rem]">timestamp.rawBody</code>).
-          Copy it into the agent&apos;s config — or paste the agent&apos;s own secret here and save. A
-          mismatch makes the agent reject every delivery with 401.
-        </p>
-        <div className="mt-1.5 flex items-center gap-1">
-          <Input
-            value={secretDraft}
-            onChange={(e) => setSecretDraft(e.target.value)}
-            placeholder="…or paste the agent's secret"
-            className="font-mono text-xs"
-            onKeyDown={(e) => e.key === "Enter" && saveSecretDraft()}
-          />
-          <Button size="sm" variant="outline" onClick={saveSecretDraft} disabled={!secretDraft.trim() || busy === "secret"}>
-            Save
-          </Button>
-        </div>
-      </Field>
-
-      {/* Event subscriptions */}
-      <Field icon={Send} label="Events it receives">
-        <div className="flex flex-wrap gap-1.5">
-          {SELECTABLE_EVENTS.map((ev) => {
-            const on = subscribedEvents.includes(ev);
-            return (
-              <button
-                key={ev}
-                onClick={() => toggleEvent(ev)}
-                aria-pressed={on}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors cursor-pointer",
-                  on
-                    ? "border-primary bg-primary-soft text-primary-soft-fg"
-                    : "border-border text-fg-subtle hover:bg-surface-2",
-                )}
-              >
-                {ev}
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-1.5 text-xs text-fg-subtle">
-          {agent.webhookEvents === "*"
-            ? "Subscribed to everything, including event types added in future versions."
-            : subscribedEvents.length === 0
-              ? "No events selected — only test pings will be delivered."
-              : "Only the selected events are delivered."}{" "}
-          <code className="rounded bg-surface-2 px-1 py-0.5 text-[0.6875rem]">ping</code> is always on.
-        </p>
-      </Field>
-
-      {/* Send test + result */}
-      <div className="mt-3">
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={sendTest}
-          disabled={busy === "test" || !agent.webhookUrl}
-        >
-          <Send className={cn("h-3.5 w-3.5", busy === "test" && "animate-pulse")} />{" "}
-          {busy === "test" ? "Waiting for the agent…" : "Send test ping"}
-        </Button>
-        {!agent.webhookUrl && (
-          <span className="ms-2 text-xs text-fg-subtle">Set a webhook URL first.</span>
-        )}
-        {testResult && <TestResultPanel res={testResult} onDismiss={() => setTestResult(null)} />}
-      </div>
-
       {/* Scopes */}
       <Field icon={ShieldCheck} label="Scopes">
         <div className="flex flex-wrap gap-1.5">
@@ -641,129 +455,6 @@ function AgentCard({
         </div>
       </Field>
 
-      {/* Deliveries */}
-      <div className="mt-3 border-t border-border pt-3">
-        <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-xs font-medium text-fg-muted">Recent webhook deliveries</span>
-          <button
-            onClick={() => router.refresh()}
-            className="text-xs text-fg-subtle hover:text-fg cursor-pointer"
-          >
-            Refresh
-          </button>
-        </div>
-        {agent.deliveries.length === 0 ? (
-          <p className="text-xs text-fg-subtle">No deliveries yet. Send a test to check your setup.</p>
-        ) : (
-          <div className="space-y-1">
-            {agent.deliveries.map((d) => (
-              <div key={d.id} className="flex items-center gap-2 rounded-lg bg-surface-2/50 px-2.5 py-1.5 text-xs">
-                <span
-                  className={cn(
-                    "h-2 w-2 shrink-0 rounded-full",
-                    d.status === "success" ? "bg-success" : d.status === "failed" ? "bg-danger" : "bg-warning",
-                  )}
-                />
-                <span className="font-mono font-medium">{d.event}</span>
-                <span className="text-fg-subtle">{d.statusCode ? `HTTP ${d.statusCode}` : d.status}</span>
-                {d.error && (
-                  <span className="inline-flex items-center gap-1 truncate text-danger" title={d.error}>
-                    <TriangleAlert className="h-3 w-3" /> {d.error}
-                  </span>
-                )}
-                <span suppressHydrationWarning className="ml-auto shrink-0 text-fg-subtle">
-                  {timeAgo(d.createdAt)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The real outcome of a test ping — the receiver's status code and its own
- * error words, plus targeted guidance for the classic failure modes. A 401/403
- * on a signed delivery is almost always a secret mismatch, so that case gets
- * a step-by-step fix list instead of a generic "failed".
- */
-function TestResultPanel({ res, onDismiss }: { res: TestSendResultT; onDismiss: () => void }) {
-  const { result, secretFingerprint } = res;
-  const successful = result.status === "success";
-  const authRejected = result.statusCode === 401 || result.statusCode === 403;
-  const unreachable = result.statusCode === undefined;
-
-  return (
-    <div
-      className={cn(
-        "mt-2 rounded-xl border p-3 text-sm",
-        successful ? "border-success/40 bg-success-soft" : "border-danger/40 bg-danger-soft",
-      )}
-    >
-      <div className="flex items-start gap-2">
-        {successful ? (
-          <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-        ) : (
-          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="font-medium">
-            {successful
-              ? `Delivered — HTTP ${result.statusCode} in ${result.durationMs} ms`
-              : unreachable
-                ? "Couldn't reach the agent"
-                : `The agent rejected the ping — HTTP ${result.statusCode}`}
-          </p>
-          <p className="mt-0.5 text-xs text-fg-muted">
-            {successful
-              ? result.signed
-                ? "The payload was signed and the agent accepted it — signature verification works end-to-end."
-                : "Delivered unsigned (no signing secret is set)."
-              : result.error}
-          </p>
-          {!successful && authRejected && result.signed && (
-            <ul className="mt-2 list-disc space-y-1 ps-4 text-xs text-fg-muted">
-              <li>
-                Kanbai signed with the secret above (fingerprint{" "}
-                <code className="rounded bg-surface-2 px-1 py-0.5 font-mono">{secretFingerprint}</code>).
-                The agent is verifying with a <b>different</b> value — copy this secret into its
-                config, or paste its secret here and save.
-              </li>
-              <li>
-                The agent must verify HMAC-SHA256 over{" "}
-                <code className="rounded bg-surface-2 px-1 py-0.5 font-mono">timestamp.rawBody</code>{" "}
-                using the exact raw request bytes — re-serializing the JSON changes them.
-              </li>
-              <li>
-                <code className="rounded bg-surface-2 px-1 py-0.5 font-mono">X-Kanbai-Timestamp</code>{" "}
-                is unix <b>seconds</b> — check the agent&apos;s replay window and both clocks.
-              </li>
-              <li>Restart the agent after changing its secret so it picks up the new value.</li>
-            </ul>
-          )}
-          {!successful && authRejected && !result.signed && (
-            <p className="mt-2 text-xs text-fg-muted">
-              The delivery was unsigned but the agent requires a signature — set the same signing
-              secret on both sides, then test again.
-            </p>
-          )}
-          {!successful && unreachable && (
-            <p className="mt-2 text-xs text-fg-muted">
-              Check that the URL is right, the agent is running, and this server can reach it on the
-              LAN (no firewall in between).
-            </p>
-          )}
-        </div>
-        <button
-          onClick={onDismiss}
-          className="shrink-0 rounded-lg px-1.5 text-xs text-fg-subtle hover:bg-surface-2 hover:text-fg cursor-pointer"
-          aria-label="Dismiss test result"
-        >
-          ✕
-        </button>
-      </div>
     </div>
   );
 }
@@ -807,7 +498,7 @@ function CreateAgentModal({
         body: { name: name.trim(), kind, color: AGENT_META[kind as keyof typeof AGENT_META]?.color },
       });
       toast({ title: `${agent.name} connected`, variant: "success" });
-      onCreated({ ...agent, deliveries: [] }, apiKey);
+      onCreated(agent, apiKey);
     } catch (e) {
       toast({ title: "Couldn't create agent", description: e instanceof Error ? e.message : undefined, variant: "error" });
       setBusy(false);
@@ -873,9 +564,8 @@ function buildAgentBrief(name: string, key: string, origin: string) {
 You are connected to Kanbai (a Kanban board system), v${APP_VERSION}, as the agent "${name}".
 This key grants FULL control of this workspace: boards, tickets, the capture
 inbox, comments, and members. Authenticate every request with the key below.
-
-Setup is four steps: 1) create agent  2) copy this brief  3) the agent registers
-its webhook  4) verify with a test ping.
+Everything is pull-based REST — Kanbai never calls you back; read GET /today
+when you need the day's state.
 
 ## Credentials (store securely — the key is shown only once)
 Base URL:   ${base}
@@ -886,13 +576,14 @@ API key:    ${key}
 
 ## Verify the connection
 curl ${base}/me -H "Authorization: Bearer ${key}"
-(returns service name + version, apiVersion, your scopes, capabilities, your webhook
-status, and a "conventions" block describing the description format, allowed HTML
-tags, priorities, and note buckets — read it so you file tickets correctly.)
+(returns service name + version, apiVersion, your scopes, capabilities, a "quickstart"
+list of curl calls, and a "conventions" block describing the description format,
+allowed HTML tags, priorities, dueDate formats and timezone — read it first.)
 
 ## What you can do
+- Today:    GET ${base}/today  (overdue / today / tomorrow / upcoming / inbox — in one call)
 - Boards:   GET ${base}/boards  ·  GET ${base}/boards/{id}  ·  POST ${base}/boards
-- Tickets:  POST ${base}/tickets  ·  PATCH ${base}/tickets/{id}  ·  POST ${base}/tickets/{id}/move
+- Tickets:  GET ${base}/tickets?due=today  ·  POST ${base}/tickets  ·  PATCH ${base}/tickets/{id}  ·  POST ${base}/tickets/{id}/move {"stage":"done"}
 - Comment:  POST ${base}/tickets/{id}/comments
 - Inbox:    GET ${base}/inbox  →  POST ${base}/inbox/{noteId}/sort   (turn captured notes into tickets)
 - Notes:    GET ${base}/notes  ·  POST ${base}/notes  ·  POST ${base}/notes/{id}/queue
@@ -913,31 +604,6 @@ priority, and suggestedDueDate. When filing a note into a ticket:
   so leave the ticket with no due date then).
   POST ${base}/inbox/{noteId}/sort {"boardId":"<id>","title":"...","priority":"...","dueDate":"<ISO or null>"}
 
-## Register your webhook (self-setup)
-Point Kanbai at your own callback URL so you get events instead of polling. Prefer
-an internal/LAN URL since both run on the same network:
-curl -X POST ${base}/agent/webhook \\
-  -H "Authorization: Bearer ${key}" -H "content-type: application/json" \\
-  -d '{"url":"http://<agent-lan-ip>:<port>/kanbai/webhook","secret":"<your-signing-secret>"}'
-Optionally add "events": ["ticket.created", ...] to subscribe to a subset (default: everything).
-Then fire a test ping to yourself — it waits for your answer and returns your HTTP status,
-your error body, and the fingerprint of the secret Kanbai signed with:
-curl -X POST ${base}/agent/webhook/test -H "Authorization: Bearer ${key}"
-
-## Webhook signing — IMPORTANT: sync the secret
-Kanbai POSTs events (ticket.*, note.queued, note.sorted, comment.created, ping) to your URL.
-⚠ This agent ALREADY has an auto-generated signing secret, so deliveries are signed from day
-one. You must hold the SAME secret or you'll reject every delivery with 401. Either:
-  a) ask your operator to copy it from Agents → Signing secret into your config, or
-  b) register your own via the "secret" field above (min 8 chars) — Kanbai signs with yours then.
-Verify each delivery:
-  X-Kanbai-Signature: sha256=<hex HMAC-SHA256 of "{timestamp}.{rawBody}" with the secret>
-where {timestamp} is the X-Kanbai-Timestamp header (unix SECONDS) and {rawBody} is the exact
-raw request bytes — verify BEFORE parsing the JSON. Reject timestamps older than 5 minutes.
-To spot a mismatch without exchanging secrets, compare fingerprints: GET ${base}/agent/webhook
-returns secretFingerprint = first 8 hex chars of sha256(secret); compute the same from yours.
-Clearing the secret (secret: null) delivers callbacks UNSIGNED (no signature header) — accept
-those only on a trusted/internal listener path.
 
 Ticket descriptions are SIMPLE HTML — use <p> <b> <i> <u> <h3> <ul>/<ol>/<li> <blockquote> <a>.
 It is sanitized server-side (anything else is stripped); plain text is fine too. Not Markdown.
