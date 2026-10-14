@@ -24,7 +24,6 @@ export function AppShell({
   isSystemAdmin,
   workspaces,
   todayCount,
-  agentLabel,
 }: {
   children: React.ReactNode;
   boards: NavBoard[];
@@ -38,7 +37,6 @@ export function AppShell({
   /** Open items due today or overdue (the Today nav badge). */
   todayCount: number;
   /** Nav label for the agent page — the agent's name when there is exactly one. */
-  agentLabel: string;
 }) {
   const userMenuProps = { userName, userEmail, userAvatarUrl, userAvatarColor, isManager, isSystemAdmin, workspaces };
   const pathname = usePathname();
@@ -52,9 +50,9 @@ export function AppShell({
     () => [
       { href: "/today", label: "Today", icon: Sun, key: "today", badge: todayCount },
       { href: "/boards", label: "Boards", icon: Columns3, key: "boards", badge: 0 },
-      { href: "/agents", label: agentLabel, icon: Sparkles, key: "agents", badge: 0, managerOnly: true },
+      { href: "/agents", label: "Agents", icon: Sparkles, key: "agents", badge: 0, managerOnly: true },
     ],
-    [todayCount, agentLabel],
+    [todayCount],
   );
   const desktopNav = NAV.filter((n) => !n.managerOnly || isManager);
   const mobileNav = [...desktopNav, { href: "/search", label: "Search", icon: Search, key: "search", badge: 0 }];

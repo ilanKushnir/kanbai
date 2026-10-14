@@ -4,7 +4,7 @@ import { htmlToPlainText } from "@/lib/utils";
 
 /**
  * The workspace activity feed: ActivityLog rows joined with the ticket /
- * board / note they refer to, so the UI and agents can render "Astra moved
+ * board / note they refer to, so the UI and agents can render "Hermes moved
  * #12 to Done" without further lookups. Rows for deleted tickets/notes keep
  * their meta (title/excerpt) so the line still reads.
  */

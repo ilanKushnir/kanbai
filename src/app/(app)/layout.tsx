@@ -10,7 +10,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const ctx = await getContext();
 
   const startTomorrow = addDays(startOfDay(new Date()), 1);
-  const [boards, badgeNotes, dueTickets, agents] = await Promise.all([
+  const [boards, badgeNotes, dueTickets] = await Promise.all([
     db.board.findMany({
       where: boardWhereForContext(ctx),
       orderBy: { position: "asc" },
@@ -37,7 +37,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       },
       select: { dueDate: true },
     }),
-    db.agent.findMany({ where: { workspaceId: ctx.workspace.id, status: "active" }, select: { name: true } }),
   ]);
 
   const todayCount = countNotesAttention({
@@ -62,7 +61,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           active: m.workspace.id === ctx.workspace.id,
         }))}
         todayCount={todayCount}
-        agentLabel={agents.length === 1 ? agents[0].name : "Agents"}
       >
         {children}
       </AppShell>

@@ -122,7 +122,7 @@ export function AgentsView({
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6 md:py-8">
       <header className="mb-6 flex items-center gap-4">
         <div className="relative hidden h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-surface-2 sm:block">
-          <Image src="/art/astra.webp" alt="" fill sizes="64px" className="object-cover" />
+          <Image src="/art/agent.webp" alt="" fill sizes="64px" className="object-cover" />
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-[2rem] font-medium leading-tight">Agents</h1>

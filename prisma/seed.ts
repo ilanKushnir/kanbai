@@ -230,7 +230,7 @@ async function main() {
     },
     { body: "Bug — dragging a card to an empty column sometimes snaps back", when: "tomorrow", priority: "high" },
     { body: "Prep the standup notes", when: "tomorrow" },
-    { body: "Blog post: how Astra runs my day through the Kanbai API", when: "next_week", priority: "low" },
+    { body: "Blog post: how my agent runs my day through the Kanbai API", when: "next_week", priority: "low" },
     { body: "Book the offsite venue", when: "next_month", priority: "medium" },
     { body: "Idea: let agents propose due dates based on the note text", when: "general", pinned: true },
     { body: "Grocery: oat milk, coffee, eggs", when: "general" },

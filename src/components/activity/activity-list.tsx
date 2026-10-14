@@ -43,7 +43,7 @@ function describe(a: ActivityItem): { verb: string; target: string | null; href:
   return { verb, target: null, href: null };
 }
 
-/** A quiet, actor-led feed: "Astra · completed #12 Fix backup · 2h ago". */
+/** A quiet, actor-led feed: "Hermes · completed #12 Fix backup · 2h ago". */
 export function ActivityList({ items, compact = false }: { items: ActivityItem[]; compact?: boolean }) {
   return (
     <ul className={cn("space-y-0.5", !compact && "divide-y divide-border")}>

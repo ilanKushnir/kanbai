@@ -1,7 +1,7 @@
 # Kanbai Agent Protocol
 
-Kanbai is the single source of truth for tasks. An AI agent (Astra, Hermes,
-Claude Code, …) drives it **only** through the REST API under `/api/v1` with a
+Kanbai is the single source of truth for tasks. An AI agent (Hermes, Claude Code,
+Codex, …) drives it **only** through the REST API under `/api/v1` with a
 Bearer key. There are no callbacks: when the agent wants to know the state of
 the day, it asks. Every write is logged to the activity feed under the agent's
 name and is undoable from the UI (snapshots, 30-day trash, archive-not-delete).
@@ -180,14 +180,14 @@ purge is human-only.
 - **Members:** `GET/POST /members`, `PATCH/DELETE /members/{userId}` (role and
   per-board access; the workspace owner can't be changed or removed).
 
-## 8. Daily agent playbook (Astra)
+## 8. Daily agent playbook
 
 **Morning.** `GET /today`. Read `overdue` first, then `today`, `notesToday`
-and `inbox`. Summarize for Ilan in that order: what slipped, what is due, what
+and `inbox`. Summarize for the owner in that order: what slipped, what is due, what
 is captured but unplanned. Do not reschedule anything unasked. If the agenda
 is empty, say so and offer `upcoming`.
 
-**Ilan dictates a task.** Pick the board (`GET /boards` once per session and
+**The owner dictates a task.** Pick the board (`GET /boards` once per session and
 cache `id`/`name`/columns; "personal", "home", "work" map to board names).
 Then one call:
 
@@ -212,7 +212,7 @@ Within a board use `POST /tickets/{id}/move {"column":"In Work"}`.
 **Create a project board.** `POST /boards {"name":"Kitchen reno",
 "columns":[{"name":"Ideas","stage":"intake"},{"name":"Next","stage":"backlog"},
 {"name":"Doing","stage":"active"},{"name":"Done","stage":"done"}]}`, then add
-the tickets Ilan lists with `"stage":"backlog"`. Retire a finished project with
+the tickets the owner lists with `"stage":"backlog"`. Retire a finished project with
 `DELETE /boards/{id}` (archive).
 
 **Comments.** Progress, context, links: `POST /tickets/{id}/comments
@@ -221,4 +221,4 @@ the tickets Ilan lists with `"stage":"backlog"`. Retire a finished project with
 **Rules.** Prefer the smallest write that expresses the intent. Never delete
 boards or purge trash. When a column or board name doesn't match, read the 422
 message (it lists the valid names) and ask rather than guessing. All your
-actions appear in the Activity feed as "Astra", so keep them deliberate.
+actions appear in the Activity feed under your agent name, so keep them deliberate.

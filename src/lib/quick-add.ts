@@ -2,7 +2,7 @@
 //
 //   "Call the bank tomorrow !high #Personal"
 //   "לקבוע תור לרופא מחר"
-//   "Ship v2 next friday @KWS Homelab"
+//   "Ship v2 next friday @Homelab"
 //
 // Pure and timezone-naive on purpose: it works in local calendar days and the
 // caller passes `now`. Hebrew and English date words are both understood; a
@@ -121,7 +121,7 @@ export function parseQuickAdd(input: string, boards: QuickAddBoard[] = [], now =
   }
 
   // Board: "#name" / "@name" — multi-word boards are matched greedily by prefix
-  // ("#kws homelab" → KWS Homelab) by trying the longest token run first.
+  // ("#home lab" → Home Lab) by trying the longest token run first.
   const tag = text.match(/(?:^|\s)[#@]([^\s#@!]+(?:\s+[^\s#@!]+)*)/);
   if (tag) {
     const words = tag[1].split(" ");

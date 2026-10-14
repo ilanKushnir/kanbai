@@ -156,7 +156,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           <section className="overflow-hidden rounded-2xl border border-border bg-surface">
             <div className="flex items-center gap-3 px-4 pt-4">
               <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-surface-2">
-                <Image src="/art/astra.webp" alt="" fill sizes="44px" className="object-cover" />
+                <Image src="/art/agent.webp" alt="" fill sizes="44px" className="object-cover" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="font-display text-[1.1rem] font-medium leading-tight">{agent ? agent.name : "Your agent"}</div>

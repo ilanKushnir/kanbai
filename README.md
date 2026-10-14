@@ -10,7 +10,7 @@
 Kanbai is a calm place for one person's work. You open **Today** and see what
 is overdue, what is due, what is coming, and what you captured but haven't
 placed yet — notes and board tickets in one list, one checkbox each. Projects
-live on **Boards** (real Kanban). An **AI agent** (Astra, Hermes, Claude Code,
+live on **Boards** (real Kanban). An **AI agent** (Hermes, Claude Code, Codex,
 …) talks to Kanbai over a plain REST API: it reads your day, adds what you
 dictate, moves things along and marks them done — and everything it does is
 listed under its name. Kanbai is the source of truth; agents pull, Kanbai never
