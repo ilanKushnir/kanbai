@@ -101,7 +101,7 @@ export function CommandPalette({
     // Keep the PWA status bar in sync with the in-app theme (matches layout.tsx viewport colors).
     document
       .querySelectorAll('meta[name="theme-color"]')
-      .forEach((m) => m.setAttribute("content", dark ? "#0e1118" : "#f6f2ea"));
+      .forEach((m) => m.setAttribute("content", dark ? "#000000" : "#f2f2f2"));
     try {
       localStorage.setItem("kanbai-theme", dark ? "dark" : "light");
     } catch {}

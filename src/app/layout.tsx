@@ -1,21 +1,16 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Fraunces, Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Inter_Tight } from "next/font/google";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
-  subsets: ["latin"],
-  axes: ["opsz", "SOFT", "WONK"],
-  style: ["normal", "italic"],
-});
+const interTight = Inter_Tight({ variable: "--font-inter-tight", subsets: ["latin"] });
 
 /** Canvas colours mirrored into the iOS status bar (see the no-flash script). */
-export const CANVAS_LIGHT = "#f6f2ea";
-export const CANVAS_DARK = "#0e1118";
+export const CANVAS_LIGHT = "#f2f2f2";
+export const CANVAS_DARK = "#000000";
 
 export const metadata: Metadata = {
   title: { default: "Kanbai — your day, one list", template: "%s · Kanbai" },
@@ -25,8 +20,8 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
       { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
     ],
     apple: "/apple-touch-icon.png",
   },
@@ -67,7 +62,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full`}
+      className={`${geistSans.variable} ${geistMono.variable} ${interTight.variable} h-full`}
       suppressHydrationWarning
     >
       <body className="min-h-full">

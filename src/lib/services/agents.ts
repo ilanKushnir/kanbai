@@ -45,7 +45,7 @@ export async function createAgent(
       workspaceId,
       name: input.name,
       kind: input.kind,
-      color: input.color ?? "#c2410c",
+      color: input.color ?? "#d63a0e",
       apiKeyHash: key.hash,
       apiKeyPrefix: key.prefix,
       apiKeyLast4: key.last4,

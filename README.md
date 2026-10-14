@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./public/icon.svg" width="84" height="84" alt="Kanbai logo" />
+  <img src="./public/icon-512.png" width="84" height="84" alt="Kanbai logo" />
   <h1>Kanbai</h1>
   <p><strong>Your day, one list. Projects on boards. An agent that keeps it current.</strong></p>
   <p><sub><strong>Self-hosted</strong> · open source (MIT) · Docker-ready · Next.js + Prisma</sub></p>
@@ -45,8 +45,9 @@ calls them back.
 - Forgiving writes: address columns by name or stage, labels by name, dates as
   `YYYY-MM-DD`; every agent action lands in the activity feed and is undoable
 - Human-or-agent assignees, labels, priorities, due dates, comments, activity log
-- Warm "paper & ember" design with light/dark themes, serif display type and
-  illustrated heroes, board covers and empty states
+- Monochrome "Monolith" design — white paper and ink, one vermilion signal
+  colour, light/dark themes, tight grotesk display type and paper-craft
+  illustrations for heroes, board covers and empty states
 - **Public, read-only board links** to share progress without a login
 - Per-board ticket **#numbers**, WIP limits, custom columns
 - SQLite for zero-config local dev; swap to Postgres for production

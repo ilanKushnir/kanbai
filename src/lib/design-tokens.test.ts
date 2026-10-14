@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 /**
- * Static guards for the "paper & ember" color system: the tokens live
+ * Static guards for the "Monolith" color system: the tokens live
  * in globals.css and are consumed through CSS variables, so these tests parse
  * the real declarations and verify WCAG contrast arithmetic for both themes.
  */
@@ -145,7 +145,7 @@ test("structure reads as solid panels, not translucent washes", () => {
   assert.ok(!appShell.includes("bg-surface/60"), "sidebar must not be translucent");
   // The shared "today" surface exists for calendar-shaped views, and display type is wired.
   assert.ok(css.includes(".kb-today"), "globals.css defines .kb-today");
-  assert.ok(css.includes("--font-display: var(--font-fraunces)"), "display font token");
+  assert.ok(css.includes("--font-display: var(--font-inter-tight)"), "display font token");
 });
 
 test("iOS standalone status bar uses the same canvas colors as the app shell", () => {

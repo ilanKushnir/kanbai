@@ -103,11 +103,11 @@ export function AppShell({
                   active ? "bg-primary-soft text-primary-soft-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg",
                 )}
               >
-                {active && <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-primary" />}
+                {active && <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-accent" />}
                 <Icon className="h-4.5 w-4.5" />
                 {item.label}
                 {item.badge > 0 && (
-                  <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[0.625rem] font-semibold text-primary-fg" title="Due today or overdue">
+                  <span className="ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[0.625rem] font-semibold text-accent-fg" title="Due today or overdue">
                     {item.badge}
                     <span className="sr-only"> due today or overdue</span>
                   </span>
@@ -200,7 +200,7 @@ export function AppShell({
                   <span className="relative">
                     <Icon className="h-5 w-5" />
                     {item.badge > 0 && (
-                      <span className="absolute -right-2 -top-1 rounded-full bg-primary px-1 text-[0.5625rem] font-semibold text-primary-fg leading-tight">
+                      <span className="absolute -right-2 -top-1 rounded-full bg-accent px-1 text-[0.5625rem] font-semibold text-accent-fg leading-tight">
                         {item.badge}
                         <span className="sr-only"> due today or overdue</span>
                       </span>

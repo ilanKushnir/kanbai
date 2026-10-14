@@ -21,9 +21,9 @@ export function AuthShell({
   return (
     <div className="kb-paper relative flex min-h-dvh flex-col md:flex-row">
       {/* Art */}
-      <div className="relative h-56 w-full shrink-0 overflow-hidden md:h-auto md:w-[46%] md:max-w-[640px]">
+      <div className="relative h-56 w-full shrink-0 overflow-hidden bg-black md:h-auto md:w-[46%] md:max-w-[640px]">
         <Image src="/art/login.webp" alt="" fill priority sizes="(min-width: 768px) 46vw, 100vw" className="animate-hero-in object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-bg via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-bg/90" aria-hidden />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-black/60" aria-hidden />
       </div>
 
       {/* Form */}

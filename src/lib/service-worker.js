@@ -14,7 +14,7 @@ const VERSION = new URL(self.location.href).searchParams.get("v") || "dev";
 const CACHE = `kanbai-${VERSION}`;
 
 // Public, never-redirecting shell resources safe to precache.
-const CORE = ["/login", "/icon.svg", "/manifest.webmanifest"];
+const CORE = ["/login", "/icon-192.png", "/manifest.webmanifest"];
 
 const isCacheable = (res) => Boolean(res) && res.ok && !res.redirected && res.type === "basic";
 

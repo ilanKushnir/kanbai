@@ -4,14 +4,15 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
-  Kanbai design tokens — "paper & ember"
-  ──────────────────────────────────────
-  A warm, editorial system built for one person's working day, not a team
-  dashboard. Light is cream paper with ink text; dark is midnight navy with
-  cream highlights. Ember (terracotta) is the single action colour, sage is
-  the done/success colour. Serif display type (Fraunces) carries headings;
-  Geist does the UI work. Chip tones and priority colours are theme-aware
-  variables so labels stay legible from one source of truth.
+  Kanbai design tokens — "Monolith"
+  ─────────────────────────────────
+  Built from the mark: a folded white paper K on pure black. The system is
+  monochrome — light is white paper with ink, dark is black with paper —
+  and ink/paper is the primary (buttons, checks, active column). One signal
+  colour, vermilion, carries attention: today, focus, the active stage, the
+  badge. Tight grotesk display type (Inter Tight) matches the geometry of
+  the K; Geist does the UI work. Chip tones and priority colours stay
+  theme-aware variables so labels read from one source of truth.
 */
 :root {
   --radius: 0.875rem;
@@ -27,58 +28,51 @@
   --ease-out-emph: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Brand */
-  --ember-50:  #fdf1ea;
-  --ember-100: #fbe3d6;
-  --ember-200: #f6c4ac;
-  --ember-300: #f0a07d;
-  --ember-400: #e97a4e;
-  --ember-500: #d85f33;
-  --ember-600: #bf4a22;
-  --ember-700: #9a3715;
-  --ember-800: #772b12;
-  --ember-900: #5a2210;
+  --ink:          #0a0a0a;
+  --paper:        #f5f5f5;
+  --vermilion:    #d63a0e;
+  --vermilion-bright: #ff5c2e;
+  --vermilion-soft: #fbe6de;
+  --vermilion-deep: #2b0f07;
 
-  --sage-300: #a9c0a7;
-  --sage-500: #6f8f6b;
-  --sage-700: #3f5c3c;
+  /* Light theme — white paper, ink */
+  --bg:           #f2f2f2;
+  --bg-subtle:    #ececec;
+  --surface:      #ffffff;
+  --surface-2:    #f5f5f5;
+  --surface-3:    #e9e9e9;
+  --border:       #e3e3e3;
+  --border-strong:#c6c6c6;
+  --fg:           #0a0a0a;
+  --fg-muted:     #525252;
+  --fg-subtle:    #6e6e6e;
 
-  /* Light theme — cream paper, ink text */
-  --bg:           #f6f2ea;
-  --bg-subtle:    #efe9dd;
-  --surface:      #fffdf8;
-  --surface-2:    #f4efe5;
-  --surface-3:    #e9e2d4;
-  --border:       #e3dccd;
-  --border-strong:#cdc4b0;
-  --fg:           #1c1a16;
-  --fg-muted:     #575247;
-  --fg-subtle:    #76705f;
-
-  --primary:      var(--ember-600);
-  --primary-hover:var(--ember-700);
+  --primary:      var(--ink);
+  --primary-hover:#2a2a2a;
   --primary-fg:   #ffffff;
-  --primary-soft: var(--ember-100);
-  --primary-soft-fg: var(--ember-700);
+  --primary-soft: #e9e9e9;
+  --primary-soft-fg: var(--ink);
 
-  --accent:       var(--sage-500);
-  --accent-fg:    #0f1a0e;
+  --accent:       var(--vermilion);
+  --accent-fg:    #ffffff;
+  --accent-soft:  var(--vermilion-soft);
 
-  --success: #2f7d4f;
+  --success: #237a48;
   --success-fg: #ffffff;
-  --success-soft: #dcefe1;
-  --warning: #a86400;
-  --warning-soft: #f8e9c9;
-  --danger:  #c43c3c;
+  --success-soft: #e1f0e7;
+  --warning: #9a5b00;
+  --warning-soft: #f7e8c8;
+  --danger:  #c62f2f;
   --danger-soft: #f9dede;
 
-  --ring: var(--ember-500);
+  --ring: var(--vermilion);
 
   /* Column stage colour language */
-  --stage-intake:  #9a9486;
-  --stage-backlog: var(--sage-500);
-  --stage-active:  var(--ember-500);
-  --stage-done:    var(--success);
-  --stage-done-tint: var(--success-soft);
+  --stage-intake:  #8f8f8f;
+  --stage-backlog: #5c5c5c;
+  --stage-active:  var(--vermilion);
+  --stage-done:    var(--ink);
+  --stage-done-tint: #e9e9e9;
 
   /* Chip tones (labels, board colours, due chips) — bg / fg / dot per tone.
      fg targets ≥4.5:1 on the chip bg; dots stay saturated for identity. */
@@ -95,50 +89,51 @@
   --priority-low:    #6b7587;
   --priority-medium: #2e7ce0;
   --priority-high:   #c97501;
-  --priority-urgent: #c43c3c;
+  --priority-urgent: #c62f2f;
 
-  --shadow-sm: 0 1px 2px 0 rgb(40 30 16 / 0.06);
-  --shadow-md: 0 4px 16px -4px rgb(40 30 16 / 0.12), 0 2px 6px -2px rgb(40 30 16 / 0.07);
-  --shadow-lg: 0 16px 48px -12px rgb(40 30 16 / 0.22);
-  --shadow-card: 0 1px 2px rgb(40 30 16 / 0.05), 0 1px 3px rgb(40 30 16 / 0.07);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.12), 0 2px 6px -2px rgb(0 0 0 / 0.07);
+  --shadow-lg: 0 16px 48px -12px rgb(0 0 0 / 0.24);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 1px 3px rgb(0 0 0 / 0.07);
 }
 
 .dark {
-  --bg:           #0e1118;
-  --bg-subtle:    #121622;
-  --surface:      #171b26;
-  --surface-2:    #1f2431;
-  --surface-3:    #2a3040;
-  --border:       #2b3142;
-  --border-strong:#3d4458;
-  --fg:           #f1ece2;
-  --fg-muted:     #b5afa2;
-  --fg-subtle:    #8a857a;
+  --bg:           #000000;
+  --bg-subtle:    #0a0a0a;
+  --surface:      #111111;
+  --surface-2:    #1a1a1a;
+  --surface-3:    #262626;
+  --border:       #262626;
+  --border-strong:#3d3d3d;
+  --fg:           #f5f5f5;
+  --fg-muted:     #a6a6a6;
+  --fg-subtle:    #7d7d7d;
 
-  --primary:      #f0875a;
-  --primary-hover:#f6a07a;
-  --primary-fg:   #1b0d06;
-  --primary-soft: #3a2418;
-  --primary-soft-fg: #ffc2a6;
+  --primary:      var(--paper);
+  --primary-hover:#ffffff;
+  --primary-fg:   var(--ink);
+  --primary-soft: #262626;
+  --primary-soft-fg: var(--paper);
 
-  --accent:       var(--sage-300);
-  --accent-fg:    #0f1a0e;
+  --accent:       var(--vermilion-bright);
+  --accent-fg:    #140500;
+  --accent-soft:  var(--vermilion-deep);
 
-  --success: #5cc48a;
-  --success-fg: #06301f;
-  --success-soft: #16321f;
+  --success: #5fcf8e;
+  --success-fg: #052012;
+  --success-soft: #10281a;
   --warning: #f3bb47;
-  --warning-soft: #332812;
-  --danger:  #ff7474;
-  --danger-soft: #3a1818;
+  --warning-soft: #2e2410;
+  --danger:  #ff7070;
+  --danger-soft: #3a1414;
 
-  --ring: #f0875a;
+  --ring: var(--vermilion-bright);
 
-  --stage-intake:  #8a857a;
-  --stage-backlog: var(--sage-300);
-  --stage-active:  #f0875a;
-  --stage-done:    #5cc48a;
-  --stage-done-tint: #16321f;
+  --stage-intake:  #7d7d7d;
+  --stage-backlog: #a6a6a6;
+  --stage-active:  var(--vermilion-bright);
+  --stage-done:    var(--paper);
+  --stage-done-tint: #262626;
 
   --tone-slate-bg: rgba(148,163,184,0.16);  --tone-slate-fg: #aab4c9;  --tone-slate-dot: #8b98ae;
   --tone-iris-bg: rgba(131,127,251,0.21);   --tone-iris-fg: #b6b9ff;   --tone-iris-dot: #918eff;
@@ -152,12 +147,12 @@
   --priority-low:    #8b98ae;
   --priority-medium: #5aa3f7;
   --priority-high:   #f5a83c;
-  --priority-urgent: #ff7474;
+  --priority-urgent: #ff7070;
 
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
-  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.4);
-  --shadow-lg: 0 16px 48px -12px rgb(0 0 0 / 0.7);
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.6), 0 2px 6px -2px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 16px 48px -12px rgb(0 0 0 / 0.8);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.5);
 }
 
 @theme inline {
@@ -180,6 +175,7 @@
 
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
 
   --color-success: var(--success);
   --color-success-fg: var(--success-fg);
@@ -197,7 +193,7 @@
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --font-display: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+  --font-display: var(--font-inter-tight), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 * {
@@ -228,8 +224,9 @@ body {
 /* Display type: page titles, greetings, numbers that deserve a voice. */
 .font-display {
   font-family: var(--font-display);
-  font-variation-settings: "opsz" 72, "SOFT" 30, "WONK" 0;
-  letter-spacing: -0.015em;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  font-feature-settings: "ss01", "cv11";
 }
 
 /* Thin, unobtrusive scrollbars */
@@ -253,30 +250,21 @@ body {
   border-radius: 6px;
 }
 
-/* Utility: subtle brand gradient text */
+/* Utility: the signal colour as text */
 .text-gradient {
-  background: linear-gradient(100deg, var(--ember-600), var(--ember-400));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-.dark .text-gradient {
-  background: linear-gradient(100deg, var(--ember-300), var(--ember-200));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--color-accent);
 }
 
 .bg-brand-gradient {
-  background: linear-gradient(135deg, var(--ember-500) 0%, var(--ember-600) 55%, var(--ember-800) 130%);
+  background: linear-gradient(135deg, var(--ink) 0%, #2a2a2a 100%);
 }
 
-/* Paper grain — a very faint noise so large cream surfaces don't read flat. */
+/* Canvas wash — a faint vermilion breath in one corner so the big flat canvas
+   doesn't read as dead space. */
 .kb-paper {
   background-color: var(--color-bg);
   background-image:
-    radial-gradient(circle at 20% 0%, color-mix(in oklab, var(--primary) 7%, transparent), transparent 42%),
-    radial-gradient(circle at 100% 100%, color-mix(in oklab, var(--accent) 9%, transparent), transparent 46%);
+    radial-gradient(circle at 100% 0%, color-mix(in oklab, var(--accent) 8%, transparent), transparent 46%);
 }
 
 /* Animations */
@@ -362,20 +350,20 @@ body {
   flex-shrink: 0;
   transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease, color var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out-emph);
 }
-.kb-check:hover { border-color: var(--color-success); color: var(--color-success); }
+.kb-check:hover { border-color: var(--color-fg); color: var(--color-fg); }
 .kb-check:active { transform: scale(0.9); }
 .kb-check[data-checked="true"] {
-  border-color: var(--color-success);
-  background: var(--color-success);
-  color: var(--color-success-fg);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
 }
 .kb-row-done .kb-row-title { color: var(--color-fg-subtle); text-decoration: line-through; text-decoration-thickness: 1px; }
 
 /* ── Board column stage surfaces ─────────────────────────────────────────────
    intake  — dashed, faded, low-focus ("not real work yet")
    backlog — neutral, quiet
-   active  — ember hairline + slightly elevated ("this is the focus")
-   done    — softly sage-filled                                                 */
+   active  — vermilion hairline + slightly elevated ("this is the focus")
+   done    — ink-tinted, settled                                                */
 .kb-col-intake {
   background: color-mix(in oklab, var(--color-surface-2) 42%, transparent);
   border-style: dashed;
@@ -399,7 +387,7 @@ body {
 .kb-col-done {
   background:
     linear-gradient(180deg, color-mix(in oklab, var(--stage-done-tint) 42%, transparent), transparent 58%),
-    color-mix(in oklab, var(--success-soft) 62%, var(--color-surface) 38%);
+    color-mix(in oklab, var(--stage-done-tint) 62%, var(--color-surface) 38%);
   border-color: color-mix(in oklab, var(--stage-done) 26%, transparent);
   box-shadow:
     inset 0 1px 0 color-mix(in oklab, var(--stage-done) 40%, transparent),
@@ -420,7 +408,7 @@ body {
   border-color: color-mix(in oklab, var(--stage-active) 22%, transparent);
 }
 .kb-band-done {
-  background: color-mix(in oklab, var(--success-soft) 56%, transparent);
+  background: color-mix(in oklab, var(--stage-done-tint) 56%, transparent);
   border-color: color-mix(in oklab, var(--stage-done) 18%, transparent);
 }
 
@@ -437,7 +425,7 @@ body {
 /* One-shot attention pulse when "Today" lands on today's bucket. */
 @keyframes kb-today-flash {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 65%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-accent) 65%, transparent);
   }
   100% {
     box-shadow: 0 0 0 10px transparent;
@@ -448,22 +436,25 @@ body {
 }
 
 /* "Today" bucket (week view / day groupings): the one place on a calendar
-   surface that carries the brand — ember-washed with a crisp top hairline. */
+   surface that carries the signal colour — a vermilion wash and top hairline. */
 .kb-today {
-  background: color-mix(in oklab, var(--primary-soft) 30%, var(--color-surface) 70%);
-  border-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
+  background: color-mix(in oklab, var(--accent-soft) 40%, var(--color-surface) 60%);
+  border-color: color-mix(in oklab, var(--color-accent) 40%, transparent);
   box-shadow:
-    inset 0 1.5px 0 color-mix(in oklab, var(--color-primary) 55%, transparent),
+    inset 0 1.5px 0 color-mix(in oklab, var(--color-accent) 60%, transparent),
     var(--shadow-sm);
 }
 
 /* ── Hero art (Today, login, board covers) ───────────────────────────────────
-   Illustrations sit under a gradient that fades into the page canvas, so the
-   image feels like part of the paper rather than a banner stuck on top. */
+   Every illustration is white paper on black, so the hero is a black slab in
+   both themes: in dark it melts into the canvas, in light it sits on the page
+   like the mark itself. The gradient only deepens the black under the text. */
 .kb-hero {
   position: relative;
   overflow: hidden;
   isolation: isolate;
+  background: #000;
+  color: #fff;
 }
 .kb-hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .kb-hero::after {
@@ -471,15 +462,16 @@ body {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, transparent 20%, var(--color-bg) 100%),
-    linear-gradient(90deg, color-mix(in oklab, var(--color-bg) 40%, transparent), transparent 55%);
+    linear-gradient(180deg, transparent 30%, rgb(0 0 0 / 0.85) 100%),
+    linear-gradient(90deg, rgb(0 0 0 / 0.45), transparent 55%);
   pointer-events: none;
 }
+.kb-cover { background: #000; }
 .kb-cover::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 45%, color-mix(in oklab, var(--color-surface) 92%, transparent) 100%);
+  background: linear-gradient(180deg, transparent 55%, rgb(0 0 0 / 0.45) 100%);
   pointer-events: none;
 }
 
@@ -491,8 +483,8 @@ body {
   transition: border-color var(--motion-base) ease, box-shadow var(--motion-base) ease;
 }
 .kb-quickadd:focus-within {
-  border-color: color-mix(in oklab, var(--color-primary) 55%, var(--color-border));
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 14%, transparent), var(--shadow-md);
+  border-color: color-mix(in oklab, var(--color-accent) 60%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 16%, transparent), var(--shadow-md);
 }
 .kb-quickadd textarea { transition: min-height var(--motion-slow) var(--ease-out-emph); }
 
