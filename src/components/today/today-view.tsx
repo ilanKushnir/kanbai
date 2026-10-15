@@ -34,6 +34,11 @@ import { ymd, addDays, startOfDay, parseYmd, dueFromDay } from "@/lib/notes-sche
 import { parseQuickAdd } from "@/lib/quick-add";
 import { buildToday, dayLabel, LOCALE, type TaskItem, type TodayNote, type TodayTicket, type TodaySection, type SectionKey } from "@/lib/today-model";
 import type { SerializedTicket } from "@/lib/serialize";
+import * as sync from "@/lib/offline/sync-store";
+import { clientId, toTodayTicket, type TodayData } from "@/lib/offline/today-sync";
+
+const SERVER_SYNC_SNAPSHOT: sync.SyncSnapshot = { status: { online: true, syncing: false, pending: 0, authNeeded: false, baseAt: null, stale: false, syncedAt: 0 }, data: null };
+const getServerSyncSnapshot = () => SERVER_SYNC_SNAPSHOT;
 
 export type TodayBoard = {
   id: string;
@@ -55,6 +60,8 @@ export type ActivityRow = {
 };
 
 type Props = {
+  /** Offline-sync partition (user + workspace); see lib/offline. */
+  syncScope: string;
   tickets: TodayTicket[];
   notes: TodayNote[];
   boards: TodayBoard[];
@@ -75,80 +82,49 @@ const SECTION_DEFAULT_OPEN: Record<SectionKey, boolean> = {
   done: false,
 };
 
-/** Convert a freshly-serialized ticket (API response) into a Today row. */
-function toTodayTicket(t: SerializedTicket, boards: TodayBoard[], prev?: TodayTicket): TodayTicket {
-  const b = boards.find((x) => x.id === t.boardId);
-  const board = b
-    ? { id: b.id, name: b.name, slug: b.slug, color: b.color, doneColumnId: b.columns.find((c) => c.isDone)?.id ?? null }
-    : prev?.board ?? { id: t.boardId, name: "Board", slug: "", color: "slate", doneColumnId: null };
-  const colName = t.column ?? b?.columns.find((c) => c.id === t.columnId)?.name ?? prev?.columnName ?? "";
-  return {
-    id: t.id,
-    title: t.title,
-    number: t.number,
-    priority: t.priority,
-    dueDate: t.dueDate,
-    columnId: t.columnId,
-    columnName: colName,
-    subState: t.subState,
-    completedAt: t.completedAt,
-    isDone: t.isDone,
-    board,
-    labels: t.labels,
-    subtasksDone: t.subtasks.filter((s) => s.completed).length,
-    subtasksTotal: t.subtasks.length,
-    commentCount: t.commentCount,
-    createdByType: t.createdBy?.type ?? "user",
-    createdAt: t.createdAt,
-  };
-}
-
-type NoteResponse = {
-  id: string;
-  body: string;
-  status: string;
-  scheduledDay: string | null;
-  doneOn: string | null;
-  priority: string;
-  position: number;
-  createdAt: string;
-  updatedAt: string;
-  assignedAgent: { id: string; name: string } | null;
-  ticket: { id: string; title: string; boardId: string } | null;
-};
-const toTodayNote = (n: NoteResponse): TodayNote => ({
-  id: n.id,
-  body: n.body,
-  status: n.status,
-  scheduledDay: n.scheduledDay,
-  doneOn: n.doneOn,
-  priority: n.priority,
-  position: n.position,
-  createdAt: n.createdAt,
-  updatedAt: n.updatedAt,
-  assignedAgent: n.assignedAgent,
-  ticket: n.ticket,
-});
-
-export function TodayView({ tickets: initialTickets, notes: initialNotes, boards, dictationLanguage, focusId, compose, initialNow }: Props) {
+export function TodayView({ syncScope, tickets: initialTickets, notes: initialNotes, boards: initialBoards, dictationLanguage, focusId, compose, initialNow }: Props) {
   const router = useRouter();
   const { toast } = useToast();
-  const [tickets, setTickets] = React.useState(initialTickets);
-  const [notes, setNotes] = React.useState(initialNotes);
   const [open, setOpen] = React.useState<Record<SectionKey, boolean>>(SECTION_DEFAULT_OPEN);
-  const inFlight = React.useRef(0);
   const [now, setNow] = React.useState(() => new Date(initialNow));
   React.useEffect(() => setNow(new Date()), []);
 
-  // Re-sync from the server after a refresh, unless a mutation is mid-air.
-  const [prevInit, setPrevInit] = React.useState({ t: initialTickets, n: initialNotes });
-  if (prevInit.t !== initialTickets || prevInit.n !== initialNotes) {
-    setPrevInit({ t: initialTickets, n: initialNotes });
-    if (inFlight.current === 0) {
-      setTickets(initialTickets);
-      setNotes(initialNotes);
-    }
-  }
+  // Offline-first: the list is the synced store (last server state + queued
+  // edits, persisted on this device). The server render seeds it; a render
+  // older than what the device holds (served from the offline cache) loses.
+  const server = React.useMemo<TodayData>(
+    () => ({ tickets: initialTickets, notes: initialNotes, boards: initialBoards }),
+    [initialTickets, initialNotes, initialBoards],
+  );
+  React.useLayoutEffect(() => {
+    sync.ingestServer(syncScope, server, Date.parse(initialNow));
+  }, [syncScope, server, initialNow]);
+  const snap = React.useSyncExternalStore(sync.subscribe, sync.getSnapshot, getServerSyncSnapshot);
+  const data = snap.data ?? server;
+  const { tickets, notes, boards } = data;
+
+  // Pull fresh server state once the outbox drains, when the network returns
+  // to a stale page, and after a rejected edit. Never while offline: a failed
+  // RSC fetch makes Next fall back to a full page load.
+  React.useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const refreshSoon = () => {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => {
+        if (sync.getSnapshot().status.online) router.refresh();
+      }, 400);
+    };
+    const off = sync.onSyncEvent((e) => {
+      if (e.type === "rejected") {
+        toast({ title: "Couldn't sync a change", description: e.message, variant: "error" });
+      }
+      refreshSoon();
+    });
+    return () => {
+      off();
+      if (t) clearTimeout(t);
+    };
+  }, [router, toast]);
 
   // Roll the day over at midnight without a reload.
   React.useEffect(() => {
@@ -166,85 +142,22 @@ export function TodayView({ tickets: initialTickets, notes: initialNotes, boards
   const model = React.useMemo(() => buildToday({ tickets, notes, now }), [tickets, notes, now]);
   const todayYmd = model.todayYmd;
 
-  const refreshSoon = React.useMemo(() => {
-    let t: ReturnType<typeof setTimeout> | null = null;
-    return () => {
-      if (t) clearTimeout(t);
-      t = setTimeout(() => router.refresh(), 400);
-    };
-  }, [router]);
+  // ── mutations: every edit is a queued op (see lib/offline) ───────────────
 
-  async function track<T>(fn: () => Promise<T>): Promise<T> {
-    inFlight.current++;
-    try {
-      return await fn();
-    } finally {
-      inFlight.current--;
-      refreshSoon();
-    }
-  }
+  const patchNote = (id: string, body: Record<string, unknown>, optimistic: Partial<TodayNote>) =>
+    sync.enqueue({ kind: "note.patch", id, body, optimistic });
 
-  const fail = (title: string, e: unknown) =>
-    toast({ title, description: e instanceof Error ? e.message : undefined, variant: "error" });
+  const patchTicket = (id: string, body: Record<string, unknown>, optimistic: Partial<TodayTicket>) =>
+    sync.enqueue({ kind: "ticket.patch", id, body, optimistic });
 
-  // ── mutations ────────────────────────────────────────────────────────────
+  const moveTicket = (t: TodayTicket, columnId: string, subState: string | null, optimistic: Partial<TodayTicket>) =>
+    sync.enqueue({ kind: "ticket.move", id: t.id, body: { columnId, position: 0, subState }, optimistic });
 
-  const patchNote = React.useCallback(
-    async (id: string, body: Record<string, unknown>, optimistic?: Partial<TodayNote>) => {
-      if (optimistic) setNotes((ns) => ns.map((n) => (n.id === id ? { ...n, ...optimistic } : n)));
-      return track(async () => {
-        try {
-          const { note } = await api<{ note: NoteResponse }>(`/api/notes/${id}`, { method: "PATCH", body });
-          setNotes((ns) => ns.map((n) => (n.id === id ? toTodayNote(note) : n)));
-          return note;
-        } catch (e) {
-          fail("Couldn't save", e);
-          router.refresh();
-          throw e;
-        }
-      });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [router],
-  );
-
-  const patchTicket = React.useCallback(
-    async (id: string, body: Record<string, unknown>, optimistic?: Partial<TodayTicket>) => {
-      if (optimistic) setTickets((ts) => ts.map((t) => (t.id === id ? { ...t, ...optimistic } : t)));
-      return track(async () => {
-        try {
-          const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${id}`, { method: "PATCH", body });
-          setTickets((ts) => ts.map((t) => (t.id === id ? toTodayTicket(ticket, boards, t) : t)));
-          return ticket;
-        } catch (e) {
-          fail("Couldn't save", e);
-          router.refresh();
-          throw e;
-        }
-      });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [router, boards],
-  );
-
-  async function moveTicket(t: TodayTicket, columnId: string, subState: string | null, optimistic: Partial<TodayTicket>) {
-    setTickets((ts) => ts.map((x) => (x.id === t.id ? { ...x, ...optimistic } : x)));
-    return track(async () => {
-      try {
-        const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${t.id}/move`, { body: { columnId, position: 0, subState } });
-        setTickets((ts) => ts.map((x) => (x.id === t.id ? toTodayTicket(ticket, boards, x) : x)));
-      } catch (e) {
-        fail("Couldn't move", e);
-        router.refresh();
-      }
-    });
-  }
-
-  async function toggleDone(item: TaskItem) {
+  function toggleDone(item: TaskItem) {
     if (item.kind === "note") {
       const n = item.note;
       const wasDone = n.doneOn != null;
-      await patchNote(n.id, { doneOn: wasDone ? null : todayYmd }, { doneOn: wasDone ? null : todayYmd });
+      patchNote(n.id, { doneOn: wasDone ? null : todayYmd }, { doneOn: wasDone ? null : todayYmd });
       if (!wasDone) {
         toast({
           title: "Done",
@@ -263,7 +176,7 @@ export function TodayView({ tickets: initialTickets, notes: initialNotes, boards
       const b = boards.find((x) => x.id === t.board.id);
       const target = b?.columns.find((c) => !c.isDone);
       if (!target) return;
-      await moveTicket(t, target.id, null, { isDone: false, completedAt: null, columnId: target.id, columnName: target.name });
+      moveTicket(t, target.id, null, { isDone: false, completedAt: null, columnId: target.id, columnName: target.name });
       return;
     }
     if (!t.board.doneColumnId) {
@@ -271,7 +184,14 @@ export function TodayView({ tickets: initialTickets, notes: initialNotes, boards
       return;
     }
     const previous = { columnId: t.columnId, subState: t.subState, columnName: t.columnName };
-    await moveTicket(t, t.board.doneColumnId, null, { isDone: true, completedAt: new Date().toISOString(), columnId: t.board.doneColumnId });
+    const doneName = boards.find((x) => x.id === t.board.id)?.columns.find((c) => c.id === t.board.doneColumnId)?.name;
+    moveTicket(t, t.board.doneColumnId, null, {
+      isDone: true,
+      completedAt: new Date().toISOString(),
+      columnId: t.board.doneColumnId,
+      subState: null,
+      ...(doneName ? { columnName: doneName } : {}),
+    });
     toast({
       title: "Done",
       description: t.title.slice(0, 80),
@@ -282,110 +202,101 @@ export function TodayView({ tickets: initialTickets, notes: initialNotes, boards
     });
   }
 
-  async function reschedule(item: TaskItem, day: string | null) {
+  function reschedule(item: TaskItem, day: string | null) {
     if (item.kind === "note") return patchNote(item.id, { scheduledDay: day }, { scheduledDay: day });
     return patchTicket(item.id, { dueDate: dueFromDay(day) }, { dueDate: dueFromDay(day) });
   }
 
-  async function setPriority(item: TaskItem, priority: Priority) {
+  function setPriority(item: TaskItem, priority: Priority) {
     if (item.kind === "note") return patchNote(item.id, { priority }, { priority });
     return patchTicket(item.id, { priority }, { priority });
   }
 
-  async function remove(item: TaskItem) {
-    if (item.kind === "note") {
-      setNotes((ns) => ns.filter((n) => n.id !== item.id));
-      await track(async () => {
-        try {
-          await api(`/api/notes/${item.id}`, { method: "DELETE" });
-          toast({ title: "Deleted", description: "Restorable from Settings → Recently deleted for 30 days." });
-        } catch (e) {
-          fail("Couldn't delete", e);
-          router.refresh();
-        }
-      });
-      return;
-    }
-    setTickets((ts) => ts.filter((t) => t.id !== item.id));
-    await track(async () => {
-      try {
-        await api(`/api/tickets/${item.id}`, { method: "DELETE" });
-        toast({ title: "Deleted", description: "Restorable from Settings → Recently deleted for 30 days." });
-      } catch (e) {
-        fail("Couldn't delete", e);
-        router.refresh();
-      }
-    });
+  function remove(item: TaskItem) {
+    sync.enqueue(item.kind === "note" ? { kind: "note.delete", id: item.id } : { kind: "ticket.delete", id: item.id });
+    toast({ title: "Deleted", description: "Restorable from Settings → Recently deleted for 30 days." });
   }
 
   async function moveNoteToBoard(n: TodayNote, board: TodayBoard) {
     const column = board.columns.find((c) => !c.isDone) ?? board.columns[0];
     if (!column) return;
-    setNotes((ns) => ns.filter((x) => x.id !== n.id));
-    await track(async () => {
-      try {
-        const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/notes/${n.id}/promote`, {
-          body: {
-            boardId: board.id,
-            columnId: column.id,
-            title: n.body.split("\n")[0].slice(0, 200),
-            description: n.body.split("\n").slice(1).join("\n").trim() || undefined,
-            priority: n.priority !== "none" ? n.priority : undefined,
-            dueDate: dueFromDay(n.scheduledDay),
-          },
-        });
-        setTickets((ts) => [...ts, toTodayTicket(ticket, boards)]);
-        toast({ title: `Moved to ${board.name}`, description: ticket.title, variant: "success" });
-      } catch (e) {
-        fail("Couldn't move to board", e);
-        router.refresh();
-      }
-    });
+    // Promoting creates a numbered ticket server-side: online only.
+    const { status } = sync.getSnapshot();
+    if (!status.online || status.pending > 0) {
+      toast({ title: "Needs a connection", description: "Moving to a board works once your changes have synced.", variant: "error" });
+      return;
+    }
+    try {
+      const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/notes/${n.id}/promote`, {
+        body: {
+          boardId: board.id,
+          columnId: column.id,
+          title: n.body.split("\n")[0].slice(0, 200),
+          description: n.body.split("\n").slice(1).join("\n").trim() || undefined,
+          priority: n.priority !== "none" ? n.priority : undefined,
+          dueDate: dueFromDay(n.scheduledDay),
+        },
+      });
+      sync.updateBase((b) => ({
+        ...b,
+        notes: b.notes.filter((x) => x.id !== n.id),
+        tickets: [...b.tickets.filter((x) => x.id !== ticket.id), toTodayTicket(ticket, b.boards)],
+      }));
+      toast({ title: `Moved to ${board.name}`, description: ticket.title, variant: "success" });
+    } catch (e) {
+      toast({ title: "Couldn't move to board", description: e instanceof Error ? e.message : undefined, variant: "error" });
+    } finally {
+      router.refresh();
+    }
   }
 
-  async function editNote(n: TodayNote, body: string) {
+  function editNote(n: TodayNote, body: string) {
     const next = body.trim();
     if (!next || next === n.body) return;
-    await patchNote(n.id, { body: next }, { body: next });
+    patchNote(n.id, { body: next }, { body: next });
   }
 
   async function quickAdd(text: string, dayOverride: string | null | undefined) {
     const parsed = parseQuickAdd(text, boards, new Date());
     const day = dayOverride === undefined ? parsed.day ?? todayYmd : dayOverride;
     const priority = parsed.priority ?? undefined;
+    const nowIso = new Date().toISOString();
+    if (day && day !== todayYmd) setOpen((o) => ({ ...o, [sectionFor(day, todayYmd)]: true }));
     if (parsed.board) {
-      const b = parsed.board as TodayBoard & { columns?: TodayBoard["columns"] };
-      const board = boards.find((x) => x.id === b.id)!;
+      const board = boards.find((x) => x.id === parsed.board!.id)!;
       const column = board.columns.find((c) => !c.isDone) ?? board.columns[0];
-      await track(async () => {
-        try {
-          const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets`, {
-            body: { boardId: board.id, columnId: column?.id, title: parsed.title, priority, dueDate: dueFromDay(day) },
-          });
-          setTickets((ts) => [...ts, toTodayTicket(ticket, boards)]);
-          if (day && day !== todayYmd) setOpen((o) => ({ ...o, [sectionFor(day, todayYmd)]: true }));
-        } catch (e) {
-          fail("Couldn't add", e);
-        }
+      if (!column) return;
+      const dueDate = dueFromDay(day);
+      sync.enqueue({
+        kind: "ticket.create",
+        body: { boardId: board.id, columnId: column.id, title: parsed.title, priority, dueDate },
+        ticket: {
+          id: clientId(),
+          title: parsed.title,
+          number: null,
+          priority: priority ?? "medium",
+          dueDate,
+          columnId: column.id,
+          columnName: column.name,
+          subState: null,
+          completedAt: null,
+          isDone: false,
+          board: { id: board.id, name: board.name, slug: board.slug, color: board.color, doneColumnId: board.columns.find((c) => c.isDone)?.id ?? null },
+          labels: [],
+          subtasksDone: 0,
+          subtasksTotal: 0,
+          commentCount: 0,
+          createdByType: "user",
+          createdAt: nowIso,
+        },
       });
       return;
     }
-    const tempId = `tmp-${Date.now()}`;
-    const nowIso = new Date().toISOString();
-    setNotes((ns) => [
-      ...ns,
-      { id: tempId, body: parsed.title, status: "inbox", scheduledDay: day, doneOn: null, priority: priority ?? "none", position: 1e9, createdAt: nowIso, updatedAt: nowIso, assignedAgent: null, ticket: null },
-    ]);
-    if (day && day !== todayYmd) setOpen((o) => ({ ...o, [sectionFor(day, todayYmd)]: true }));
     if (day === null) setOpen((o) => ({ ...o, inbox: true }));
-    await track(async () => {
-      try {
-        const { note } = await api<{ note: NoteResponse }>(`/api/notes`, { body: { body: parsed.title, scheduledDay: day, priority } });
-        setNotes((ns) => ns.map((n) => (n.id === tempId ? toTodayNote(note) : n)));
-      } catch (e) {
-        setNotes((ns) => ns.filter((n) => n.id !== tempId));
-        fail("Couldn't add", e);
-      }
+    sync.enqueue({
+      kind: "note.create",
+      body: { body: parsed.title, scheduledDay: day, priority },
+      note: { id: clientId(), body: parsed.title, status: "inbox", scheduledDay: day, doneOn: null, priority: priority ?? "none", position: 1e9, createdAt: nowIso, updatedAt: nowIso, assignedAgent: null, ticket: null },
     });
   }
 

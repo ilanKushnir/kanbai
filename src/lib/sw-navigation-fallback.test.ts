@@ -22,6 +22,7 @@ type Listeners = Record<string, (event: unknown) => void>;
 function loadWorker(opts: {
   fetchImpl: (input: unknown, init?: unknown) => Promise<Response>;
   cacheEntries: Record<string, Response | undefined>;
+  navTimeoutMs?: number;
 }): Listeners {
   const listeners: Listeners = {};
   const cache = { put: async () => undefined, keys: async () => [] };
@@ -39,8 +40,9 @@ function loadWorker(opts: {
       open: async () => cache,
       keys: async () => [],
       delete: async () => true,
-      match: async (key: unknown) => {
-        const path = typeof key === "string" ? key : new URL((key as Request).url).pathname;
+      match: async (key: unknown, matchOpts?: { ignoreSearch?: boolean }) => {
+        const url = new URL(typeof key === "string" ? key : (key as Request).url, "https://kanbai.test");
+        const path = matchOpts?.ignoreSearch ? url.pathname : url.pathname + url.search;
         return opts.cacheEntries[path];
       },
     },
@@ -49,6 +51,7 @@ function loadWorker(opts: {
     Response,
     Promise,
     console,
+    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, opts.navTimeoutMs ?? ms),
   };
   vm.createContext(sandbox);
   vm.runInContext(swSource, sandbox);
@@ -106,7 +109,7 @@ test("offline navigation never serves a redirected cache entry (WebKit-fatal)", 
   );
 });
 
-test("offline navigation with a poisoned page entry still serves the /login shell", async () => {
+test("offline navigation with a poisoned page entry serves the offline screen, pointing to Today", async () => {
   const listeners = loadWorker({
     fetchImpl: offlineFetch,
     cacheEntries: {
@@ -116,7 +119,43 @@ test("offline navigation with a poisoned page entry still serves the /login shel
   });
   const res = await respondToNavigation(listeners, "/notes");
   assert.equal(res.redirected ?? false, false);
-  assert.equal(await res.text(), "<html>login shell</html>");
+  assert.equal(res.status, 503);
+  assert.match(await res.text(), /href="\/today"/);
+});
+
+test("offline, any /today link opens the saved Today", async () => {
+  const listeners = loadWorker({ fetchImpl: offlineFetch, cacheEntries: { "/today": cachedResponse("<html>today</html>") } });
+  const res = await respondToNavigation(listeners, "/today?focus=abc");
+  assert.equal(await res.text(), "<html>today</html>");
+});
+
+test("offline, the root sends you to the saved Today with a plain redirect", async () => {
+  const listeners = loadWorker({ fetchImpl: offlineFetch, cacheEntries: { "/today": cachedResponse("<html>today</html>") } });
+  const res = await respondToNavigation(listeners, "/");
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get("location"), "https://kanbai.test/today");
+  assert.equal(res.redirected, false);
+});
+
+test("a hanging network shows the saved page after the timeout", async () => {
+  const listeners = loadWorker({
+    fetchImpl: () => new Promise<Response>(() => {}), // lie-fi: never answers
+    cacheEntries: { "/today": cachedResponse("<html>saved today</html>") },
+    navTimeoutMs: 10,
+  });
+  const res = await respondToNavigation(listeners, "/today");
+  assert.equal(await res.text(), "<html>saved today</html>");
+});
+
+test("a slow network with nothing saved keeps waiting for the page", async () => {
+  const fresh = cachedResponse("<html>fresh</html>");
+  const listeners = loadWorker({
+    fetchImpl: () => new Promise<Response>((resolve) => setTimeout(() => resolve(fresh), 40)),
+    cacheEntries: {},
+    navTimeoutMs: 5,
+  });
+  const res = await respondToNavigation(listeners, "/boards");
+  assert.equal(res, fresh);
 });
 
 test("offline navigation serves a clean cached copy of the page", async () => {

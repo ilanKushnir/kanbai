@@ -74,9 +74,10 @@ test("service worker never caches or serves redirected responses", () => {
   assert.doesNotMatch(sw, /addAll/);
   assert.match(sw, /!res\.redirected/);
   // Auth-gated pages redirect to /login when logged out, so they must not be
-  // precached and "/" must not be the navigation fallback.
-  assert.doesNotMatch(sw, /caches\.match\("\/"\)/);
-  assert.match(sw, /caches\.match\("\/login"\)/);
+  // precached and "/" must not be the navigation fallback; offline, "/" leads
+  // to the saved Today via a plain (unfollowed) redirect instead.
+  assert.doesNotMatch(sw, /match\("\/"/);
+  assert.match(sw, /Response\.redirect\(new URL\("\/today"/);
   for (const path of sw.match(/const CORE = \[([^\]]*)\]/)![1].matchAll(/"([^"]+)"/g)) {
     assert.notEqual(path[1], "/", "CORE must not precache auth-redirecting pages");
   }

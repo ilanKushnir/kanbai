@@ -146,10 +146,10 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-10 md:px-8 md:pt-8">
-      <TodayHero period={period} greeting={greeting} dateLabel={dateLabel} summary={summaryLine(model.counts)} />
+      <TodayHero name={ctx.user.name} period={period} greeting={greeting} dateLabel={dateLabel} summary={summaryLine(model.counts)} />
 
       <div className="mt-6 grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <TodayView tickets={tickets} notes={todayNotes} boards={boards} dictationLanguage={dictationLanguage} focusId={sp.focus ?? null} compose={sp.compose === "1"} initialNow={now.toISOString()} />
+        <TodayView syncScope={`${ctx.user.id}:${ctx.workspace.id}`} tickets={tickets} notes={todayNotes} boards={boards} dictationLanguage={dictationLanguage} focusId={sp.focus ?? null} compose={sp.compose === "1"} initialNow={now.toISOString()} />
 
         <aside className="min-w-0 space-y-5 lg:pt-1">
           {/* Agent */}

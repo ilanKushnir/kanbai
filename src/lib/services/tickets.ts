@@ -253,6 +253,8 @@ async function assertActorMayAssignAgent(actor: Actor, agentId: string, ownerUse
 
 export async function createTicket(
   input: {
+    /** Client-generated id (offline outbox): a retry returns the existing ticket. */
+    id?: string;
     boardId: string;
     columnId?: string;
     /** Column by name (case-insensitive) — alias of columnName. */
@@ -277,6 +279,14 @@ export async function createTicket(
   actor: Actor,
 ) {
   const board = await boardCtx(input.boardId);
+  if (input.id) {
+    const existing = await db.ticket.findUnique({ include: ticketInclude, where: { id: input.id } });
+    if (existing) {
+      const mine = existing.boardId === board.id && actor.type === "user" && existing.createdById === actor.id;
+      if (!mine) throw new HttpError(409, "Id already in use");
+      return serializeTicketWithAssignee(existing);
+    }
+  }
   await onMutation(actor, board.workspaceId);
 
   let columnId = await resolveColumnRef(board.id, input);
@@ -326,6 +336,7 @@ export async function createTicket(
   });
 
   const baseData = {
+    ...(input.id ? { id: input.id } : {}),
     boardId: board.id,
     columnId,
     title: input.title,

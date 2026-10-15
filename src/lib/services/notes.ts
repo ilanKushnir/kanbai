@@ -199,9 +199,17 @@ export async function getNoteForAgent(noteId: string, agentId: string) {
 export async function createNote(
   userId: string,
   body: string,
-  opts?: { scheduledDay?: string | null; bucket?: string; priority?: string },
+  opts?: { scheduledDay?: string | null; bucket?: string; priority?: string; id?: string },
   actor?: Actor | null,
 ) {
+  if (opts?.id) {
+    // Idempotent retry: the same client id answers with the note already made.
+    const existing = await db.note.findUnique({ where: { id: opts.id }, include: noteInclude });
+    if (existing) {
+      if (existing.userId !== userId) throw new HttpError(409, "Id already in use");
+      return serializeNote(existing);
+    }
+  }
   // Prefer an explicit scheduledDay; fall back to mapping a legacy bucket
   // (computed against the workspace's calendar day, not the host's).
   const scheduledDay =
@@ -213,6 +221,7 @@ export async function createNote(
   });
   const note = await db.note.create({
     data: {
+      ...(opts?.id ? { id: opts.id } : {}),
       userId,
       body,
       scheduledDay,

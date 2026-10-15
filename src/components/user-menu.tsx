@@ -7,6 +7,7 @@ import { Check, LogOut, Settings, CircleUser, ShieldCheck, ChevronsUpDown, Build
 import { Avatar } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { api } from "@/lib/client-api";
+import { clearOfflineData } from "@/lib/offline/sync-store";
 import { cn } from "@/lib/utils";
 
 export type WorkspaceOption = { id: string; name: string; role: string; active: boolean };
@@ -64,6 +65,10 @@ export function UserMenu({
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+    // Nothing of this account stays on the device: saved Today data and the
+    // offline page cache (it holds rendered pages).
+    clearOfflineData();
+    await caches?.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith("kanbai-")).map((k) => caches.delete(k)))).catch(() => {});
     router.push("/login");
     router.refresh();
   }

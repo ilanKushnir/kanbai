@@ -38,6 +38,10 @@ calls them back.
 
 - Today list mixing notes and tickets, natural-language quick-add (EN/HE), undo
   on every completion, midnight rollover without a reload
+- **Works offline** as an installed app: Today opens from the device with what
+  was last loaded; completing, adding, rescheduling and deleting are queued
+  locally and synced in order when the connection returns (idempotent, so a
+  retry never duplicates). A small pill shows offline / syncing / synced
 - Drag-and-drop Kanban with optimistic updates (dnd-kit), keyboard & touch support
 - Secure agent API (`/api/v1`) with scoped, hashed **Bearer keys**
 - `GET /api/v1/today` — the whole day (overdue / today / tomorrow / upcoming,

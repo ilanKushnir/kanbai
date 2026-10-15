@@ -48,6 +48,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <ToastProvider>
       <AppShell
         boards={boards}
+        syncScope={`${ctx.user.id}:${ctx.workspace.id}`}
         userName={ctx.user.name}
         userEmail={ctx.user.email}
         userAvatarUrl={ctx.user.avatarUrl}

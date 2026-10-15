@@ -8,6 +8,9 @@ import { Logo } from "@/components/brand/Logo";
 import { SkeletonFor } from "@/components/route-skeletons";
 import { CommandPalette } from "@/components/command-palette";
 import { UserMenu, type WorkspaceOption } from "@/components/user-menu";
+import { SyncIndicator, useSyncSnapshot } from "@/components/sync-indicator";
+import * as sync from "@/lib/offline/sync-store";
+import { buildToday } from "@/lib/today-model";
 import { tone } from "@/components/ui/badge";
 import { POWERED_BY } from "@/lib/version";
 import { cn } from "@/lib/utils";
@@ -17,6 +20,7 @@ export type NavBoard = { id: string; name: string; slug: string; color: string }
 export function AppShell({
   children,
   boards,
+  syncScope,
   userName,
   userEmail,
   userAvatarUrl,
@@ -28,6 +32,8 @@ export function AppShell({
 }: {
   children: React.ReactNode;
   boards: NavBoard[];
+  /** Offline-sync partition: one per user and workspace. */
+  syncScope: string;
   userName: string;
   userEmail: string;
   userAvatarUrl?: string | null;
@@ -53,13 +59,24 @@ export function AppShell({
   const isActive = (href: string) => activePath === href || activePath.startsWith(href + "/");
   const [paletteOpen, setPaletteOpen] = React.useState(false);
 
+  // Offline sync runs app-wide, so edits queued on Today go up from any page.
+  React.useEffect(() => sync.startSync(syncScope), [syncScope]);
+  // The Today badge follows the device's copy (queued edits, offline launches).
+  const syncData = useSyncSnapshot().data;
+  const localTodayCount = React.useMemo(() => {
+    if (!syncData) return null;
+    const { counts } = buildToday({ tickets: syncData.tickets, notes: syncData.notes });
+    return counts.overdue + counts.today;
+  }, [syncData]);
+  const badgeCount = localTodayCount ?? todayCount;
+
   const NAV = React.useMemo(
     () => [
-      { href: "/today", label: "Today", icon: Sun, key: "today", badge: todayCount },
+      { href: "/today", label: "Today", icon: Sun, key: "today", badge: badgeCount },
       { href: "/boards", label: "Boards", icon: Columns3, key: "boards", badge: 0 },
       { href: "/agents", label: "Agents", icon: Sparkles, key: "agents", badge: 0, managerOnly: true },
     ],
-    [todayCount],
+    [badgeCount],
   );
   const desktopNav = NAV.filter((n) => !n.managerOnly || isManager);
   const mobileNav = [...desktopNav, { href: "/search", label: "Search", icon: Search, key: "search", badge: 0 }];
@@ -112,6 +129,7 @@ export function AppShell({
           <Link href="/today" className="flex items-center">
             <Logo />
           </Link>
+          <SyncIndicator className="ml-auto" />
         </div>
 
         <nav className="px-3 mt-1 space-y-0.5">
@@ -197,6 +215,7 @@ export function AppShell({
         <header className="md:hidden sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between border-b border-border bg-surface/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md">
           <Link href="/today"><Logo markClassName="h-7 w-7" /></Link>
           <div className="flex items-center gap-1.5">
+            <SyncIndicator />
             <UserMenu compact placement="down" {...userMenuProps} />
           </div>
         </header>

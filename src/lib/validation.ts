@@ -156,7 +156,15 @@ export const createMemberV1Schema = z.object({
   boardAccess: z.array(z.object({ boardId: z.string(), level: z.enum(["view", "edit"]) })).optional(),
 });
 
+/**
+ * A client-generated, cuid-shaped id for an idempotent create: the offline
+ * outbox may send the same create twice (response lost), and the server
+ * answers the retry with the row it already made.
+ */
+export const clientIdInput = z.string().regex(/^c[a-z0-9]{24}$/, "Invalid id");
+
 export const createTicketSchema = z.object({
+  id: clientIdInput.optional(),
   boardId: z.string().min(1),
   ...columnRefFields,
   title: z.string().trim().min(1).max(200),
@@ -282,6 +290,7 @@ export const reorderColumnsSchema = z.object({
 const dayString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const createNoteSchema = z.object({
+  id: clientIdInput.optional(),
   body: z.string().trim().min(1).max(10_000),
   scheduledDay: dayString.nullable().optional(),
   bucket: z.enum(NOTE_BUCKETS).optional(), // legacy fallback if scheduledDay omitted
