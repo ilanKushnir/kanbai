@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import Script from "next/script";
 import { Geist, Geist_Mono, Inter_Tight } from "next/font/google";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import "./globals.css";
@@ -42,13 +41,17 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-// Set the theme class before paint to avoid a flash.
+// Set the theme class before first paint (an inline <head> script runs while
+// the HTML is parsed — next/script's beforeInteractive waits for the runtime,
+// which let installed apps paint one frame in the wrong theme).
 const themeScript = `
 (function() {
   try {
     var t = localStorage.getItem('kanbai-theme');
     var d = t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (d) document.documentElement.classList.add('dark');
+    var r = document.documentElement;
+    r.classList.toggle('dark', d);
+    r.style.colorScheme = d ? 'dark' : 'light';
     var c = d ? '${CANVAS_DARK}' : '${CANVAS_LIGHT}';
     document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
       m.setAttribute('content', c);
@@ -65,10 +68,17 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       className={`${geistSans.variable} ${geistMono.variable} ${interTight.variable} h-full`}
       suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {/* The canvas colour before the stylesheet arrives, so a cold start never
+            shows a white (or black) frame in the other theme. */}
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `html{background:${CANVAS_LIGHT}}html.dark{background:${CANVAS_DARK}}`,
+          }}
+        />
+      </head>
       <body className="min-h-full">
-        <Script id="kanbai-theme-no-flash" strategy="beforeInteractive">
-          {themeScript}
-        </Script>
         {/* In the root layout (not the (app) group) so /login also installs the
             worker that recovers clients stuck on the Cloudflare-cached /sw.js. */}
         <ServiceWorkerRegister />

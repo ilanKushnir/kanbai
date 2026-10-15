@@ -674,8 +674,9 @@ function Section({
         <span className={cn("font-display text-[1.15rem] font-medium leading-none", SECTION_TONE[section.key])}>{section.label}</span>
         {section.sublabel && <span className="text-xs text-fg-subtle">{section.sublabel}</span>}
         <span
+          key={count}
           className={cn(
-            "ml-auto rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold",
+            "kb-count-pop ml-auto rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums",
             section.key === "overdue" && count > 0 ? "bg-danger text-white" : "bg-surface-2 text-fg-muted",
           )}
         >
@@ -719,6 +720,12 @@ function Section({
   );
 }
 
+/** Ids completed from a row this session — their row in "Done" lands with a small entrance. */
+const justCompleted = new Set<string>();
+/** Check fills + mark draws + ring, then the row folds away and moves to Done. */
+const COMPLETE_HOLD_MS = 480;
+const COMPLETE_FOLD_MS = 280;
+
 function Row({
   item,
   todayYmd,
@@ -746,7 +753,8 @@ function Row({
 }) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(item.title);
-  const [justDone, setJustDone] = React.useState(false);
+  const [phase, setPhase] = React.useState<"idle" | "completing" | "leaving">("idle");
+  const [landed] = React.useState(() => justCompleted.delete(item.id) && item.done);
   const pm = priorityMeta(item.priority);
   const isTicket = item.kind === "ticket";
   const ticket = isTicket ? item.ticket : null;
@@ -756,12 +764,31 @@ function Row({
   const extra = item.title.split("\n").length > 1;
   const dayMeta = item.day ? dayLabel(item.day, todayYmd) : null;
 
+  // A server echo or undo that flips the item back resets the choreography.
+  const [seenDone, setSeenDone] = React.useState(item.done);
+  if (seenDone !== item.done) {
+    setSeenDone(item.done);
+    setPhase("idle");
+  }
+
   function check() {
-    if (!item.done) {
-      setJustDone(true);
-      setTimeout(() => setJustDone(false), 400);
+    if (phase !== "idle") return;
+    if (item.done) {
+      onToggleDone(item);
+      return;
     }
-    onToggleDone(item);
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setPhase("completing");
+    try {
+      navigator.vibrate?.(8);
+    } catch {}
+    setTimeout(() => setPhase("leaving"), reduce ? 0 : COMPLETE_HOLD_MS);
+    setTimeout(() => {
+      justCompleted.add(item.id);
+      onToggleDone(item);
+    }, reduce ? 0 : COMPLETE_HOLD_MS + COMPLETE_FOLD_MS);
+    // If the row is still here (the write failed), bring it back.
+    setTimeout(() => setPhase("idle"), COMPLETE_HOLD_MS + COMPLETE_FOLD_MS + 1500);
   }
 
   const titleEl = editing && note ? (
@@ -795,7 +822,7 @@ function Row({
       dir="auto"
       title={item.title}
     >
-      {firstLine}
+      <span className="kb-strike">{firstLine}</span>
     </Link>
   ) : (
     <button
@@ -808,19 +835,21 @@ function Row({
       dir="auto"
       title={item.title}
     >
-      {firstLine}
+      <span className="kb-strike">{firstLine}</span>
       {extra && <span className="text-fg-subtle"> …</span>}
     </button>
   );
 
   return (
+    <div className={cn("kb-row-wrap", phase === "leaving" && "is-leaving")}>
     <div
       id={`task-${item.id}`}
       className={cn(
         "group flex items-start gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-surface-2/70",
         item.done && "kb-row-done",
         highlight && "bg-primary-soft/50",
-        justDone && "animate-row-done",
+        phase !== "idle" && "is-completing",
+        landed && "animate-row-in kb-row-landed",
       )}
     >
       <button
@@ -828,7 +857,7 @@ function Row({
         onClick={check}
         disabled={queued}
         aria-label={item.done ? "Mark not done" : "Mark done"}
-        data-checked={item.done}
+        data-checked={item.done || phase !== "idle"}
         className="kb-check mt-1 cursor-pointer disabled:opacity-40"
       >
         <Check className="h-3.5 w-3.5" strokeWidth={3} />
@@ -973,6 +1002,7 @@ function Row({
           )}
         </Menu>
       </div>
+    </div>
     </div>
   );
 }

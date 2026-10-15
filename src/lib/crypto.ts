@@ -22,6 +22,12 @@ export function hashApiKey(key: string) {
   return crypto.createHash("sha256").update(PEPPER + key).digest("hex");
 }
 
+/** A one-time connect code for the agent brief (redeemed for an API key). */
+export function generateConnectCode() {
+  const code = `kbc_${crypto.randomBytes(18).toString("base64url")}`;
+  return { code, hash: hashApiKey(code) };
+}
+
 export function randomId(prefix = "evt") {
   return `${prefix}_${crypto.randomBytes(12).toString("base64url")}`;
 }

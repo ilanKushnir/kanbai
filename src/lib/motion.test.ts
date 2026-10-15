@@ -34,8 +34,13 @@ test("task check gives tactile feedback and completed rows settle out through th
   const check = css.slice(css.indexOf(".kb-check {"), css.indexOf(".kb-row-done"));
   assert.match(check, /transform var\(--motion-fast\) var\(--ease-out-emph\)/);
   assert.match(check, /\.kb-check:active \{ transform: scale\(0\.9\); \}/);
-  assert.match(css, /\.animate-row-done \{ animation: row-done [\d.]+s var\(--ease-out-soft\)/);
-  assert.match(todayView, /justDone && "animate-row-done"/);
+  // Completing: check presses + draws, a ring breathes out, the title strikes, the row folds.
+  assert.match(css, /\.is-completing \.kb-check \{ animation: check-press [\d.]+s var\(--ease-out-emph\)/);
+  assert.match(css, /\.is-completing \.kb-check svg \{ animation: check-draw/);
+  assert.match(css, /\.is-completing \.kb-strike \{ background-size: 100% 1px; transition: background-size [\d.]+s var\(--ease-out-soft\)/);
+  assert.match(css, /\.kb-row-wrap \{ display: grid; grid-template-rows: 1fr; transition: grid-template-rows [\d.]+s var\(--ease-out-soft\)/);
+  assert.match(todayView, /phase !== "idle" && "is-completing"/);
+  assert.match(todayView, /phase === "leaving" && "is-leaving"/);
 });
 
 test("menus enter from the edge they open on", () => {

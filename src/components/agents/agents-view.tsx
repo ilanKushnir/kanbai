@@ -8,12 +8,13 @@ import {
   KeyRound,
   Copy,
   Check,
-  Download,
   RefreshCw,
   ShieldCheck,
   TriangleAlert,
   BookOpen,
   UserRound,
+  Link2,
+  PlugZap,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { api } from "@/lib/client-api";
 import { useToast } from "@/components/ui/toast";
 import { AGENT_KINDS, AGENT_META, ALL_SCOPES } from "@/lib/constants";
-import { APP_VERSION } from "@/lib/version";
+import { buildConnectBrief } from "@/lib/agent-connect";
 import { agentConnection } from "@/lib/agent-status";
 import { timeAgo, cn } from "@/lib/utils";
 import type { AgentFull } from "@/lib/types";
@@ -48,22 +49,6 @@ function useCopy() {
   return { copied, copy };
 }
 
-function CopyBtn({ value, className }: { value: string; className?: string }) {
-  const { copied, copy } = useCopy();
-  return (
-    <button
-      onClick={() => copy(value)}
-      className={cn(
-        "grid h-8 w-8 shrink-0 place-items-center rounded-lg text-fg-subtle hover:bg-surface-2 hover:text-fg transition-colors cursor-pointer",
-        className,
-      )}
-      aria-label="Copy"
-    >
-      {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
-    </button>
-  );
-}
-
 type WorkspaceMemberLite = { id: string; name: string; email: string; role: string };
 
 export function AgentsView({
@@ -83,6 +68,7 @@ export function AgentsView({
   const [agents, setAgents] = React.useState(initial);
   const [creating, setCreating] = React.useState(false);
   const [revealKey, setRevealKey] = React.useState<{ name: string; key: string } | null>(null);
+  const [connecting, setConnecting] = React.useState<ConnectState | null>(null);
   // null until mounted → SSR and first client render agree (no hydration mismatch)
   const [now, setNow] = React.useState<number | null>(null);
 
@@ -139,13 +125,13 @@ export function AgentsView({
       {/* How it works — three steps, no webhooks */}
       <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-3">
         <Step n={1} icon={Plus} title="Create">
-          Name it. Kanbai mints a key (shown once).
+          Name it and pick its type.
         </Step>
         <Step n={2} icon={BookOpen} title="Paste the brief">
-          Give the agent the brief: base URL, key, and the five calls that cover a day.
+          One message to your agent. It holds a one-time code, not a key — safe in any chat.
         </Step>
-        <Step n={3} icon={ShieldCheck} title="It calls /me">
-          The badge turns Active. From then on: GET /today in the morning, POST /tickets when you dictate.
+        <Step n={3} icon={PlugZap} title="It connects itself">
+          It trades the code for its key, installs the Kanbai skill and checks in. You’ll see it here.
         </Step>
       </div>
 
@@ -171,6 +157,7 @@ export function AgentsView({
               now={now}
               onUpdate={update}
               onRevealKey={(key) => setRevealKey({ name: a.name, key })}
+              onConnect={(connect) => setConnecting({ agent: a, ...connect })}
               onDeleted={() => setAgents((p) => p.filter((x) => x.id !== a.id))}
             />
           ))}
@@ -195,24 +182,35 @@ export function AgentsView({
 
       <div className="mt-6 flex items-center justify-center gap-1.5 text-sm text-fg-subtle">
         <BookOpen className="h-4 w-4" />
-        Full protocol in{" "}
-        <code className="rounded bg-surface-2 px-1.5 py-0.5 text-xs">docs/AGENT_PROTOCOL.md</code>
+        Full protocol:{" "}
+        <a href="/api/v1/skill.md" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-fg">
+          the Kanbai skill (SKILL.md)
+        </a>
       </div>
 
       {creating && (
         <CreateAgentModal
           onClose={() => setCreating(false)}
-          onCreated={(agent, key) => {
+          onCreated={(agent, connect) => {
             setAgents((p) => [...p, agent]);
             setCreating(false);
-            setRevealKey({ name: agent.name, key });
+            setConnecting({ agent, ...connect });
             router.refresh();
           }}
         />
       )}
 
       {revealKey && (
-        <KeyRevealModal name={revealKey.name} value={revealKey.key} onClose={() => setRevealKey(null)} />
+        <KeyRevealModal name={revealKey.name} value={revealKey.key} appUrl={appUrl} onClose={() => setRevealKey(null)} />
+      )}
+
+      {connecting && (
+        <ConnectModal
+          state={connecting}
+          appUrl={appUrl}
+          onConnected={(fresh) => update({ ...connecting.agent, ...fresh })}
+          onClose={() => setConnecting(null)}
+        />
       )}
     </div>
   );
@@ -249,6 +247,7 @@ function AgentCard({
   now,
   onUpdate,
   onRevealKey,
+  onConnect,
   onDeleted,
 }: {
   agent: AgentFull;
@@ -257,6 +256,7 @@ function AgentCard({
   now: number | null;
   onUpdate: (a: AgentFull) => void;
   onRevealKey: (key: string) => void;
+  onConnect: (connect: { code: string; expiresAt: string }) => void;
   onDeleted: () => void;
 }) {
   const router = useRouter();
@@ -288,6 +288,21 @@ function AgentCard({
       onRevealKey(apiKey);
       toast({ title: "New API key generated", description: "The old key no longer works.", variant: "success" });
       router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function connect() {
+    setBusy("connect");
+    try {
+      const { connect } = await api<{ connect: { code: string; expiresAt: string } }>(
+        `/api/agents/${agent.id}/connect`,
+        { method: "POST" },
+      );
+      onConnect(connect);
+    } catch (e) {
+      toast({ title: "Couldn't create a brief", description: e instanceof Error ? e.message : undefined, variant: "error" });
     } finally {
       setBusy(null);
     }
@@ -329,6 +344,9 @@ function AgentCard({
             </span>
           </div>
         </div>
+        <Button size="sm" variant={agent.lastSeenAt ? "outline" : "primary"} onClick={connect} disabled={busy === "connect" || disabled}>
+          <Link2 className="h-3.5 w-3.5" /> {agent.lastSeenAt ? "Reconnect" : "Connect"}
+        </Button>
         <Menu
           align="end"
           trigger={
@@ -353,7 +371,7 @@ function AgentCard({
                   rotateKey();
                 }}
               >
-                Rotate API key
+                Show a new API key (manual setup)
               </MenuItem>
               <MenuItem
                 className="text-danger hover:bg-danger-soft"
@@ -483,7 +501,7 @@ function CreateAgentModal({
   onCreated,
 }: {
   onClose: () => void;
-  onCreated: (agent: AgentFull, key: string) => void;
+  onCreated: (agent: AgentFull, connect: { code: string; expiresAt: string }) => void;
 }) {
   const { toast } = useToast();
   const [name, setName] = React.useState("");
@@ -494,11 +512,11 @@ function CreateAgentModal({
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const { agent, apiKey } = await api<{ agent: AgentFull; apiKey: string }>("/api/agents", {
-        body: { name: name.trim(), kind, color: AGENT_META[kind as keyof typeof AGENT_META]?.color },
-      });
-      toast({ title: `${agent.name} connected`, variant: "success" });
-      onCreated(agent, apiKey);
+      const { agent, connect } = await api<{ agent: AgentFull; connect: { code: string; expiresAt: string } }>(
+        "/api/agents",
+        { body: { name: name.trim(), kind, color: AGENT_META[kind as keyof typeof AGENT_META]?.color } },
+      );
+      onCreated(agent, connect);
     } catch (e) {
       toast({ title: "Couldn't create agent", description: e instanceof Error ? e.message : undefined, variant: "error" });
       setBusy(false);
@@ -556,128 +574,136 @@ function CreateAgentModal({
   );
 }
 
-/** A copy-paste integration brief: API key + base URL + how to drive Kanbai with full control. */
-function buildAgentBrief(name: string, key: string, origin: string) {
-  const base = `${origin || "https://your-kanbai.app"}/api/v1`;
-  return `# Kanbai integration — ${name}
+type ConnectState = { agent: AgentFull; code: string; expiresAt: string };
 
-You are connected to Kanbai (a Kanban board system), v${APP_VERSION}, as the agent "${name}".
-This key grants FULL control of this workspace: boards, tickets, the capture
-inbox, comments, and members. Authenticate every request with the key below.
-Everything is pull-based REST — Kanbai never calls you back; read GET /today
-when you need the day's state.
+const noopSubscribe = () => () => {};
 
-## Credentials (store securely — the key is shown only once)
-Base URL:   ${base}
-Auth:       Authorization: Bearer ${key}
-API key:    ${key}
-> Kanbai and its agents run locally/on the same network — prefer the internal/LAN
-> base URL (e.g. http://<kanbai-lan-ip>:3000/api/v1) over a public hostname.
-
-## Verify the connection
-curl ${base}/me -H "Authorization: Bearer ${key}"
-(returns service name + version, apiVersion, your scopes, capabilities, a "quickstart"
-list of curl calls, and a "conventions" block describing the description format,
-allowed HTML tags, priorities, dueDate formats and timezone — read it first.)
-
-## What you can do
-- Today:    GET ${base}/today  (overdue / today / tomorrow / upcoming / inbox — in one call)
-- Boards:   GET ${base}/boards  ·  GET ${base}/boards/{id}  ·  POST ${base}/boards
-- Tickets:  GET ${base}/tickets?due=today  ·  POST ${base}/tickets  ·  PATCH ${base}/tickets/{id}  ·  POST ${base}/tickets/{id}/move {"stage":"done"}
-- Comment:  POST ${base}/tickets/{id}/comments
-- Inbox:    GET ${base}/inbox  →  POST ${base}/inbox/{noteId}/sort   (turn captured notes into tickets)
-- Notes:    GET ${base}/notes  ·  POST ${base}/notes  ·  POST ${base}/notes/{id}/queue
-- Members:  GET ${base}/members  ·  POST ${base}/members
-
-## Create a ticket
-curl -X POST ${base}/tickets \\
-  -H "Authorization: Bearer ${key}" -H "content-type: application/json" \\
-  -d '{"boardId":"<id>","title":"Investigate flaky retries","columnName":"To Do","priority":"high","labelNames":["bug"],"description":"<p>Intermittent 500s on retry.</p><ul><li>Check backoff</li><li>Add a test</li></ul>"}'
-
-## Process the capture inbox
-Inbox notes carry the user's text plus hints: scheduledDay (the local "YYYY-MM-DD" the note is
-slated for, or null), bucket (a coarse today/tomorrow/next_week/next_month/general derived from it),
-priority, and suggestedDueDate. When filing a note into a ticket:
-- Set the ticket's priority to the note's "priority".
-- Set dueDate from any date the NOTE TEXT mentions (e.g. "by Thursday", "before the 5th"); if it
-  mentions none, fall back to "suggestedDueDate" (it reflects scheduledDay; it is null when unscheduled,
-  so leave the ticket with no due date then).
-  POST ${base}/inbox/{noteId}/sort {"boardId":"<id>","title":"...","priority":"...","dueDate":"<ISO or null>"}
-
-
-Ticket descriptions are SIMPLE HTML — use <p> <b> <i> <u> <h3> <ul>/<ol>/<li> <blockquote> <a>.
-It is sanitized server-side (anything else is stripped); plain text is fine too. Not Markdown.
-Priorities: none | low | medium | high | urgent.
-
-## Security
-Store the API key securely; do not paste it into public logs or shared chats. Rotate it from
-Agents → Rotate API key if it leaks. Full protocol: docs/AGENT_PROTOCOL.md.`;
+/** Origin to put in briefs: the configured public URL, else this browser's. */
+function useOrigin(appUrl: string) {
+  const browserOrigin = React.useSyncExternalStore(noopSubscribe, () => window.location.origin, () => "");
+  return appUrl.replace(/\/+$/, "") || browserOrigin;
 }
 
-function KeyRevealModal({ name, value, onClose }: { name: string; value: string; onClose: () => void }) {
-  const keyCopy = useCopy();
+/**
+ * The connect brief: one message for the agent. Watches the agent until it
+ * redeems the code, then flips to a "connected" state.
+ */
+function ConnectModal({
+  state,
+  appUrl,
+  onConnected,
+  onClose,
+}: {
+  state: ConnectState;
+  appUrl: string;
+  onConnected: (fresh: Partial<AgentFull>) => void;
+  onClose: () => void;
+}) {
   const briefCopy = useCopy();
-  const [origin, setOrigin] = React.useState("");
-  React.useEffect(() => {
-    if (typeof window !== "undefined") setOrigin(window.location.origin);
-  }, []);
-  const brief = buildAgentBrief(name, value, origin);
+  const origin = useOrigin(appUrl);
+  const { agent, code, expiresAt } = state;
+  const brief = buildConnectBrief({ name: agent.name, code, origin, expiresAt });
+  const [connected, setConnected] = React.useState(false);
+  const baseline = React.useRef(agent.apiKeyLast4);
+  const reportConnected = React.useEffectEvent((fresh: AgentFull) => onConnected(fresh));
 
-  function downloadBrief() {
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "agent";
-    const blob = new Blob([brief], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `kanbai-brief-${slug}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  // Poll until the key changes — that only happens when the code is redeemed.
+  React.useEffect(() => {
+    if (connected) return;
+    const t = setInterval(async () => {
+      try {
+        const { agents } = await api<{ agents: AgentFull[] }>("/api/agents");
+        const fresh = agents.find((a) => a.id === agent.id);
+        if (fresh && fresh.apiKeyLast4 && fresh.apiKeyLast4 !== baseline.current) {
+          setConnected(true);
+          reportConnected(fresh);
+        }
+      } catch {
+        /* transient */
+      }
+    }, 2500);
+    return () => clearInterval(t);
+  }, [agent.id, connected]);
 
   return (
-    <Modal open onClose={onClose} title={`Connect ${name}`} size="lg">
+    <Modal open onClose={onClose} title={`Connect ${agent.name}`} size="lg">
+      {connected ? (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <span className="kb-connected grid h-16 w-16 place-items-center rounded-full bg-primary text-primary-fg">
+            <Check className="h-8 w-8" strokeWidth={2.5} />
+          </span>
+          <div className="animate-slide-up-fade [animation-delay:200ms]">
+            <div className="font-display text-xl">{agent.name} is connected</div>
+            <p className="mt-1 text-sm text-fg-muted">It has its key and the Kanbai skill. Its actions show up on this page.</p>
+          </div>
+          <Button variant="primary" className="mt-2 animate-slide-up-fade [animation-delay:320ms]" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-fg-muted">
+            Paste this into your chat with {agent.name}. It contains a one-time code, not the key — the agent trades it
+            for its own key and sets itself up. Nothing to configure on your side.
+          </p>
+          <div className="relative">
+            <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-surface-2 p-3 text-xs leading-relaxed whitespace-pre-wrap break-words">
+{brief}
+            </pre>
+          </div>
+          <Button variant="primary" size="lg" className="w-full" onClick={() => briefCopy.copy(brief)}>
+            {briefCopy.copied ? (
+              <><Check className="h-4 w-4 animate-icon-pop" /> Copied — now paste it to {agent.name}</>
+            ) : (
+              <><Copy className="h-4 w-4" /> Copy brief</>
+            )}
+          </Button>
+          <div className="flex items-center justify-center gap-2 pt-1 text-xs text-fg-subtle">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+            </span>
+            Waiting for {agent.name} to connect… (code valid 24 h)
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/** Manual setup: a raw key for agents that can't run the connect step. */
+function KeyRevealModal({
+  name,
+  value,
+  appUrl,
+  onClose,
+}: {
+  name: string;
+  value: string;
+  appUrl: string;
+  onClose: () => void;
+}) {
+  const keyCopy = useCopy();
+  const origin = useOrigin(appUrl);
+  return (
+    <Modal open onClose={onClose} title={`API key for ${name}`} size="md">
       <div className="space-y-3">
         <div className="flex items-start gap-2 rounded-xl bg-warning-soft px-3 py-2 text-sm text-fg">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-          <span>Copy this now — the key is shown only once and can’t be retrieved later.</span>
+          <span>Shown once. The previous key has stopped working. Prefer “Connect” — it needs no key handling.</span>
         </div>
-
-        <div>
-          <div className="mb-1.5 text-xs font-medium text-fg-muted">API key</div>
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 p-2">
-            <code className="flex-1 break-all font-mono text-sm">{value}</code>
-            <Button variant="secondary" size="sm" onClick={() => keyCopy.copy(value)}>
-              {keyCopy.copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            </Button>
-          </div>
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 p-2">
+          <code className="flex-1 break-all font-mono text-sm">{value}</code>
+          <Button variant="secondary" size="sm" onClick={() => keyCopy.copy(value)}>
+            {keyCopy.copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          </Button>
         </div>
-
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-xs font-medium text-fg-muted">
-              Agent brief — paste this to the agent to integrate (full control)
-            </span>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={downloadBrief}>
-                <Download className="h-4 w-4" /> Download
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => briefCopy.copy(brief)}>
-                {briefCopy.copied ? (
-                  <><Check className="h-4 w-4" /> Copied</>
-                ) : (
-                  <><Copy className="h-4 w-4" /> Copy brief</>
-                )}
-              </Button>
-            </div>
-          </div>
-          <pre className="max-h-72 overflow-auto rounded-xl border border-border bg-surface-2 p-3 text-xs leading-relaxed whitespace-pre-wrap break-words">
-{brief}
-          </pre>
+        <div className="text-xs text-fg-muted">
+          Base URL <code className="rounded bg-surface-2 px-1.5 py-0.5">{origin}/api/v1</code> · skill{" "}
+          <a className="underline underline-offset-2" href="/api/v1/skill.md" target="_blank" rel="noreferrer">
+            {origin}/api/v1/skill.md
+          </a>
         </div>
-
-        <Button variant="primary" className="w-full" onClick={() => briefCopy.copy(brief)}>
-          <Copy className="h-4 w-4" /> Copy agent brief
-        </Button>
       </div>
     </Modal>
   );

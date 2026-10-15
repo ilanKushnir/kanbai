@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Sun, Columns3, Sparkles, Plus, Search, Settings } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
+import { SkeletonFor } from "@/components/route-skeletons";
 import { CommandPalette } from "@/components/command-palette";
 import { UserMenu, type WorkspaceOption } from "@/components/user-menu";
 import { tone } from "@/components/ui/badge";
@@ -42,6 +43,12 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const [optimisticPath, setOptimisticPath] = React.useState<string | null>(null);
+  // Any landed navigation (tab or not) settles the optimistic tab.
+  const [seenPath, setSeenPath] = React.useState(pathname);
+  if (seenPath !== pathname) {
+    setSeenPath(pathname);
+    setOptimisticPath(null);
+  }
   const activePath = optimisticPath && optimisticPath !== pathname ? optimisticPath : pathname;
   const isActive = (href: string) => activePath === href || activePath.startsWith(href + "/");
   const [paletteOpen, setPaletteOpen] = React.useState(false);
@@ -56,11 +63,28 @@ export function AppShell({
   );
   const desktopNav = NAV.filter((n) => !n.managerOnly || isManager);
   const mobileNav = [...desktopNav, { href: "/search", label: "Search", icon: Search, key: "search", badge: 0 }];
+  const activeTab = mobileNav.findIndex((n) => isActive(n.href));
 
+  // Keep every tab prefetched — on load and whenever the installed app comes
+  // back to the foreground (a resumed PWA otherwise starts with a cold cache).
   React.useEffect(() => {
-    for (const item of mobileNav) router.prefetch(item.href);
+    const warm = () => {
+      if (document.visibilityState === "visible") for (const item of mobileNav) router.prefetch(item.href);
+    };
+    warm();
+    document.addEventListener("visibilitychange", warm);
+    return () => document.removeEventListener("visibilitychange", warm);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
+
+  // A tapped tab whose page hasn't arrived yet. Its skeleton covers the old
+  // page right away (fading in after a beat, so fast switches never flash it).
+  const pendingHref = optimisticPath && optimisticPath !== pathname && mobileNav.some((n) => n.href === optimisticPath) ? optimisticPath : null;
+  React.useEffect(() => {
+    if (!pendingHref) return;
+    const t = setTimeout(() => setOptimisticPath(null), 10_000); // give up on a navigation that never lands
+    return () => clearTimeout(t);
+  }, [pendingHref]);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -81,7 +105,7 @@ export function AppShell({
   }, [paletteOpen]);
 
   return (
-    <div className="flex h-dvh min-h-dvh overflow-hidden bg-bg">
+    <div className="kb-app flex h-dvh overflow-hidden bg-bg">
       {/* ── Desktop sidebar ───────────────────────────── */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-surface">
         <div className="px-4 h-16 flex items-center">
@@ -177,12 +201,31 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y pb-[calc(5rem+env(safe-area-inset-bottom))] scroll-pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0 md:scroll-pb-0">{children}</main>
-      </div>
+        <div className="relative flex-1 min-h-0 min-w-0">
+          <main className="h-full overflow-y-auto overscroll-contain touch-pan-y">{children}</main>
+          {pendingHref && (
+            <div key={pendingHref} className="kb-pending absolute inset-0 overflow-hidden bg-bg" aria-hidden>
+              <SkeletonFor href={pendingHref} />
+            </div>
+          )}
+        </div>
 
       {/* ── Mobile bottom nav ───────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border bg-surface/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
-        <div className="grid" style={{ gridTemplateColumns: `repeat(${mobileNav.length}, minmax(0, 1fr))` }}>
+      {/* In the layout flow (not position:fixed) so it sits on the real bottom
+          edge even where iOS standalone mis-sizes the fixed viewport. */}
+      <nav className="kb-tabbar md:hidden shrink-0 z-30 border-t border-border bg-surface">
+        <div className="relative grid" style={{ gridTemplateColumns: `repeat(${mobileNav.length}, minmax(0, 1fr))` }}>
+          {/* One pill that glides to the active tab. */}
+          {activeTab >= 0 && (
+            <span
+              aria-hidden
+              className="kb-tab-pill pointer-events-none absolute top-1.5 h-8 rounded-full bg-primary-soft"
+              style={{
+                width: `calc(100% / ${mobileNav.length} - 1.75rem)`,
+                left: `calc(100% / ${mobileNav.length} * ${activeTab} + 0.875rem)`,
+              }}
+            />
+          )}
           {mobileNav.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -191,14 +234,17 @@ export function AppShell({
                 key={item.key}
                 href={item.href}
                 className={cn(
-                  "relative flex flex-col items-center gap-0.5 py-2 text-[0.625rem] font-medium transition-colors",
+                  "kb-tab relative flex flex-col items-center gap-0.5 pt-1.5 pb-1 text-[0.625rem] font-medium transition-colors duration-150",
                   active ? "text-primary" : "text-fg-subtle",
                 )}
+                // Light the tab on touch, not after the route resolves.
+                onPointerDown={() => setOptimisticPath(item.href)}
+                onPointerCancel={() => setOptimisticPath(null)}
                 onClick={() => setOptimisticPath(item.href)}
               >
-                <span className={cn("relative grid place-items-center rounded-full px-4 py-1 transition-colors", active && "bg-primary-soft")}>
+                <span className="relative grid h-8 place-items-center px-4">
                   <span className="relative">
-                    <Icon className="h-5 w-5" />
+                    <Icon className={cn("h-5 w-5 transition-transform duration-200", active && "kb-tab-icon-active")} />
                     {item.badge > 0 && (
                       <span className="absolute -right-2 -top-1 rounded-full bg-accent px-1 text-[0.5625rem] font-semibold text-accent-fg leading-tight">
                         {item.badge}
@@ -213,6 +259,7 @@ export function AppShell({
           })}
         </div>
       </nav>
+      </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} boards={boards} />
     </div>

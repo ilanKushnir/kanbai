@@ -343,6 +343,13 @@ model Agent {
   apiKeyPrefix String?  // e.g. "kbai_live_a1b2" for display
   apiKeyLast4  String?
 
+  // One-time connect code (the agent brief carries it instead of the key).
+  // Redeeming it at POST /api/v1/connect mints a fresh key and returns it to
+  // the agent directly, so the key itself never passes through a chat.
+  connectCodeHash      String?   @unique
+  connectCodeExpiresAt DateTime?
+  connectRedeemedAt    DateTime?
+
   scopes    String   @default("boards:read,boards:write,tickets:read,tickets:write,inbox:read,inbox:write,notes:read,notes:write")
   lastSeenAt DateTime?
   createdAt DateTime @default(now())

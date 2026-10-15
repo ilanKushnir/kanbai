@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { applyTheme } from "@/components/theme-toggle";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
@@ -96,15 +97,7 @@ export function CommandPalette({
   );
 
   function toggleTheme() {
-    const dark = !document.documentElement.classList.contains("dark");
-    document.documentElement.classList.toggle("dark", dark);
-    // Keep the PWA status bar in sync with the in-app theme (matches layout.tsx viewport colors).
-    document
-      .querySelectorAll('meta[name="theme-color"]')
-      .forEach((m) => m.setAttribute("content", dark ? "#000000" : "#f2f2f2"));
-    try {
-      localStorage.setItem("kanbai-theme", dark ? "dark" : "light");
-    } catch {}
+    applyTheme(!document.documentElement.classList.contains("dark"));
   }
 
   const items: Item[] = React.useMemo(() => {

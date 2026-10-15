@@ -28,7 +28,7 @@ calls them back.
   (Ideas / Backlog / In Work / Done), drag-and-drop, sub-states, WIP limits,
   labels, priorities, due dates, subtasks, comments, a week view, cover art,
   public read-only links.
-- **✨ Agents** — mint a key, paste the brief, done. `GET /api/v1/today` gives
+- **✨ Agents** — paste one brief into your agent's chat; it connects itself. `GET /api/v1/today` gives
   the whole day in one call; `POST /tickets`, `/move {"stage":"done"}`,
   `/comments` do the rest. No webhooks, no signing secrets. An activity feed
   shows every agent action, and every write is undoable (snapshots, 30-day
@@ -148,9 +148,13 @@ just open the app; you'll be sent to `/signup` to create your admin account.
 
 ## Connecting an agent
 
-1. Go to **Agents → Add agent**, pick an owner (whose boards it may touch).
-2. Copy the API key (shown once) and the agent brief.
-3. The agent calls `GET /api/v1/me` — the badge turns **Active**. Done.
+1. Go to **Agents → Add agent** and copy the **connect brief**.
+2. Paste it into your agent's chat. It holds a one-time code (not the key), so
+   it is safe in any chat: the agent trades it at `POST /api/v1/connect` for its
+   own key, stores it, and installs the skill from `/api/v1/skill.md`
+   (Hermes: `hermes skills install <url>`).
+3. The Agents page flips to **Connected**. Done. Running Kanbai behind a CDN?
+   Set `KANBAI_AGENT_URL` to a LAN origin so agents skip its bot filters.
 
 Full spec and a daily playbook: **[docs/AGENT_PROTOCOL.md](./docs/AGENT_PROTOCOL.md)**.
 

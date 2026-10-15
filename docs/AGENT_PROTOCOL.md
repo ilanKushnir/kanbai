@@ -14,8 +14,24 @@ usual statuses (400 bad JSON · 401 bad key · 403 disabled/missing scope ·
 ## 1. Auth and `/me`
 
 ```
-Authorization: Bearer kbai_live_…        # created in Agents → Add agent (shown once)
+Authorization: Bearer kbai_live_…
 ```
+
+**Getting the key.** The owner pastes a *connect brief* (Agents → Connect) into
+the agent's chat. It carries a one-time code, never the key:
+
+```
+POST /connect  { "code": "kbc_…" }      (no auth — the code is the credential)
+→ { apiKey, baseUrl, publicBaseUrl, skillUrl, agent, storeAs, next }
+```
+
+Store `apiKey` and `baseUrl` (as `KANBAI_API_KEY` / `KANBAI_URL`) in your secret
+store straight from the response. Codes live 24 h and die 10 minutes after the
+first redemption; every redemption mints a new key (keep the last). The current
+key keeps working until a code is redeemed. `baseUrl` may be a direct/LAN origin
+(`KANBAI_AGENT_URL`); `publicBaseUrl` is the public one — send a normal
+`User-Agent` there, CDN bot filters answer bare clients with 403 "error 1010".
+This document is also served as an installable skill at `GET /skill.md`.
 
 Scopes: `boards:read|write`, `tickets:read|write`, `inbox:read|write`,
 `notes:read|write`, `comments:write`, `members:read|write`. New agents get all.

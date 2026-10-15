@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { HttpError } from "@/lib/api";
-import { generateApiKey } from "@/lib/crypto";
+import { generateApiKey, generateConnectCode, hashApiKey } from "@/lib/crypto";
 import { ALL_SCOPES } from "@/lib/constants";
 
 export function serializeAgent(a: {
@@ -52,15 +52,78 @@ export async function createAgent(
       scopes: ALL_SCOPES.join(","),
     },
   });
-  // Return the plaintext key exactly once.
-  return { agent: serializeAgent(agent), apiKey: key.key };
+  const connect = await issueConnectCode(agent.id);
+  // Return the plaintext key exactly once (manual setups); the brief uses `connect`.
+  return { agent: serializeAgent(agent), apiKey: key.key, connect };
+}
+
+/** How long a connect code stays redeemable after it is issued. */
+export const CONNECT_CODE_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * After the first redemption the same code keeps working this long, so an
+ * agent whose first attempt crashed before it stored the key can simply retry.
+ * Every redemption mints a new key, so only the last one an agent receives works.
+ */
+export const CONNECT_RETRY_GRACE_MS = 10 * 60 * 1000;
+
+/**
+ * Issue a fresh one-time connect code for an agent (replacing any earlier one).
+ * The agent's current key keeps working until the code is redeemed, so handing
+ * out a new brief never breaks a running integration.
+ */
+export async function issueConnectCode(agentId: string, now = new Date()) {
+  const { code, hash } = generateConnectCode();
+  const expiresAt = new Date(now.getTime() + CONNECT_CODE_TTL_MS);
+  await db.agent.update({
+    where: { id: agentId },
+    data: { connectCodeHash: hash, connectCodeExpiresAt: expiresAt, connectRedeemedAt: null },
+  });
+  return { code, expiresAt: expiresAt.toISOString() };
+}
+
+/**
+ * Redeem a connect code: mint a new API key for the agent and return it.
+ * Throws 401 for unknown/expired/spent codes and 403 for a disabled agent.
+ */
+export async function redeemConnectCode(code: string, now = new Date()) {
+  const agent = code ? await db.agent.findUnique({ where: { connectCodeHash: hashApiKey(code.trim()) } }) : null;
+  if (!agent || !agent.connectCodeExpiresAt) {
+    throw new HttpError(401, "Unknown connect code. Ask the owner for a fresh brief (Agents → Connect).", "invalid_code");
+  }
+  const spent =
+    agent.connectRedeemedAt && now.getTime() - agent.connectRedeemedAt.getTime() > CONNECT_RETRY_GRACE_MS;
+  if (spent || agent.connectCodeExpiresAt.getTime() < now.getTime()) {
+    throw new HttpError(401, "This connect code has expired. Ask the owner for a fresh brief (Agents → Connect).", "code_expired");
+  }
+  if (agent.status !== "active") throw new HttpError(403, "This agent is disabled.", "agent_disabled");
+
+  const key = generateApiKey();
+  const updated = await db.agent.update({
+    where: { id: agent.id },
+    data: {
+      apiKeyHash: key.hash,
+      apiKeyPrefix: key.prefix,
+      apiKeyLast4: key.last4,
+      connectRedeemedAt: agent.connectRedeemedAt ?? now,
+      lastSeenAt: now,
+    },
+  });
+  return { agent: updated, apiKey: key.key };
 }
 
 export async function rotateApiKey(agentId: string) {
   const key = generateApiKey();
   await db.agent.update({
     where: { id: agentId },
-    data: { apiKeyHash: key.hash, apiKeyPrefix: key.prefix, apiKeyLast4: key.last4 },
+    // A manual rotation also voids any outstanding connect code.
+    data: {
+      apiKeyHash: key.hash,
+      apiKeyPrefix: key.prefix,
+      apiKeyLast4: key.last4,
+      connectCodeHash: null,
+      connectCodeExpiresAt: null,
+      connectRedeemedAt: null,
+    },
   });
   return { apiKey: key.key };
 }

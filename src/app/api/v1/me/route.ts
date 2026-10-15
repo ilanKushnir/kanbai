@@ -7,19 +7,23 @@ import { COLUMN_STAGES, STAGE_META } from "@/lib/column-stage";
 import { APP_VERSION } from "@/lib/version";
 import { workspaceTz } from "@/lib/tz";
 import { buildQuickstart } from "@/lib/quickstart";
+import { agentBaseUrls } from "@/lib/agent-connect";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handler(async (req: Request) => {
   const agent = await requireAgent(req);
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-  const baseUrl = appUrl ? `${appUrl}/api/${API_VERSION}` : null;
+  const urls = agentBaseUrls(req);
+  const baseUrl = urls.baseUrl || null;
   return ok({
     // App/service identity + API version so agents can adapt without guessing.
     service: { name: SERVICE_NAME, version: APP_VERSION },
     apiVersion: API_VERSION,
     // Preferred base URL for all agent calls (internal/LAN URL when deployed locally).
     baseUrl,
+    publicBaseUrl: urls.publicBaseUrl || null,
+    // The installable skill (SKILL.md) — re-fetch when service.version changes.
+    skillUrl: urls.skillUrl || null,
     agent: serializeAgentPublic(agent),
     workspaceId: agent.workspaceId,
     // The user this agent acts for (caps board/note access); null = workspace-wide.
