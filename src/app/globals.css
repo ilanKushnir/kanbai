@@ -446,33 +446,58 @@ body {
 }
 
 /* ── Hero art (Today, login, board covers) ───────────────────────────────────
-   Every illustration is white paper on black, so the hero is a black slab in
-   both themes: in dark it melts into the canvas, in light it sits on the page
-   like the mark itself. The gradient only deepens the black under the text. */
+   Every illustration comes in two takes (see ThemedArt): white paper on black
+   for dark, white paper on light paper for light. In both themes the hero
+   melts into the canvas at its foot, so the greeting sits on the page itself
+   rather than on a slab. */
+.kb-art-dark { display: none; }
+.dark .kb-art-dark { display: block; }
+.dark .kb-art-light { display: none; }
+
 .kb-hero {
   position: relative;
   overflow: hidden;
   isolation: isolate;
-  background: #000;
-  color: #fff;
+  background: var(--color-bg);
+  color: var(--color-fg);
 }
 .kb-hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .kb-hero::after {
   content: "";
   position: absolute;
   inset: 0;
+  background: linear-gradient(180deg, transparent 62%, var(--color-bg) 100%);
+  pointer-events: none;
+}
+/* White-on-white paper needs a touch more bite at phone crop sizes. */
+.kb-hero .kb-art-light { filter: contrast(1.12); }
+.dark .kb-hero { background: #000; color: #fff; }
+.dark .kb-hero::after {
   background:
     linear-gradient(180deg, transparent 30%, rgb(0 0 0 / 0.85) 100%),
     linear-gradient(90deg, rgb(0 0 0 / 0.45), transparent 55%);
-  pointer-events: none;
 }
-.kb-cover { background: #000; }
-.kb-cover::after {
+
+.kb-cover { background: var(--color-surface-2); }
+.dark .kb-cover { background: #000; }
+.dark .kb-cover::after {
   content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, transparent 55%, rgb(0 0 0 / 0.45) 100%);
   pointer-events: none;
+}
+
+/* Login art: fades into the form side in either theme. */
+.kb-auth-art { background: var(--color-bg); }
+.dark .kb-auth-art { background: #000; }
+.kb-auth-art-fade { background: linear-gradient(0deg, var(--color-bg), transparent 45%); }
+@media (min-width: 768px) {
+  .kb-auth-art-fade { background: linear-gradient(90deg, transparent 60%, color-mix(in oklab, var(--color-bg) 70%, transparent)); }
+}
+.dark .kb-auth-art-fade { background: linear-gradient(0deg, rgb(0 0 0 / 0.7), transparent 60%); }
+@media (min-width: 768px) {
+  .dark .kb-auth-art-fade { background: linear-gradient(90deg, transparent, rgb(0 0 0 / 0.6)); }
 }
 
 /* Quick-add bar: a writing well that looks like paper, not a form field. */

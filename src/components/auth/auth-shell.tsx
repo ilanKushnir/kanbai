@@ -1,5 +1,5 @@
 import * as React from "react";
-import Image from "next/image";
+import { ThemedArt } from "@/components/ui/themed-art";
 import { Logo } from "@/components/brand/Logo";
 import { POWERED_BY } from "@/lib/version";
 
@@ -21,9 +21,9 @@ export function AuthShell({
   return (
     <div className="kb-paper relative flex min-h-dvh flex-col md:flex-row">
       {/* Art */}
-      <div className="relative h-56 w-full shrink-0 overflow-hidden bg-black md:h-auto md:w-[46%] md:max-w-[640px]">
-        <Image src="/art/login.webp" alt="" fill priority sizes="(min-width: 768px) 46vw, 100vw" className="animate-hero-in object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-black/60" aria-hidden />
+      <div className="kb-auth-art relative h-56 w-full shrink-0 overflow-hidden md:h-auto md:w-[46%] md:max-w-[640px]">
+        <ThemedArt name="login" sizes="(min-width: 768px) 46vw, 100vw" className="animate-hero-in object-cover" />
+        <div className="kb-auth-art-fade absolute inset-0" aria-hidden />
       </div>
 
       {/* Form */}

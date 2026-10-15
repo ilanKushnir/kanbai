@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import Image from "next/image";
+import { ThemedArt } from "@/components/ui/themed-art";
 import { Sparkles, Sun, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
@@ -90,7 +90,7 @@ export default async function BoardsPage({
       ) : cards.length === 0 ? (
         <div className="mt-6 grid gap-6 overflow-hidden rounded-2xl border border-border bg-surface md:grid-cols-[18rem_1fr]">
           <div className="relative h-48 md:h-auto">
-            <Image src="/art/empty-board.webp" alt="" fill sizes="(min-width: 768px) 288px, 100vw" className="object-cover" />
+            <ThemedArt name="empty-board" sizes="(min-width: 768px) 288px, 100vw" className="object-cover" />
           </div>
           <div className="p-6 md:py-8">
             <h2 className="font-display text-2xl font-medium">Your first board</h2>

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { ThemedArt } from "@/components/ui/themed-art";
 import { useRouter } from "next/navigation";
 import { Globe, LayoutGrid, Pin, Users } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
@@ -142,7 +142,7 @@ function BoardCard({
         className="relative block overflow-hidden rounded-2xl border border-border bg-surface shadow-card transition-all hover:border-border-strong hover:shadow-md hover:-translate-y-px active:translate-y-0"
       >
         <div className="kb-cover relative h-28 w-full overflow-hidden bg-surface-2">
-          <Image src={`/art/cover-${cover}.webp`} alt="" fill sizes="(min-width: 1024px) 360px, 100vw" className="object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+          <ThemedArt name={`cover-${cover}`} sizes="(min-width: 1024px) 360px, 100vw" className="object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
         </div>
         <div className="px-4 pb-4 pt-3">
           <div className="flex items-center gap-2 pr-8">

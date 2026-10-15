@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { ThemedArt } from "@/components/ui/themed-art";
 import { Search, Loader2, NotebookPen, Columns3, Ticket, Hash, ArrowUpRight } from "lucide-react";
 import { tone } from "@/components/ui/badge";
 import { priorityMeta } from "@/lib/display";
@@ -84,7 +84,7 @@ export function SearchPage() {
         {!hasQuery ? (
           <div className="flex flex-col items-center rounded-2xl border border-dashed border-border bg-surface/50 px-4 py-6 text-center">
             <div className="relative h-36 w-36 overflow-hidden rounded-2xl">
-              <Image src="/art/empty-search.webp" alt="" fill sizes="144px" className="object-cover" />
+              <ThemedArt name="empty-search" sizes="144px" className="object-cover" />
             </div>
             <p className="mt-3 text-sm font-medium text-fg">Start typing to search everything.</p>
             <p className="mt-1 text-xs text-fg-subtle">Boards, tickets and notes, across the workspace.</p>
