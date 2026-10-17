@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { descriptionToPlainText } from "@/lib/description";
 import { boardWhereForContext } from "@/lib/authz";
 import { parseSubStates } from "@/lib/substates";
 import { htmlToPlainText } from "@/lib/utils";
@@ -101,7 +102,7 @@ export async function gatherExportData(ctx: Context): Promise<ExportData> {
             id: t.id,
             number: t.number,
             title: t.title,
-            description: htmlToPlainText(t.description),
+            description: htmlToPlainText(descriptionToPlainText(t.description)),
             priority: t.priority,
             subState: t.subState,
             dueDate: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,

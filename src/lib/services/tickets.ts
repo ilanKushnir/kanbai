@@ -4,7 +4,7 @@ import { ticketInclude, serializeTicket, type TicketWithRelations, type UserLite
 import { HttpError } from "@/lib/api";
 import { onMutation } from "@/lib/snapshots";
 import { parseSubStates } from "@/lib/substates";
-import { toRichHtml } from "@/lib/sanitize";
+import { normalizeDescription } from "@/lib/sanitize";
 import { resolveColumnStage, type ColumnStage } from "@/lib/column-stage";
 import { LABEL_COLORS } from "@/lib/constants";
 
@@ -340,7 +340,7 @@ export async function createTicket(
     boardId: board.id,
     columnId,
     title: input.title,
-    description: toRichHtml(input.description),
+    description: normalizeDescription(input.description),
     priority: input.priority ?? "medium",
     // A column with sub-states files new cards into its first band (mirrors moveTicket).
     subState: columnSubStates[0] ?? null,
@@ -459,7 +459,7 @@ export async function updateTicket(
 
   const data: Record<string, unknown> = {};
   if (input.title !== undefined) data.title = input.title;
-  if (input.description !== undefined) data.description = toRichHtml(input.description);
+  if (input.description !== undefined) data.description = normalizeDescription(input.description);
   if (input.priority !== undefined) data.priority = input.priority;
   if (input.dueDate !== undefined) data.dueDate = input.dueDate ? new Date(input.dueDate) : null;
   if (input.columnId !== undefined) {
@@ -659,6 +659,111 @@ export async function moveTicket(
     },
   });
   return serialized;
+}
+
+/**
+ * Move a ticket to ANOTHER board in one step. It keeps its id, comments,
+ * subtasks, history, due date and priority; it gets the target board's next
+ * number, its labels are re-created there by name, and human assignees
+ * without access to the target board are dropped. Target column: the given
+ * ref, else the column with the same stage as today's, else the first column.
+ */
+export async function transferTicket(ticketId: string, toBoardId: string, ref: ColumnRef | null | undefined, actor: Actor) {
+  const ticket = await loadTicket(ticketId);
+  if (ticket.deletedAt) throw new HttpError(404, "Ticket not found");
+  const from = await boardCtx(ticket.boardId);
+  const to = await boardCtx(toBoardId);
+  if (to.workspaceId !== from.workspaceId) throw new HttpError(404, "Board not found");
+  if (to.id === from.id) {
+    const columnId = (await resolveColumnRef(from.id, ref)) ?? ticket.columnId;
+    return moveTicket(ticketId, columnId, undefined, actor);
+  }
+  await onMutation(actor, from.workspaceId);
+
+  const cols = await db.column.findMany({ where: { boardId: to.id }, orderBy: { position: "asc" } });
+  if (!cols.length) throw new HttpError(422, "Target board has no columns");
+  const sourceColumn = await db.column.findUnique({ where: { id: ticket.columnId } });
+  const sameStage = sourceColumn
+    ? cols.find((c) => resolveColumnStage(c.stage, c.name, c.isDone) === resolveColumnStage(sourceColumn.stage, sourceColumn.name, sourceColumn.isDone))
+    : undefined;
+  const columnId = (await resolveColumnRef(to.id, ref)) ?? sameStage?.id ?? cols[0].id;
+  const target = cols.find((c) => c.id === columnId);
+  if (!target) throw new HttpError(422, "Column is not on this board");
+
+  const labelIds = await ensureLabelsByName(to.id, ticket.labels.map((l) => l.label.name));
+  const keptUserIds: string[] = [];
+  for (const a of ticket.assignees) {
+    try {
+      await assertUserAssignable(to, a.userId);
+      keptUserIds.push(a.userId);
+    } catch {
+      // No access to the target board — unassign rather than fail the move.
+    }
+  }
+  const agentKept = ticket.assigneeType === "agent";
+  const last = await db.ticket.findFirst({ where: { columnId }, orderBy: { position: "desc" }, select: { position: true } });
+  const subStates = parseSubStates(target.subStates);
+
+  for (let attempt = 0; ; attempt++) {
+    const max = await db.ticket.aggregate({ where: { boardId: to.id }, _max: { number: true } });
+    try {
+      await db.$transaction([
+        db.ticketLabel.deleteMany({ where: { ticketId } }),
+        db.ticketAssignee.deleteMany({ where: { ticketId, userId: { notIn: keptUserIds } } }),
+        db.ticket.update({
+          where: { id: ticketId },
+          data: {
+            boardId: to.id,
+            columnId,
+            number: (max._max.number ?? 0) + 1,
+            position: (last?.position ?? -1) + 1,
+            subState: subStates[0] ?? null,
+            completedAt: target.isDone ? ticket.completedAt ?? new Date() : null,
+            ...(agentKept
+              ? {}
+              : keptUserIds.length
+                ? { assigneeType: "user", assigneeUserId: keptUserIds[0] }
+                : { assigneeType: null, assigneeUserId: null }),
+            labels: labelIds.length ? { create: labelIds.map((labelId) => ({ labelId })) } : undefined,
+          },
+        }),
+      ]);
+      break;
+    } catch (e) {
+      if (isUniqueNumberError(e) && attempt < 4) continue;
+      throw e;
+    }
+  }
+
+  // Close the gap the ticket left in its old column.
+  const sourceRows = await db.ticket.findMany({
+    where: { columnId: ticket.columnId, deletedAt: null },
+    orderBy: { position: "asc" },
+    select: { id: true, position: true },
+  });
+  await db.$transaction(
+    sourceRows
+      .map((t, idx) => ({ t, idx }))
+      .filter(({ t, idx }) => t.position !== idx)
+      .map(({ t, idx }) => db.ticket.update({ where: { id: t.id }, data: { position: idx } })),
+  );
+
+  const updated = await loadTicket(ticketId);
+  await logActivity({
+    actor,
+    action: "ticket.transferred",
+    boardId: to.id,
+    ticketId,
+    meta: {
+      title: ticket.title,
+      fromBoard: from.name,
+      fromBoardId: from.id,
+      fromNumber: ticket.number,
+      toBoard: to.name,
+      toColumn: target.name,
+    },
+  });
+  return serializeTicketWithAssignee(updated);
 }
 
 /** The board's done column (first isDone column by position), or null. */

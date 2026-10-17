@@ -28,7 +28,8 @@ export const PATCH = handler(async (req: Request) => {
     input.defaultLanding !== undefined ||
     input.weekStartsOn !== undefined ||
     input.handedness !== undefined ||
-    input.dictationLanguage !== undefined
+    input.dictationLanguage !== undefined ||
+    input.whatsNewSeen !== undefined
   ) {
     // Re-read the blob fresh: ctx.user was snapshotted at request start, and
     // other writers (e.g. board pins) may have updated settings since.
@@ -38,6 +39,7 @@ export const PATCH = handler(async (req: Request) => {
     if (input.weekStartsOn !== undefined) settings.weekStartsOn = input.weekStartsOn;
     if (input.handedness !== undefined) settings.handedness = input.handedness;
     if (input.dictationLanguage !== undefined) settings.dictationLanguage = input.dictationLanguage;
+    if (input.whatsNewSeen !== undefined) settings.whatsNewSeen = input.whatsNewSeen;
     data.settings = JSON.stringify(settings);
   }
 

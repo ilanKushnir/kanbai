@@ -204,11 +204,13 @@ export const updateTicketSchema = z.object({
 export const moveTicketSchema = z
   .object({
     ...columnRefFields,
+    /** Another board: the ticket moves there (column ref optional). */
+    boardId: z.string().min(1).optional(),
     position: z.number().int().min(0).optional(),
     subState: z.string().max(24).nullable().optional(),
   })
-  .refine((v) => v.columnId || v.column || v.columnName || v.stage, {
-    message: "Provide a target column: columnId, column (name) or stage.",
+  .refine((v) => v.boardId || v.columnId || v.column || v.columnName || v.stage, {
+    message: "Provide a target: boardId and/or a column (columnId, column name or stage).",
   });
 
 /** A comment body — `body` or its alias `content`. */
@@ -323,6 +325,28 @@ export const createNoteV1Schema = z.object({
   userEmail: z.email().max(200).optional(),
 });
 
+// ── Simple tasks (agent API) ──
+/** "today" | "tomorrow" | "someday" (no day) | "YYYY-MM-DD"; null = someday. */
+const taskDay = z.union([z.enum(["today", "tomorrow", "someday"]), dayString]).nullable();
+
+/** A plain Today to-do — a note under the hood. `title` and `body` are aliases. */
+export const createTaskV1Schema = z
+  .object({
+    title: z.string().trim().min(1).max(10_000).optional(),
+    body: z.string().trim().min(1).max(10_000).optional(),
+    day: taskDay.optional(), // default "today"
+    priority: z.enum(PRIORITIES).optional(),
+  })
+  .refine((v) => v.title || v.body, { message: "title is required", path: ["title"] });
+
+export const updateTaskV1Schema = z.object({
+  title: z.string().trim().min(1).max(10_000).optional(),
+  body: z.string().trim().min(1).max(10_000).optional(),
+  day: taskDay.optional(),
+  done: z.boolean().optional(),
+  priority: z.enum(PRIORITIES).optional(),
+});
+
 /** Agent queues a note to an agent to sort (defaults to itself). */
 export const queueNoteV1Schema = z.object({
   agentId: z.string().min(1).optional(),
@@ -431,6 +455,7 @@ export const updateAccountSchema = z.object({
   weekStartsOn: z.number().int().min(0).max(6).optional(),
   handedness: z.enum(["right", "left"]).optional(),
   dictationLanguage: z.enum(DICTATION_LANGUAGE_VALUES).optional(),
+  whatsNewSeen: z.string().trim().min(1).max(32).optional(),
 });
 
 export const changePasswordSchema = z.object({

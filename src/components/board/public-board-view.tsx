@@ -4,7 +4,7 @@ import * as React from "react";
 import { Flag, CalendarClock } from "lucide-react";
 import { TicketCard } from "@/components/board/ticket-card";
 import { Modal } from "@/components/ui/modal";
-import { RichText } from "@/components/ui/rich-text";
+import { DescriptionView } from "@/components/ui/description";
 import { Badge, tone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { priorityMeta, dueMeta, completionMeta } from "@/lib/display";
@@ -90,7 +90,7 @@ function ReadOnlyTicket({ ticket, onClose }: { ticket: SerializedPublicTicket; o
 
       {ticket.description && (
         <div className="mt-4 rounded-xl border border-border bg-surface-2/40 px-3 py-2.5 text-sm">
-          <RichText html={ticket.description} />
+          <DescriptionView value={ticket.description} />
         </div>
       )}
     </Modal>

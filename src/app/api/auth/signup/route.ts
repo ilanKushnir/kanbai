@@ -6,6 +6,7 @@ import { createSession } from "@/lib/auth";
 import { createWorkspaceForUser } from "@/lib/services/workspaces";
 import { findValidInvite, redeemSystemInviteSignup } from "@/lib/services/invites";
 import { db } from "@/lib/db";
+import { LATEST_RELEASE_VERSION } from "@/lib/changelog";
 
 export const POST = handler(async (req: Request) => {
   const input = parse(signupSchema, await readJson(req));
@@ -45,6 +46,8 @@ export const POST = handler(async (req: Request) => {
       name: input.name,
       passwordHash: hashPassword(input.password),
       systemRole: "admin", // first user owns the whole instance
+      // A new account starts current — "What's new" is for releases they lived through.
+      settings: JSON.stringify({ whatsNewSeen: LATEST_RELEASE_VERSION }),
     },
   });
   await createWorkspaceForUser(user.id, `${input.name}'s Workspace`);

@@ -118,7 +118,7 @@ export function buildSkill({
     .replace(/`http:\/\/<kanbai-host>:3000\/api\/v1`/g, `\`${base}\``);
   return `---
 name: kanbai
-description: Manage the owner's tasks, daily Today list and project boards in Kanbai over its REST API — read the day's agenda, add tasks and notes, move and complete tickets, create project boards. Use whenever the owner talks about tasks, to-dos, their day, reminders to do something, projects or boards.
+description: Manage the owner's tasks, daily Today list and project boards in Kanbai over its REST API — read the day's agenda, add everyday to-dos as simple Today tasks, file project work as tickets on the right board, move and complete them. Use whenever the owner talks about tasks, to-dos, errands, their day, reminders to do something, projects or boards.
 version: ${version}
 ---
 
@@ -136,6 +136,11 @@ over REST with a bearer key; nothing is pushed to you.
 - 401 means the key was rotated: ask the owner for a fresh connect brief.
 - Call \`GET /me\` once per session; its \`service.version\` tells you when to re-fetch
   this skill from \`${publicBaseUrl || base}/skill.md\`.
+
+**Most important rule:** "add a task" is a *simple task* on Today (\`POST /tasks\`,
+default day today) unless it is clearly work on one of the project boards — only
+then is it a *ticket* on that board. See §0. After every change, reply with the
+short emoji receipt of §10 — one line per item, nothing else.
 
 ${body.trim()}
 `;

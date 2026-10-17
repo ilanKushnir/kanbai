@@ -5,6 +5,8 @@ import { getContext } from "@/lib/auth";
 import { boardWhereForContext } from "@/lib/authz";
 import { addDays, startOfDay } from "@/lib/notes-schedule";
 import { countNotesAttention } from "@/lib/notes-badge";
+import { parseUserSettings } from "@/lib/user-settings";
+import { WhatsNew } from "@/components/whats-new";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getContext();
@@ -65,6 +67,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       >
         {children}
       </AppShell>
+      <WhatsNew seenVersion={parseUserSettings(ctx.user.settings).whatsNewSeen} />
     </ToastProvider>
   );
 }

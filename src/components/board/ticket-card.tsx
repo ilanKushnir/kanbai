@@ -1,4 +1,6 @@
+import type * as React from "react";
 import { MessageSquare, CalendarClock, CircleCheck, NotebookPen } from "lucide-react";
+import { descriptionToPlainText } from "@/lib/description";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { priorityMeta, dueMeta, completionMeta, assigneeLabel, cardAssignees } from "@/lib/display";
@@ -29,11 +31,14 @@ export function TicketCard({
   onClick,
   dragging,
   className,
+  corner,
 }: {
   ticket: TicketCardData;
   onClick?: () => void;
   dragging?: boolean;
   className?: string;
+  /** A control pinned to the card's top-right corner (the quick-done check); the first row makes room for it. */
+  corner?: React.ReactNode;
 }) {
   const pr = priorityMeta(ticket.priority);
   // Done tickets show when they were completed — never a stale "overdue".
@@ -41,20 +46,20 @@ export function TicketCard({
   const due = done ? null : dueMeta(ticket.dueDate);
   const completed = done ? completionMeta(ticket.completedAt) : null;
   const assignees = cardAssignees(ticket);
-  const excerpt = ticket.description ? htmlToPlainText(ticket.description) : "";
+  const excerpt = ticket.description ? htmlToPlainText(descriptionToPlainText(ticket.description)) : "";
 
   return (
     <div
       onClick={onClick}
       className={cn(
-        "group rounded-xl border border-border bg-surface p-3 shadow-card transition-all",
+        "group relative rounded-xl border border-border bg-surface p-3 shadow-card transition-all",
         "hover:border-border-strong hover:shadow-md hover:-translate-y-px active:translate-y-0 cursor-pointer",
         dragging && "opacity-40",
         className,
       )}
     >
       {ticket.labels.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1">
+        <div className={cn("mb-2 flex flex-wrap gap-1", corner && "pr-7")}>
           {ticket.labels.map((l) => (
             <Badge key={l.id} tone={l.color} dot>
               {l.name}
@@ -65,7 +70,7 @@ export function TicketCard({
 
       {/* dir="auto": first strong character sets base direction, so Hebrew/Arabic
           titles read right-to-left even when they mix in English words. */}
-      <p dir="auto" className="text-sm font-medium leading-snug text-fg">{ticket.title}</p>
+      <p dir="auto" className={cn("text-sm font-medium leading-snug text-fg", corner && ticket.labels.length === 0 && "pr-7")}>{ticket.title}</p>
 
       {excerpt && (
         <p dir="auto" className="mt-1 line-clamp-2 text-xs text-fg-muted leading-relaxed">{excerpt}</p>
@@ -134,6 +139,7 @@ export function TicketCard({
           )}
         </div>
       </div>
+      {corner}
     </div>
   );
 }

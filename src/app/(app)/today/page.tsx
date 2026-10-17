@@ -8,16 +8,15 @@ import { boardWhereForContext } from "@/lib/authz";
 import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
 import { listNotesForUser } from "@/lib/services/notes";
 import { boardAssigneeUsers } from "@/lib/services/board-members";
-import { listActivity } from "@/lib/services/activity-feed";
+import { listActivity, TASK_ACTIONS } from "@/lib/services/activity-feed";
 import { parseSubStates } from "@/lib/substates";
 import { parseUserSettings } from "@/lib/user-settings";
 import { startOfDay } from "@/lib/notes-schedule";
 import { greetingFor, summaryLine, buildToday, type TodayTicket, type TodayNote } from "@/lib/today-model";
-import { tone } from "@/components/ui/badge";
 import { TodayHero } from "@/components/today/today-hero";
 import { TodayView, type TodayBoard } from "@/components/today/today-view";
 import { TodayTicketModal } from "@/components/today/today-ticket-modal";
-import { ActivityList } from "@/components/activity/activity-list";
+import { RecentChanges } from "@/components/today/recent-changes";
 
 export const metadata: Metadata = { title: "Today" };
 export const dynamic = "force-dynamic";
@@ -31,7 +30,10 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const boardWhere = boardWhereForContext(ctx);
   const startToday = startOfDay(new Date());
 
-  const [members, boardRows, openTickets, doneTodayTickets, notes, agents, activity] = await Promise.all([
+  // Board-scoped feed rows are capped to the boards this user can see.
+  const visibleBoardIds = ctx.isManager ? null : (await db.board.findMany({ where: boardWhere, select: { id: true } })).map((b) => b.id);
+
+  const [members, boardRows, openTickets, doneTodayTickets, notes, agents, changes] = await Promise.all([
     db.workspaceMember.findMany({ where: { workspaceId: ctx.workspace.id }, include: { user: true } }),
     db.board.findMany({
       where: boardWhere,
@@ -41,7 +43,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         name: true,
         slug: true,
         color: true,
-        columns: { orderBy: { position: "asc" }, select: { id: true, name: true, isDone: true, stage: true, _count: { select: { tickets: { where: { deletedAt: null } } } } } },
+        columns: { orderBy: { position: "asc" }, select: { id: true, name: true, isDone: true, stage: true } },
       },
     }),
     // Every open, dated ticket the user can see — Today decides which day it belongs to.
@@ -63,7 +65,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
       select: { id: true, name: true, color: true, kind: true, ownerUserId: true, lastSeenAt: true, ownerUser: { select: { name: true } } },
       orderBy: { createdAt: "asc" },
     }),
-    listActivity({ workspaceId: ctx.workspace.id, limit: 8, actorType: "agent" }).catch(() => []),
+    listActivity({ workspaceId: ctx.workspace.id, limit: 60, actions: TASK_ACTIONS, boardIds: visibleBoardIds, noteUserId: ctx.user.id }).catch(() => []),
   ]);
 
   const usersById = new Map<string, UserLite>(
@@ -138,11 +140,6 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const modalMembers = modalTicket ? await boardAssigneeUsers(modalTicket.boardId) : [];
 
   const agent = agents[0] ?? null;
-  const boardStats = boardRows.map((b) => {
-    const total = b.columns.reduce((s, c) => s + c._count.tickets, 0);
-    const done = b.columns.filter((c) => c.isDone).reduce((s, c) => s + c._count.tickets, 0);
-    return { id: b.id, name: b.name, slug: b.slug, color: b.color, total, done, open: total - done };
-  });
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-10 md:px-8 md:pt-8">
@@ -174,32 +171,15 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
                 </Link>
               )}
             </div>
-            <div className="px-2 pb-2 pt-3">
-              {activity.length === 0 ? (
-                <p className="px-2 pb-2 text-xs text-fg-subtle">
-                  {agent ? "Nothing yet today. Ask your agent to add, move or complete tasks — it shows up here." : "Connect an agent to let it add and complete tasks for you."}
-                </p>
-              ) : (
-                <ActivityList items={activity} compact />
-              )}
-            </div>
+            {/* What it did lives in Recent changes (Agent filter) — no second list here. */}
+            {agent ? (
+              <div className="pb-4" />
+            ) : (
+              <p className="px-4 pb-4 pt-2.5 text-xs text-fg-subtle">Connect an agent to let it add and complete tasks for you.</p>
+            )}
           </section>
 
-          {/* Projects */}
-          <section className="rounded-2xl border border-border bg-surface px-2 py-2">
-            <div className="flex items-center justify-between px-2 pt-1 pb-2">
-              <span className="font-display text-[1.1rem] font-medium">Boards</span>
-              <Link href="/boards" className="text-xs text-fg-subtle hover:text-fg">All</Link>
-            </div>
-            {boardStats.length === 0 && <p className="px-2 pb-2 text-xs text-fg-subtle">No boards yet.</p>}
-            {boardStats.map((b) => (
-              <Link key={b.id} href={`/boards/${b.slug}`} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-2">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tone(b.color).dot }} />
-                <span className="min-w-0 flex-1 truncate" dir="auto">{b.name}</span>
-                <span className="text-[0.6875rem] tabular-nums text-fg-subtle">{b.open} open</span>
-              </Link>
-            ))}
-          </section>
+          <RecentChanges items={changes} currentUserId={ctx.user.id} />
 
           {!agent && ctx.isManager && (
             <Link href="/agents" className="flex items-center gap-2 rounded-2xl border border-dashed border-border px-4 py-3 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg">

@@ -31,7 +31,30 @@ export type ListActivityInput = {
   since?: Date | string | null;
   /** Restrict board-scoped rows to these boards (access cap); workspace-wide rows (notes) always pass. */
   boardIds?: string[] | null;
+  /** Only these actions (e.g. TASK_ACTIONS). */
+  actions?: readonly string[] | null;
+  /** Keep only this user's note rows — notes are personal, other members' captures aren't "my" changes. */
+  noteUserId?: string | null;
 };
+
+/** What happened to a task or ticket: added, done, reopened, moved, rescheduled, edited, removed, filed. */
+export const TASK_ACTIONS = [
+  "ticket.created",
+  "ticket.updated",
+  "ticket.moved",
+  "ticket.done",
+  "ticket.reopened",
+  "ticket.transferred",
+  "ticket.deleted",
+  "note.created",
+  "note.updated",
+  "note.done",
+  "note.reopened",
+  "note.moved",
+  "note.deleted",
+  "note.sorted",
+  "note.promoted",
+] as const;
 
 function parseMeta(raw: string | null): Record<string, unknown> {
   if (!raw) return {};
@@ -58,6 +81,7 @@ export async function listActivity(input: ListActivityInput): Promise<ActivityIt
     OR: [{ board: boardFilter }, { boardId: null }],
     ...(input.boardId ? { boardId: input.boardId } : {}),
     ...(input.actorType && input.actorType !== "all" ? { actorType: input.actorType } : {}),
+    ...(input.actions ? { action: { in: [...input.actions] } } : {}),
     ...(since && !Number.isNaN(since.getTime()) ? { createdAt: { gt: since } } : {}),
   };
 
@@ -92,6 +116,7 @@ export async function listActivity(input: ListActivityInput): Promise<ActivityIt
     const note = noteId ? noteById.get(noteId) : undefined;
     // A board-less row that names a note belonging to another workspace's user is not ours.
     if (!r.boardId && note && !memberIds.has(note.userId)) continue;
+    if (input.noteUserId && !r.boardId && (note ? note.userId : meta.userId ?? input.noteUserId) !== input.noteUserId) continue;
     const t = r.ticketId ? ticketById.get(r.ticketId) : undefined;
 
     const item: ActivityItem = {

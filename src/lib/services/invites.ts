@@ -3,6 +3,7 @@ import { randomToken } from "@/lib/password";
 import { HttpError } from "@/lib/api";
 import { createWorkspaceForUser } from "./workspaces";
 import type { Invite } from "@/generated/prisma";
+import { LATEST_RELEASE_VERSION } from "@/lib/changelog";
 
 const INVITE_DAYS = 14;
 
@@ -149,7 +150,14 @@ export async function redeemSystemInviteSignup(
     );
   }
   const user = await db.user.create({
-    data: { email: data.email, name: data.name, passwordHash: data.passwordHash, systemRole: "user" },
+    data: {
+      email: data.email,
+      name: data.name,
+      passwordHash: data.passwordHash,
+      systemRole: "user",
+      // A new account starts current — "What's new" is for releases they lived through.
+      settings: JSON.stringify({ whatsNewSeen: LATEST_RELEASE_VERSION }),
+    },
   });
   await createWorkspaceForUser(user.id, `${data.name}'s Workspace`);
   await markInviteAccepted(invite.id, user.id);

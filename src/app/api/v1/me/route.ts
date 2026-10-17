@@ -34,9 +34,10 @@ export const GET = handler(async (req: Request) => {
     capabilities: AGENT_CAPABILITIES,
     // Self-describing formats so agents file tickets correctly without guessing.
     conventions: {
-      // Ticket `description` is simple HTML, sanitized server-side to this allowlist.
-      // Anything outside it is stripped; plain text is also accepted.
-      descriptionFormat: "html",
+      // Ticket `description` is Markdown (GFM), stored and returned as-is. Simple HTML
+      // is still accepted — sanitized server-side to descriptionAllowedTags.
+      descriptionFormat: "markdown",
+      descriptionFormats: ["markdown", "html"],
       descriptionAllowedTags: [...RICH_TEXT_TAGS],
       priorities: [...PRIORITIES],
       noteBuckets: [...NOTE_BUCKETS],

@@ -1,4 +1,5 @@
 import sanitizeHtml from "sanitize-html";
+import { isHtmlDescription, unwrapEscapedMarkdown } from "@/lib/description";
 
 /** The HTML tags allowed in ticket descriptions (also advertised to agents via /api/v1/me). */
 export const RICH_TEXT_TAGS = [
@@ -20,26 +21,16 @@ const OPTS: sanitizeHtml.IOptions = {
   },
 };
 
-function looksLikeHtml(s: string) {
-  return /<\/?[a-z][\s\S]*>/i.test(s);
-}
-
-function escapeText(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 /**
- * Normalize a ticket description into SAFE HTML for storage + rendering.
- * - Rich HTML (from the editor) → sanitized against the allowlist (strips scripts,
- *   event handlers, unsafe attrs/urls).
- * - Plain text (agent input, notes) → escaped and turned into paragraphs/line breaks.
+ * Normalize a ticket description for storage and responses:
+ * - Markdown / plain text → kept as-is (rendered with react-markdown, which
+ *   never renders raw HTML, so no escaping is needed);
+ * - Markdown an older version escaped into <p>/<br> → unwrapped back to Markdown;
+ * - rich HTML → sanitized against the allowlist.
  */
-export function toRichHtml(input: string | null | undefined): string {
+export function normalizeDescription(input: string | null | undefined): string {
   const s = (input ?? "").trim();
   if (!s) return "";
-  if (looksLikeHtml(s)) return sanitizeHtml(s, OPTS).trim();
-  return s
-    .split(/\n{2,}/)
-    .map((para) => `<p>${escapeText(para).replace(/\n/g, "<br>")}</p>`)
-    .join("");
+  if (!isHtmlDescription(s)) return s;
+  return unwrapEscapedMarkdown(s) ?? sanitizeHtml(s, OPTS).trim();
 }

@@ -43,12 +43,13 @@ import {
   ArrowRight,
   CircleCheck,
   CornerUpRight,
+  ArrowUpRight,
   Trash2,
 } from "lucide-react";
 import { TicketCard } from "./ticket-card";
 import { TicketModal } from "./ticket-modal";
 import { Avatar } from "@/components/ui/avatar";
-import { Menu, MenuItem } from "@/components/ui/menu";
+import { Menu, MenuItem, ContextMenu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
@@ -1642,6 +1643,9 @@ function SortableTicket({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ticket.id });
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const [menuAt, setMenuAt] = React.useState<{ x: number; y: number } | null>(null);
+  const closeMenu = React.useCallback(() => setMenuAt(null), []);
+  const canDone = !!onDone && !ticket.isDone;
   return (
     <div
       ref={setNodeRef}
@@ -1649,6 +1653,11 @@ function SortableTicket({
       style={{ transform: CSS.Translate.toString(transform), transition }}
       {...attributes}
       {...listeners}
+      onContextMenu={(e) => {
+        // Right-click (desktop): the card's actions at the pointer.
+        e.preventDefault();
+        setMenuAt({ x: e.clientX, y: e.clientY });
+      }}
       className={cn("group/card relative", ticket.id.startsWith("tmp-") && "animate-scale-in opacity-70")}
     >
       <TicketCard
@@ -1656,22 +1665,52 @@ function SortableTicket({
         onClick={onClick}
         dragging={isDragging}
         className={focused ? "ring-2 ring-primary ring-offset-2 ring-offset-surface-2" : undefined}
+        corner={
+          canDone && (
+            // Inside the card, top-right, with room reserved: shows on hover
+            // with a pointer, always on touch screens (no hover).
+            <button
+              type="button"
+              onPointerDown={stop}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDone(ticket.id);
+              }}
+              aria-label="Mark done"
+              title="Mark done"
+              className="kb-check absolute right-2.5 top-2.5 h-5 w-5 opacity-0 transition-opacity group-hover/card:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 cursor-pointer"
+            >
+              <Check className="h-3 w-3" strokeWidth={3} />
+            </button>
+          )
+        }
       />
-      {onDone && !ticket.isDone && (
-        <button
-          type="button"
-          onPointerDown={stop}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDone(ticket.id);
-          }}
-          aria-label="Mark done"
-          title="Mark done"
-          className="kb-check absolute right-2 top-2 h-5 w-5 opacity-0 transition-opacity group-hover/card:opacity-100 focus-visible:opacity-100 max-md:opacity-100 cursor-pointer"
-        >
-          <Check className="h-3 w-3" strokeWidth={3} />
-        </button>
-      )}
+      <ContextMenu at={menuAt} onClose={closeMenu}>
+        {(close) => (
+          <>
+            <MenuItem
+              onClick={() => {
+                close();
+                onClick();
+              }}
+            >
+              <ArrowUpRight className="h-4 w-4 text-fg-subtle" /> Open
+            </MenuItem>
+            {canDone && (
+              <MenuItem
+                onClick={() => {
+                  close();
+                  onDone(ticket.id);
+                }}
+              >
+                <Check className="h-4 w-4 text-fg-subtle" /> Mark done
+              </MenuItem>
+            )}
+            <div className="my-1 h-px bg-border" />
+            <MoveMenu columns={allColumns} ticket={ticket} onMoveTo={onMoveTo} close={close} />
+          </>
+        )}
+      </ContextMenu>
       {/* "Move to" — a no-drag way to change column/sub-state on touch devices,
           where drag-and-drop is fiddly. Phones/small screens only; hidden ≥ md. */}
       <div className="mt-1 flex items-center px-0.5 md:hidden">

@@ -1,7 +1,7 @@
 import { PrismaClient } from "../src/generated/prisma";
 import { generateApiKey } from "../src/lib/crypto";
 import { hashPassword } from "../src/lib/password";
-import { toRichHtml } from "../src/lib/sanitize";
+import { normalizeDescription } from "../src/lib/sanitize";
 import { ALL_SCOPES } from "../src/lib/constants";
 import { ymd, addDays, coarseBucket, dayFromBucket } from "../src/lib/notes-schedule";
 
@@ -319,7 +319,7 @@ async function main() {
         columnId,
         number: ticketCounters[boardId],
         title: t.title,
-        description: toRichHtml(t.description ?? ""),
+        description: normalizeDescription(t.description ?? ""),
         priority: t.priority ?? "medium",
         dueDate: t.dueDate ?? null,
         position: t.position,

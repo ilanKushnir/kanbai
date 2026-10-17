@@ -36,6 +36,7 @@ import { buildToday, dayLabel, LOCALE, type TaskItem, type TodayNote, type Today
 import type { SerializedTicket } from "@/lib/serialize";
 import * as sync from "@/lib/offline/sync-store";
 import { clientId, toTodayTicket, type TodayData } from "@/lib/offline/today-sync";
+import { textDirection } from "@/lib/text-direction";
 
 const SERVER_SYNC_SNAPSHOT: sync.SyncSnapshot = { status: { online: true, syncing: false, pending: 0, authNeeded: false, baseAt: null, stale: false, syncedAt: 0 }, data: null };
 const getServerSyncSnapshot = () => SERVER_SYNC_SNAPSHOT;
@@ -674,6 +675,9 @@ function Row({
   const firstLine = item.title.split("\n")[0];
   const extra = item.title.split("\n").length > 1;
   const dayMeta = item.day ? dayLabel(item.day, todayYmd) : null;
+  // Title and meta line follow the title's language, tickets and plain tasks alike:
+  // a Hebrew task reads from the right, an English one from the left.
+  const dir = textDirection(firstLine);
 
   // A server echo or undo that flips the item back resets the choreography.
   const [seenDone, setSeenDone] = React.useState(item.done);
@@ -729,8 +733,7 @@ function Row({
     <Link
       href={`/today?ticket=${item.id}`}
       scroll={false}
-      className="kb-row-title line-clamp-2 block text-[0.95rem] leading-6 text-fg hover:underline underline-offset-2 decoration-border-strong"
-      dir="auto"
+      className="kb-row-title line-clamp-2 block text-start text-[0.95rem] leading-6 text-fg hover:underline underline-offset-2 decoration-border-strong"
       title={item.title}
     >
       <span className="kb-strike">{firstLine}</span>
@@ -742,8 +745,7 @@ function Row({
         setDraft(item.title);
         setEditing(true);
       }}
-      className="kb-row-title line-clamp-2 block w-full text-left text-[0.95rem] leading-6 text-fg cursor-text"
-      dir="auto"
+      className="kb-row-title line-clamp-2 block w-full text-start text-[0.95rem] leading-6 text-fg cursor-text"
       title={item.title}
     >
       <span className="kb-strike">{firstLine}</span>
@@ -774,7 +776,7 @@ function Row({
         <Check className="h-3.5 w-3.5" strokeWidth={3} />
       </button>
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1" dir={dir}>
         {titleEl}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.75rem] text-fg-subtle">
           {ticket && (

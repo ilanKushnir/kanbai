@@ -13,6 +13,8 @@ export type UserSettings = {
   dictationLanguage: DictationLanguage;
   /** Boards the user pinned on the Boards page (ids across all their workspaces). */
   pinnedBoardIds: string[];
+  /** Last release the user dismissed in "What's new" (null = never). */
+  whatsNewSeen: string | null;
 };
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -21,6 +23,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   handedness: "right",
   dictationLanguage: "auto",
   pinnedBoardIds: [],
+  whatsNewSeen: null,
 };
 
 /** Sanity cap — nobody scans hundreds of pins, and it bounds the settings blob. */
@@ -73,6 +76,7 @@ export function parseUserSettings(raw?: string | null): UserSettings {
       handedness: o.handedness === "left" ? "left" : "right",
       dictationLanguage: o.dictationLanguage && DICTATION_VALUES.includes(o.dictationLanguage) ? o.dictationLanguage : "auto",
       pinnedBoardIds: parsePinnedBoardIds(o.pinnedBoardIds),
+      whatsNewSeen: typeof o.whatsNewSeen === "string" ? o.whatsNewSeen.slice(0, 32) : null,
     };
   } catch {
     return { ...DEFAULT_USER_SETTINGS, pinnedBoardIds: [] };

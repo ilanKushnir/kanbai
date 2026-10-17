@@ -52,7 +52,10 @@ export const API_VERSION = "v1";
  * Kanbai never calls the agent back.
  */
 export const AGENT_CAPABILITIES = {
-  resources: ["boards", "columns", "tickets", "subtasks", "inbox", "notes", "comments", "members", "trash", "activity"],
+  resources: ["tasks", "boards", "columns", "tickets", "subtasks", "inbox", "notes", "comments", "members", "trash", "activity"],
+  // /tasks — the owner's plain Today to-dos (no board): POST { title, day? }
+  // defaults to today; POST /tasks/:id/done completes one. Tickets are for project work.
+  simpleTasks: true,
   // GET /today — the whole day's agenda (overdue / today / tomorrow / upcoming
   // tickets, inbox + today's notes, done-today) in one call.
   agenda: true,
@@ -62,6 +65,9 @@ export const AGENT_CAPABILITIES = {
     // Full status management: PATCH columnId/subState, POST /tickets/:id/move,
     // and the one-call POST /tickets/:id/done (board's done column).
     ticketDone: true,
+    // POST /tickets/:id/move { boardId } moves a ticket to another board in one
+    // call (keeps comments, subtasks, history; renumbers; labels by name).
+    ticketTransfer: true,
     // Notes: PATCH doneOn (complete/un-complete), scheduledDay (sort into a
     // day/section), status inbox|archived, priority, pinned.
     noteDone: true,

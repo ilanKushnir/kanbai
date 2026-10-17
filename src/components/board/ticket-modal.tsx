@@ -22,7 +22,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Menu, MenuItem } from "@/components/ui/menu";
-import { RichText } from "@/components/ui/rich-text";
+import { DescriptionView, MarkdownEditor } from "@/components/ui/description";
+import { toggleTask } from "@/components/ui/markdown";
+import { isHtmlDescription } from "@/lib/description";
 import { RichEditor } from "@/components/ui/rich-editor";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
@@ -491,24 +493,36 @@ export function TicketModal({
       <div className="mt-4">
         <div className="mb-1.5 text-xs font-medium text-fg-muted">Description</div>
         {editingDesc ? (
-          <RichEditor
-            value={desc}
-            onSave={(html) => {
-              setEditingDesc(false);
-              if (html !== t.description) patch({ description: html });
-            }}
-            onCancel={() => setEditingDesc(false)}
-          />
+          // Older rich-HTML descriptions keep the visual editor; everything else is Markdown.
+          isHtmlDescription(desc) ? (
+            <RichEditor
+              value={desc}
+              onSave={(html) => {
+                setEditingDesc(false);
+                if (html !== t.description) patch({ description: html });
+              }}
+              onCancel={() => setEditingDesc(false)}
+            />
+          ) : (
+            <MarkdownEditor
+              value={desc}
+              onSave={(md) => {
+                setEditingDesc(false);
+                if (md !== t.description) patch({ description: md });
+              }}
+              onCancel={() => setEditingDesc(false)}
+            />
+          )
         ) : t.description ? (
           <div
             className="cursor-text rounded-xl border border-transparent px-3 py-2 text-sm transition-colors hover:border-border hover:bg-surface-2/40"
             onClick={(e) => {
-              if ((e.target as HTMLElement).closest("a, button")) return;
+              if ((e.target as HTMLElement).closest("a, button, input")) return;
               setDesc(t.description);
               setEditingDesc(true);
             }}
           >
-            <RichText html={t.description} />
+            <DescriptionView value={t.description} onToggleCheckbox={(i) => patch({ description: toggleTask(t.description, i) })} />
           </div>
         ) : (
           <button

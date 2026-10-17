@@ -11,6 +11,36 @@ bodies are JSON. Error shape: `{ "error": { "message", "code" } }` with the
 usual statuses (400 bad JSON · 401 bad key · 403 disabled/missing scope ·
 404 not in your workspace/access · 409 conflict · 422 validation, see `message`).
 
+## 0. Simple task or ticket? Decide before every write
+
+Kanbai has exactly two kinds of work item. Pick one every time the owner says
+"add a task", "remind me to…", "I need to…", "put … on my list":
+
+| | **Simple task** (`POST /tasks`) | **Ticket** (`POST /tickets`) |
+|---|---|---|
+| What | A plain to-do on the owner's Today list | A card on a project board |
+| Use for | Errands, chores, calls, purchases, appointments, one-off reminders — anything that isn't part of a project | Work that belongs to a specific project / board: build, design, fix, research for that project |
+| Examples | "order meat", "call the bank", "buy a birthday gift", "book a haircut", "pay the electricity bill" | "design an LED add-on for the server rack" (→ the rack project's board), "fix the login bug" (→ the app's board), "research flooring options" (→ the home-renovation board) |
+| Where | Today (default) or the day the owner named | The board of that project, in its backlog unless told otherwise |
+
+Rules:
+
+1. **Default to a simple task.** If the request names no project and doesn't
+   clearly belong to one of the boards, it is a simple task — *never* a
+   ticket on a catch-all board (e.g. a "General" or "Personal" board). Short
+   everyday chores are always simple tasks.
+2. **A ticket only when it maps to a project.** It mentions a project/board by
+   name or is obviously work on one (`GET /boards` once per session and match
+   on board names and descriptions). Put it on *that* board. If two boards
+   fit equally well, ask which one.
+3. **Day.** Simple tasks go on **today** unless the owner named a day
+   ("tomorrow", "on Thursday", "next week" → that date) or said "someday" / "no
+   date" (→ `"day":"someday"`, the Inbox). Tickets get a `dueDate` only when
+   the owner gave one.
+4. **The owner said where.** "Add to the X board" → ticket on X. "Just a
+   to-do", "on my today list" → simple task. Their words win over these rules.
+5. Then tell the owner what you did, in the format of §10.
+
 ## 1. Auth and `/me`
 
 ```
@@ -34,14 +64,15 @@ key keeps working until a code is redeemed. `baseUrl` may be a direct/LAN origin
 This document is also served as an installable skill at `GET /skill.md`.
 
 Scopes: `boards:read|write`, `tickets:read|write`, `inbox:read|write`,
-`notes:read|write`, `comments:write`, `members:read|write`. New agents get all.
+`notes:read|write` (also covers `/tasks`), `comments:write`,
+`members:read|write`. New agents get all.
 
 ```
 GET /me   →  { service:{name,version}, apiVersion, baseUrl, agent, workspaceId,
                ownerUserId, scopes, capabilities:{ agenda:true, ticketsList:true, … },
                conventions:{ priorities, columnStages, dueDateFormats, timezone,
-                             descriptionFormat:"html", descriptionAllowedTags },
-               quickstart:[ five curl one-liners ] }
+                             descriptionFormat:"markdown", descriptionAllowedTags },
+               quickstart:[ curl one-liners ] }
 ```
 
 Call it once on connect. `ownerUserId` is the person you act for (their boards
@@ -69,7 +100,38 @@ priority. `scope=mine` keeps only tickets assigned to the owner; the default
 `all` is every ticket on the boards you can see. Day boundaries follow the
 workspace timezone, so a ticket due `23:30` Jerusalem time is still "today".
 
-## 3. Boards and columns
+## 3. Simple tasks (`/tasks`)
+
+The owner's plain to-dos — what they see under "Add a task" on Today. No board,
+no columns: a title, a day, done or not. (Under the hood these are notes, §6;
+`/tasks` is the simpler vocabulary — use it.)
+
+```
+GET    /tasks?day=all|today|tomorrow|someday|YYYY-MM-DD&status=open|done|all   notes:read
+                                         default: every day, open only
+POST   /tasks              { title, day?, priority? }      → 201 { task }        notes:write
+GET    /tasks/{id}                                          → { task }
+PATCH  /tasks/{id}         { title?, day?, done?, priority? } → { task }
+POST   /tasks/{id}/done                                     → { task }  (completes it today)
+DELETE /tasks/{id}         soft-delete → trash, restorable 30 days
+```
+
+`day`: `"today"` (the default), `"tomorrow"`, `"YYYY-MM-DD"`, or `"someday"` /
+`null` for no day (the Inbox). `PATCH {"done": false}` reopens. A task object:
+`{ id, kind:"task", title, day, done, doneOn, priority, ticket, createdAt, updatedAt }`
+(`ticket` is set once it was promoted to a board, §6).
+
+```bash
+curl -X POST $BASE/tasks -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -d '{"title":"Order meat"}'                            # today
+curl -X POST $BASE/tasks -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -d '{"title":"Call the bank","day":"2026-10-20"}'      # a named day
+```
+
+Open tasks also appear in `GET /today` as `notesToday` (due today or earlier)
+and `inbox` (no day).
+
+## 4. Boards and columns
 
 ```
 GET    /boards[?archived=true]                 list (columns, labels, ticketCount)   boards:read
@@ -92,7 +154,7 @@ Column **stages** are semantic: `intake` (Ideas) · `backlog` · `active` (In
 Work) · `done` (implies `isDone`). Address a column anywhere by `columnId`, by
 name (`column` / `columnName`, case-insensitive) or by `stage`.
 
-## 4. Tickets
+## 5. Tickets
 
 ```
 GET    /tickets?boardId=&status=open|done|all&due=overdue|today|tomorrow|week|none|any
@@ -117,8 +179,8 @@ POST   /tickets/{id}/subtasks/reorder          { orderedIds } → { subtask:null
 { "boardId": "…", "title": "Renew passport",
   "column": "Backlog",            // or "columnId": "…" or "stage": "backlog"; default: first column
   "priority": "high",             // none | low | medium | high | urgent (default medium)
-  "dueDate": "2026-10-20",        // see §7; null = none
-  "description": "<p>Bring two photos.</p>",
+  "dueDate": "2026-10-20",        // see §8; null = none
+  "description": "Bring **two** photos.\n\n- [ ] Book slot\n- [ ] Pay fee",
   "labelNames": ["errand"],       // created on the board if missing (or "labelIds")
   "assigneeUserId": "…" }         // or "assigneeEmail" / "assigneeAgentId"; default: unassigned
 → 201 { "ticket": {...} }
@@ -131,6 +193,14 @@ POST   /tickets/{id}/subtasks/reorder          { orderedIds } → { subtask:null
 
 **Move** — `POST /tickets/{id}/move { "stage": "done" }` or
 `{ "column": "In Work", "position": 0 }`. `position` defaults to the end.
+
+**Move to another board** — the same call with `boardId`:
+`POST /tickets/{id}/move { "boardId": "<target>" }` (optionally plus `column` /
+`stage`; default: the column with the same stage, else the first). One atomic
+move: the ticket keeps its id, comments, subtasks, history, due date and
+priority; it gets the target board's next `number`; labels are re-created there
+by name; human assignees without access to the target board are unassigned.
+Logs `ticket.transferred`. Never emulate it with create + delete.
 Landing in a done column stamps `completedAt` and logs `ticket.done`; leaving
 one clears it (`ticket.reopened`). `POST /tickets/{id}/done` is the shortcut.
 
@@ -139,7 +209,7 @@ description (sanitized HTML), priority, subState, dueDate, completedAt, isDone,
 assignee, assignees[], labels[], subtasks[], comments[], commentCount,
 sourceNoteId, createdAt, updatedAt`.
 
-## 5. Notes and the inbox
+## 6. Notes and the inbox
 
 Notes are the owner's quick captures (one line each). They live on a local
 calendar day (`scheduledDay: "YYYY-MM-DD"`, `null` = unscheduled "General") and
@@ -161,13 +231,13 @@ POST   /inbox/{id}/sort  same body as promote, for a note queued to you     inbo
 
 Mark a note done: `PATCH /notes/{id} {"doneOn":"2026-07-14"}` (logs
 `note.done`); `{"doneOn": null}` reopens it. **Promote** takes the ticket
-fields of §4 (`boardId` required; `title` defaults to the note's first line;
+fields of §5 (`boardId` required; `title` defaults to the note's first line;
 `column`/`columnName`/`stage`, `labelNames`, `dueDate`, `priority` all work) and
 returns `{ ticket, note:{id,status:"sorted"} }`. The note is linked to the
 ticket and hidden from the inbox but never deleted.
 Never emulate this with create-ticket + delete-note.
 
-## 6. Trash (30-day restore)
+## 7. Trash (30-day restore)
 
 ```
 GET  /trash                                   { notes:[…], tickets:[…], retentionDays:30 }
@@ -177,7 +247,7 @@ POST /trash  { action:"restore", type:"note"|"ticket", id }
 Soft-deleted notes/tickets sit here for 30 days. Agents can restore; permanent
 purge is human-only.
 
-## 7. Conventions
+## 8. Conventions
 
 - **Priorities:** `none | low | medium | high | urgent`.
 - **dueDate:** `"YYYY-MM-DD"` (→ 12:00 in the workspace timezone), ISO with an
@@ -185,8 +255,10 @@ purge is human-only.
   A bare local datetime without a zone is rejected (422). Responses always
   return a UTC instant.
 - **Stages:** `intake | backlog | active | done`; `done` ⇔ `isDone`.
-- **Description:** simple HTML — `p b i u h3 ul ol li blockquote a` (sanitized;
-  plain text is fine). Not Markdown.
+- **Description:** Markdown (GFM: headings, lists, `- [ ]` checklists, bold,
+  links, code) — stored and returned as written, rendered formatted in the UI.
+  Simple HTML (`p b i u h3 ul ol li blockquote a`) is still accepted and
+  sanitized; older descriptions may come back as that HTML.
 - **Column by name** is case-insensitive; a miss is `422 column_not_found` and
   the message lists the board's columns.
 - **Timezone:** every "today" (agenda, `due=` filters, date-only due dates,
@@ -196,34 +268,36 @@ purge is human-only.
 - **Members:** `GET/POST /members`, `PATCH/DELETE /members/{userId}` (role and
   per-board access; the workspace owner can't be changed or removed).
 
-## 8. Daily agent playbook
+## 9. Daily agent playbook
 
 **Morning.** `GET /today`. Read `overdue` first, then `today`, `notesToday`
 and `inbox`. Summarize for the owner in that order: what slipped, what is due, what
 is captured but unplanned. Do not reschedule anything unasked. If the agenda
 is empty, say so and offer `upcoming`.
 
-**The owner dictates a task.** Pick the board (`GET /boards` once per session and
-cache `id`/`name`/columns; "personal", "home", "work" map to board names).
-Then one call:
+**The owner dictates a task.** Decide simple task vs ticket (§0) first.
 
-```bash
-curl -X POST $BASE/tickets -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
-  -d '{"boardId":"<id>","title":"Call the dentist","column":"Backlog","priority":"medium","dueDate":"2026-10-15"}'
-```
+- Everyday to-do → one call, lands on Today:
+  `POST /tasks {"title":"Order meat"}` (add `"day"` only if they named one).
+- Project work → find its board (`GET /boards` once per session, cache
+  `id`/`name`/`description`/columns), then
+  `POST /tickets {"boardId":"<id>","title":"Design LED add-on","stage":"backlog"}`.
 
 Dates in speech ("Thursday", "next week") become a `YYYY-MM-DD` in the
-workspace timezone; no date → omit `dueDate`. A quick thought with no board is a
-note: `POST /notes {"body":"…"}` (optionally `scheduledDay`). Confirm with the
-ticket `number` and board name.
+workspace timezone. Keep the owner's language in titles (Hebrew stays Hebrew).
+Several items in one message → classify each one separately.
 
-**Mark done.** Find it (`GET /tickets?q=dentist&status=open`, or from the
-agenda you already hold), then `POST /tickets/{id}/done`. For a note:
-`PATCH /notes/{id} {"doneOn":"<today>"}`. Report what was closed.
+**Mark done.** Find it in the agenda you already hold, or search: simple
+tasks with `GET /tasks?status=open`, tickets with `GET /tickets?q=dentist&status=open`.
+Then `POST /tasks/{id}/done` or `POST /tickets/{id}/done`. Report what was closed.
 
-**Move between boards.** Tickets belong to one board; "move" across boards is
-create-on-target + `DELETE` the original (it stays restorable 30 days). Say so.
-Within a board use `POST /tickets/{id}/move {"column":"In Work"}`.
+**Filed it in the wrong place?** A ticket that should have been a simple task:
+`POST /tasks {"title":…}` then `DELETE /tickets/{id}` (restorable 30 days). A
+simple task that turned out to be project work: `POST /notes/{id}/promote
+{"boardId":…}` (the task id is the note id).
+
+**Move between boards.** `POST /tickets/{id}/move {"boardId":"<target>"}` — one
+call, nothing lost (§5). Within a board use `POST /tickets/{id}/move {"column":"In Work"}`.
 
 **Create a project board.** `POST /boards {"name":"Kitchen reno",
 "columns":[{"name":"Ideas","stage":"intake"},{"name":"Next","stage":"backlog"},
@@ -238,3 +312,43 @@ the tickets the owner lists with `"stage":"backlog"`. Retire a finished project 
 boards or purge trash. When a column or board name doesn't match, read the 422
 message (it lists the valid names) and ask rather than guessing. All your
 actions appear in the Activity feed under your agent name, so keep them deliberate.
+
+## 10. Reporting back to the owner
+
+After every write (add, complete, move, reschedule, edit, delete), reply with
+a short receipt — **one line per item**, emoji first, nothing else. The owner
+should see at a glance what changed and where.
+
+| Emoji | Meaning | Line |
+|---|---|---|
+| ➕ | simple task added | `➕ Today · Order meat` / `➕ Thu 22 Oct · Call the bank` / `➕ Someday · Read the manual` |
+| 📋 | ticket added | `📋 Rack project › Backlog · #42 Design LED add-on` |
+| ✅ | completed | `✅ Order meat` / `✅ #17 Fix login bug` |
+| ↩️ | reopened | `↩️ #17 Fix login bug` |
+| 📅 | rescheduled / due date | `📅 Call the bank → Sun 25 Oct` |
+| 🔀 | moved | `🔀 #17 Fix login bug → In Work` / `🔀 #4 Order meat · General → Family` |
+| ✏️ | edited | `✏️ #42 Design LED add-on · priority high` |
+| 💬 | commented | `💬 #42 Design LED add-on` |
+| 🗑️ | deleted (restorable 30 days) | `🗑️ Old errand` |
+| ⚠️ | failed / needs the owner | `⚠️ No board for "garden" — which one?` |
+
+Rules:
+
+- Write in the owner's language; keep task titles exactly as saved (Hebrew
+  stays Hebrew). Dates as a short weekday + day + month in their language.
+- Several actions → one line each, in the order done, grouped by emoji. Over
+  ~8 lines, summarize the rest (`…and 6 more ✅`).
+- **Bold** the task title only if the chat renders Markdown; otherwise plain.
+- No preamble ("Sure!", "I've gone ahead and…"), no API talk, no ids, no
+  "let me know if…". If something was ambiguous, one ⚠️ line with the question.
+- Reads (agenda, "what's on today") are not receipts — answer those normally,
+  short, overdue first.
+
+Example — "add order meat, and for the rack project an LED add-on, and close
+the dentist":
+
+```
+➕ Today · Order meat
+📋 Rack project › Backlog · #42 LED add-on
+✅ Call the dentist
+```

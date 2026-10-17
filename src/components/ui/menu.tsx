@@ -105,6 +105,77 @@ export function Menu({
   );
 }
 
+/**
+ * A right-click menu: opens at the pointer (`at`, viewport coords), clamped to
+ * the viewport; closes on outside click, Escape, scroll or resize.
+ */
+export function ContextMenu({
+  at,
+  onClose,
+  children,
+  contentClassName,
+}: {
+  at: { x: number; y: number } | null;
+  onClose: () => void;
+  children: React.ReactNode | ((close: () => void) => React.ReactNode);
+  contentClassName?: string;
+}) {
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [pos, setPos] = React.useState<React.CSSProperties | null>(null);
+
+  React.useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!at || !content) {
+      setPos(null);
+      return;
+    }
+    setPos({
+      position: "fixed",
+      left: Math.max(8, Math.min(at.x, window.innerWidth - content.offsetWidth - 8)),
+      top: Math.max(8, Math.min(at.y, window.innerHeight - content.offsetHeight - 8)),
+    });
+  }, [at]);
+
+  React.useEffect(() => {
+    if (!at) return;
+    const onDoc = (e: MouseEvent) => {
+      if (contentRef.current?.contains(e.target as Node)) return;
+      onClose();
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && contentRef.current?.contains(e.target)) return;
+      onClose();
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onClose);
+    window.addEventListener("blur", onClose);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onClose);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [at, onClose]);
+
+  if (!at) return null;
+  return createPortal(
+    <div
+      ref={contentRef}
+      role="menu"
+      onContextMenu={(e) => e.preventDefault()}
+      style={pos ?? { position: "fixed", visibility: "hidden" }}
+      className={cn("z-[80] min-w-[12rem] rounded-xl border border-border bg-surface p-1 shadow-lg animate-slide-down-fade", contentClassName)}
+    >
+      {typeof children === "function" ? children(onClose) : children}
+    </div>,
+    document.body,
+  );
+}
+
 export function MenuItem({
   children,
   onClick,
