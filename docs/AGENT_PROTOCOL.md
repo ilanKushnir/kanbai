@@ -291,6 +291,13 @@ Several items in one message → classify each one separately.
 tasks with `GET /tasks?status=open`, tickets with `GET /tickets?q=dentist&status=open`.
 Then `POST /tasks/{id}/done` or `POST /tickets/{id}/done`. Report what was closed.
 
+**Planning ("plan my week", "what has no date?").** Undated work is
+`GET /tasks?day=someday` (simple tasks) and `GET /tickets?status=open&due=none`
+(tickets). Give each one a day only when the owner agrees: `PATCH /tasks/{id}
+{"day":"YYYY-MM-DD"}` / `PATCH /tickets/{id} {"dueDate":"YYYY-MM-DD"}`, then
+the §10 receipt with 📅 lines. The owner sees the same picture in the app's
+Plan calendar, where they drag tasks onto days themselves.
+
 **Filed it in the wrong place?** A ticket that should have been a simple task:
 `POST /tasks {"title":…}` then `DELETE /tickets/{id}` (restorable 30 days). A
 simple task that turned out to be project work: `POST /notes/{id}/promote

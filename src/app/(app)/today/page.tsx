@@ -5,14 +5,13 @@ import { ArrowUpRight, Sparkles } from "lucide-react";
 import { db } from "@/lib/db";
 import { getContext } from "@/lib/auth";
 import { boardWhereForContext } from "@/lib/authz";
-import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
+import { type UserLite } from "@/lib/serialize";
+import { isTaskNote, loadTicketModal, ticketRowInclude, toNoteRow, toTicketRow } from "@/lib/services/task-rows";
 import { listNotesForUser } from "@/lib/services/notes";
-import { boardAssigneeUsers } from "@/lib/services/board-members";
 import { listActivity, TASK_ACTIONS } from "@/lib/services/activity-feed";
-import { parseSubStates } from "@/lib/substates";
 import { parseUserSettings } from "@/lib/user-settings";
 import { startOfDay } from "@/lib/notes-schedule";
-import { greetingFor, summaryLine, buildToday, type TodayTicket, type TodayNote } from "@/lib/today-model";
+import { greetingFor, summaryLine, buildToday } from "@/lib/today-model";
 import { TodayHero } from "@/components/today/today-hero";
 import { TodayView, type TodayBoard } from "@/components/today/today-view";
 import { TodayTicketModal } from "@/components/today/today-ticket-modal";
@@ -49,13 +48,13 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
     // Every open, dated ticket the user can see — Today decides which day it belongs to.
     db.ticket.findMany({
       where: { board: boardWhere, column: { isDone: false }, deletedAt: null, dueDate: { not: null } },
-      include: { ...ticketInclude, board: { select: { id: true, slug: true, name: true, color: true } } },
+      include: ticketRowInclude,
       orderBy: { dueDate: "asc" },
     }),
     // Finished today (any due date) — the "Done today" shelf.
     db.ticket.findMany({
       where: { board: boardWhere, column: { isDone: true }, deletedAt: null, completedAt: { gte: startToday } },
-      include: { ...ticketInclude, board: { select: { id: true, slug: true, name: true, color: true } } },
+      include: ticketRowInclude,
       orderBy: { completedAt: "desc" },
       take: 50,
     }),
@@ -80,44 +79,9 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   }));
   const doneColumnByBoard = new Map(boardRows.map((b) => [b.id, b.columns.find((c) => c.isDone)?.id ?? null]));
 
-  const toRow = (t: (typeof openTickets)[number]): TodayTicket => {
-    const s = serializeTicket(t, usersById);
-    return {
-      id: s.id,
-      title: s.title,
-      number: s.number,
-      priority: s.priority,
-      dueDate: s.dueDate,
-      columnId: s.columnId,
-      columnName: s.column ?? "",
-      subState: s.subState,
-      completedAt: s.completedAt,
-      isDone: s.isDone,
-      board: { id: t.board.id, name: t.board.name, slug: t.board.slug, color: t.board.color, doneColumnId: doneColumnByBoard.get(t.board.id) ?? null },
-      labels: s.labels,
-      subtasksDone: s.subtasks.filter((x) => x.completed).length,
-      subtasksTotal: s.subtasks.length,
-      commentCount: s.commentCount,
-      createdByType: s.createdBy.type,
-      createdAt: s.createdAt,
-    };
-  };
+  const toRow = (t: (typeof openTickets)[number]) => toTicketRow(t, usersById, doneColumnByBoard);
   const tickets = [...openTickets.map(toRow), ...doneTodayTickets.map(toRow)];
-  const todayNotes: TodayNote[] = notes
-    .filter((n) => n.status === "inbox" || n.status === "queued")
-    .map((n) => ({
-      id: n.id,
-      body: n.body,
-      status: n.status,
-      scheduledDay: n.scheduledDay,
-      doneOn: n.doneOn,
-      priority: n.priority,
-      position: n.position,
-      createdAt: n.createdAt,
-      updatedAt: n.updatedAt,
-      assignedAgent: n.assignedAgent ? { id: n.assignedAgent.id, name: n.assignedAgent.name } : null,
-      ticket: n.ticket,
-    }));
+  const todayNotes = notes.filter(isTaskNote).map(toNoteRow);
 
   const now = new Date();
   const model = buildToday({ tickets, notes: todayNotes, now });
@@ -125,19 +89,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
   // ?ticket= opens the board modal on top of the list.
-  const modalTicket = sp.ticket
-    ? await db.ticket.findFirst({ where: { id: sp.ticket, deletedAt: null, board: boardWhere }, include: ticketInclude })
-    : null;
-  const modalBoard = modalTicket
-    ? await db.board.findFirst({
-        where: { id: modalTicket.boardId },
-        select: {
-          columns: { orderBy: { position: "asc" }, select: { id: true, name: true, isDone: true, subStates: true } },
-          labels: { orderBy: { name: "asc" }, select: { id: true, name: true, color: true } },
-        },
-      })
-    : null;
-  const modalMembers = modalTicket ? await boardAssigneeUsers(modalTicket.boardId) : [];
+  const modal = await loadTicketModal(sp.ticket, boardWhere, usersById);
 
   const agent = agents[0] ?? null;
 
@@ -189,13 +141,13 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         </aside>
       </div>
 
-      {modalTicket && modalBoard && (
+      {modal && (
         <TodayTicketModal
-          ticket={serializeTicket(modalTicket, usersById)}
-          columns={modalBoard.columns.map((c) => ({ ...c, subStates: parseSubStates(c.subStates) }))}
-          labels={modalBoard.labels}
+          ticket={modal.ticket}
+          columns={modal.columns}
+          labels={modal.labels}
           agents={agents.map(({ ownerUser, ...a }) => ({ id: a.id, name: a.name, color: a.color, kind: a.kind, ownerUserId: a.ownerUserId, ownerName: ownerUser?.name ?? null }))}
-          members={modalMembers}
+          members={modal.members}
           currentUser={{ id: ctx.user.id, name: ctx.user.name }}
         />
       )}

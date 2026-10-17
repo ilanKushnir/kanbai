@@ -10,6 +10,17 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.14.0",
+    date: "2026-10-17",
+    items: [
+      { emoji: "🗓️", title: "Plan — your tasks on a calendar", body: "A new section with a month and a week view of everything that has a day: simple tasks, tickets, and what you already finished." },
+      { emoji: "🫳", title: "Drag a task onto a day", body: "The “To plan” tray holds every task without a day (and anything overdue). Drag it onto the calendar, or back to the tray to clear its date." },
+      { emoji: "👆", title: "Tap to plan on your phone", body: "Tap the calendar button on a task, then tap a day. Long-press drags too." },
+      { emoji: "🎫", title: "Tickets without a due date", body: "A second tab in the tray lists open tickets with no due date — in work first, then backlog — filterable by board." },
+      { emoji: "📆", title: "Your Google Calendar, side by side", body: "Add your calendar's private iCal link in Settings → Calendars and your events show on Plan, read-only, recurring events included." },
+    ],
+  },
+  {
     version: "0.13.0",
     date: "2026-10-17",
     items: [

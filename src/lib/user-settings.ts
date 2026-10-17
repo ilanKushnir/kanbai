@@ -3,6 +3,9 @@
 export type LandingPage = "today" | "boards";
 export type Handedness = "right" | "left";
 export type DictationLanguage = "auto" | "en" | "he" | "es" | "fr" | "de" | "it" | "pt" | "ar" | "ru" | "zh" | "ja" | "ko";
+/** An external calendar shown read-only in Plan (e.g. Google's "secret address in iCal format"). */
+export type CalendarFeed = { id: string; name: string; url: string; color: string };
+
 export type UserSettings = {
   defaultLanding: LandingPage;
   /** First day of the week: 0 = Sunday … 6 = Saturday. Drives Notes scheduling. */
@@ -15,6 +18,8 @@ export type UserSettings = {
   pinnedBoardIds: string[];
   /** Last release the user dismissed in "What's new" (null = never). */
   whatsNewSeen: string | null;
+  /** Read-only iCal feeds overlaid on the Plan calendar. The url is a secret — never sent to the client. */
+  calendarFeeds: CalendarFeed[];
 };
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -24,7 +29,23 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   dictationLanguage: "auto",
   pinnedBoardIds: [],
   whatsNewSeen: null,
+  calendarFeeds: [],
 };
+
+export const MAX_CALENDAR_FEEDS = 8;
+
+function parseCalendarFeeds(value: unknown): CalendarFeed[] {
+  if (!Array.isArray(value)) return [];
+  const feeds: CalendarFeed[] = [];
+  for (const f of value) {
+    if (!f || typeof f !== "object") continue;
+    const { id, name, url, color } = f as Record<string, unknown>;
+    if (typeof id !== "string" || typeof url !== "string" || !id || !url) continue;
+    feeds.push({ id, url, name: typeof name === "string" && name ? name : "Calendar", color: typeof color === "string" ? color : "blue" });
+    if (feeds.length >= MAX_CALENDAR_FEEDS) break;
+  }
+  return feeds;
+}
 
 /** Sanity cap — nobody scans hundreds of pins, and it bounds the settings blob. */
 export const MAX_PINNED_BOARDS = 100;
@@ -61,7 +82,7 @@ export const DICTATION_LANGUAGES: { value: DictationLanguage; label: string; whi
 const DICTATION_VALUES = DICTATION_LANGUAGES.map((l) => l.value);
 
 export function parseUserSettings(raw?: string | null): UserSettings {
-  if (!raw) return { ...DEFAULT_USER_SETTINGS, pinnedBoardIds: [] };
+  if (!raw) return { ...DEFAULT_USER_SETTINGS, pinnedBoardIds: [], calendarFeeds: [] };
   try {
     const o = JSON.parse(raw) as Partial<UserSettings>;
     return {
@@ -77,8 +98,9 @@ export function parseUserSettings(raw?: string | null): UserSettings {
       dictationLanguage: o.dictationLanguage && DICTATION_VALUES.includes(o.dictationLanguage) ? o.dictationLanguage : "auto",
       pinnedBoardIds: parsePinnedBoardIds(o.pinnedBoardIds),
       whatsNewSeen: typeof o.whatsNewSeen === "string" ? o.whatsNewSeen.slice(0, 32) : null,
+      calendarFeeds: parseCalendarFeeds(o.calendarFeeds),
     };
   } catch {
-    return { ...DEFAULT_USER_SETTINGS, pinnedBoardIds: [] };
+    return { ...DEFAULT_USER_SETTINGS, pinnedBoardIds: [], calendarFeeds: [] };
   }
 }

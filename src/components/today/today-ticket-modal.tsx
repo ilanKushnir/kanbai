@@ -12,7 +12,7 @@ type LabelLite = { id: string; name: string; color: string };
 type AgentLite = { id: string; name: string; color: string; kind: string; ownerUserId: string | null; ownerName: string | null };
 type MemberLite = { id: string; name: string; avatarUrl?: string | null; avatarColor?: string | null };
 
-/** The board ticket modal, opened from Today via ?ticket=… and closed back to /today. */
+/** The board ticket modal, opened via ?ticket=… on Today or Plan and closed back to that page. */
 export function TodayTicketModal({
   ticket,
   columns,
@@ -20,6 +20,7 @@ export function TodayTicketModal({
   agents,
   members,
   currentUser,
+  returnTo = "/today",
 }: {
   ticket: SerializedTicket;
   columns: ColumnMeta[];
@@ -27,13 +28,14 @@ export function TodayTicketModal({
   agents: AgentLite[];
   members: MemberLite[];
   currentUser: { id: string; name: string };
+  returnTo?: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [current, setCurrent] = React.useState(ticket);
 
   function close() {
-    router.replace("/today", { scroll: false });
+    router.replace(returnTo, { scroll: false });
     router.refresh();
   }
 

@@ -471,7 +471,7 @@ function QuickAdd({
   );
 }
 
-function DayPicker({
+export function DayPicker({
   value,
   todayYmd,
   onChange,

@@ -1,6 +1,6 @@
 {
   "name": "kanbai",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -26,6 +26,7 @@
     "@types/sanitize-html": "^2.16.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "ical.js": "2.2.1",
     "lucide-react": "^1.20.0",
     "nanoid": "^5.1.11",
     "next": "16.2.9",

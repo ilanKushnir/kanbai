@@ -3,6 +3,7 @@ import { getContext } from "@/lib/auth";
 import { parseUserSettings } from "@/lib/user-settings";
 import { db } from "@/lib/db";
 import { SettingsView } from "@/components/settings/settings-view";
+import { feedHost } from "@/lib/services/calendar-feeds";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ export default async function SettingsPage() {
       workspaceId={ctx.workspace.id}
       workspace={ws ? { name: ws.name, defaultAgentId: ws.defaultAgentId, snapshotLimit: ws.snapshotLimit } : null}
       agents={agents}
+      calendarFeeds={settings.calendarFeeds.map((f) => ({ id: f.id, name: f.name, color: f.color, host: feedHost(f.url) }))}
     />
   );
 }

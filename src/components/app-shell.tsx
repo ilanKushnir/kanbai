@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Sun, Columns3, Sparkles, Plus, Search, Settings } from "lucide-react";
+import { Sun, CalendarDays, Columns3, Sparkles, Plus, Search, Settings } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { SkeletonFor } from "@/components/route-skeletons";
 import { CommandPalette } from "@/components/command-palette";
@@ -73,6 +73,7 @@ export function AppShell({
   const NAV = React.useMemo(
     () => [
       { href: "/today", label: "Today", icon: Sun, key: "today", badge: badgeCount },
+      { href: "/plan", label: "Plan", icon: CalendarDays, key: "plan", badge: 0 },
       { href: "/boards", label: "Boards", icon: Columns3, key: "boards", badge: 0 },
       { href: "/agents", label: "Agents", icon: Sparkles, key: "agents", badge: 0, managerOnly: true },
     ],

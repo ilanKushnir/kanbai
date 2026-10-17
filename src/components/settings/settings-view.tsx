@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/toast";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SettingsTabs } from "./settings-tabs";
 import { BackupSection } from "./backup-section";
+import { CalendarsSection, type PublicFeed } from "./calendars-section";
 import { api } from "@/lib/client-api";
 import { APP_VERSION, POWERED_BY } from "@/lib/version";
 import { DICTATION_LANGUAGES } from "@/lib/user-settings";
@@ -41,9 +42,10 @@ type Props = {
   workspaceId: string;
   workspace: { name: string; defaultAgentId: string | null; snapshotLimit: number } | null;
   agents: { id: string; name: string }[];
+  calendarFeeds: PublicFeed[];
 };
 
-export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn, handedness, dictationLanguage, workspaceId, workspace, agents }: Props) {
+export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn, handedness, dictationLanguage, workspaceId, workspace, agents, calendarFeeds }: Props) {
   const router = useRouter();
   const { toast } = useToast();
 
@@ -125,7 +127,7 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
               ))}
             </select>
             <p className="mt-1.5 text-xs text-fg-subtle">
-              Used by the board week view and the agent agenda.
+              Used by Plan, the board week view and the agent agenda.
             </p>
           </div>
           <div>
@@ -148,6 +150,8 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
           </div>
         </div>
       </section>
+
+      <CalendarsSection initial={calendarFeeds} />
 
       {/* Backup & offline checklist */}
       <BackupSection />
