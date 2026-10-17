@@ -10,6 +10,18 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.15.0",
+    date: "2026-10-17",
+    items: [
+      { emoji: "🎯", title: "Drag exactly where you mean", body: "Dragging on Plan was rebuilt: the card follows your finger or mouse, the day under it lights up, and a label shows where it will land. On a phone the card floats above your finger so you can see the day." },
+      { emoji: "📌", title: "Calendar and tray side by side", body: "On phones the calendar stays pinned at the top while the “To plan” list scrolls under it, so every task is one drag away from its day. Tap a day to open it." },
+      { emoji: "📅", title: "Pick a day, then confirm", body: "No drag needed: tap the calendar button on a task, tap a day, and confirm. You'll see what's already planned there before you say yes." },
+      { emoji: "↩️", title: "Undo and redo", body: "Every move on the calendar can be undone or redone from the buttons above it (or ⌘Z / ⇧⌘Z). After an undo, the calendar shows you where the task went." },
+      { emoji: "👉", title: "Swipe between months", body: "Swipe left or right on the calendar to glide to the next or previous month or week. On a trackpad, a sideways swipe works too. Hold a dragged task over an arrow to flip pages." },
+      { emoji: "🖥️", title: "The chosen day, beside the calendar", body: "On wide screens, click any day to see all of it next to the calendar, above the tray. Days outside the month are now clearly set apart." },
+    ],
+  },
+  {
     version: "0.14.0",
     date: "2026-10-17",
     items: [

@@ -648,3 +648,11 @@ body {
   pointer-events: none;
   animation: check-ring 0.9s 0.1s var(--ease-out-soft) both;
 }
+
+/* ── Plan: dragging onto the calendar ─────────────────────────────────────── */
+[data-drag] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+html.kb-plan-dragging, html.kb-plan-dragging * { cursor: grabbing !important; -webkit-user-select: none; user-select: none; }
+@keyframes drag-lift { from { transform: scale(1); box-shadow: none } to { transform: scale(1.03) rotate(-1deg); } }
+.kb-drag-lift { animation: drag-lift 0.16s var(--ease-out-emph) both; transform-origin: 30% 50%; }
+@keyframes drop-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 0%, transparent) } 50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-primary) 22%, transparent) } }
+.kb-pick-armed { animation: drop-pulse 1.8s ease-in-out infinite; }

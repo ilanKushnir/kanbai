@@ -6,7 +6,7 @@ import { loadEvents } from "@/lib/services/calendar-feeds";
 export const dynamic = "force-dynamic";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_RANGE_DAYS = 100;
+const MAX_RANGE_DAYS = 130;
 
 /** GET /api/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD — the signed-in user's external calendar events. */
 export const GET = handler(async (req: Request) => {
