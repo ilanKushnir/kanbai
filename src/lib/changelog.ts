@@ -10,6 +10,15 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.19.0",
+    date: "2026-10-18",
+    items: [
+      { emoji: "⇅", title: "Sort on boards", body: "Columns now sort by due date — soonest at the top, and on the same day the higher priority first. Done columns show the latest finished first." },
+      { emoji: "🎛️", title: "Per column, or the whole board", body: "Each column has its own ⇅ menu: due date, priority, newest, recently updated, recently completed, or Manual (your own drag order). The Sort button next to Filter sets every column at once." },
+      { emoji: "🖐️", title: "Manual still there", body: "Drag a card into a sorted column and it takes its sorted place. To arrange cards by hand, switch that column to Manual." },
+    ],
+  },
+  {
     version: "0.18.0",
     date: "2026-10-18",
     items: [

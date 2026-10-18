@@ -26,7 +26,7 @@ test("Each sub-state is its own droppable band (section-keyed containers)", () =
 });
 
 test("A cancelled or void drag reverts the optimistic move (no stranded card)", () => {
-  assert.match(boardView, /dragSnapshot\.current = containersRef\.current/);
+  assert.match(boardView, /const shown = sortContainers\(containersRef\.current\);\s*setCont\(shown\);\s*dragSnapshot\.current = shown/);
   assert.match(boardView, /function onDragCancel\(\)/);
   assert.match(boardView, /onDragCancel=\{onDragCancel\}/);
   // onDragEnd restores the snapshot when released onto nothing.

@@ -44,6 +44,7 @@ import {
   CircleCheck,
   CornerUpRight,
   ArrowUpRight,
+  ArrowUpDown,
   Trash2,
 } from "lucide-react";
 import { TicketCard } from "./ticket-card";
@@ -65,6 +66,7 @@ import {
   visibleNewestFirstIds,
 } from "@/lib/board-section-visibility";
 import type { BoardData } from "@/lib/services/boards";
+import { SORT_OPTIONS, columnSort, parseBoardSort, sortIds, type BoardSort, type SortKey } from "@/lib/board-sort";
 import type { SerializedTicket } from "@/lib/serialize";
 import { useCompleteGuard } from "@/components/today/subtasks";
 
@@ -160,6 +162,41 @@ function columnFlat(map: Record<string, string[]>, col: { id: string; subStates:
 function effectiveSub(subStates: string[], sub: string | null | undefined): string | null {
   if (!subStates.length) return null;
   return sub && subStates.includes(sub) ? sub : subStates[0];
+}
+
+// The sort choice is per viewer and per board, kept on this device.
+const sortListeners = new Set<() => void>();
+function useBoardSort(boardId: string) {
+  const key = `kanbai:board-sort:${boardId}`;
+  const raw = React.useSyncExternalStore(
+    (cb) => {
+      sortListeners.add(cb);
+      window.addEventListener("storage", cb);
+      return () => {
+        sortListeners.delete(cb);
+        window.removeEventListener("storage", cb);
+      };
+    },
+    () => {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    () => null,
+  );
+  const pref = React.useMemo(() => parseBoardSort(raw), [raw]);
+  const save = React.useCallback(
+    (next: BoardSort) => {
+      try {
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch {}
+      for (const l of sortListeners) l();
+    },
+    [key],
+  );
+  return [pref, save] as const;
 }
 
 type Filters = {
@@ -318,6 +355,25 @@ export function BoardView({
   const focusedRef = React.useRef<string | null>(null);
   focusedRef.current = focusedId;
 
+  const [sortPref, saveSortPref] = useBoardSort(board.id);
+  // Sorted columns show (and drag from) their sorted order; Manual keeps the stored one.
+  const sortContainers = React.useCallback(
+    (map: Record<string, string[]>) => {
+      const next = { ...map };
+      for (const col of cols) {
+        const key = columnSort(sortPref, col);
+        if (key === "manual") continue;
+        // Sections are stored oldest→newest and shown reversed (see visibleSectionIds):
+        // sort the shown order, then store it back reversed.
+        for (const k of columnSectionKeys(col)) if (next[k]) next[k] = sortIds([...next[k]].reverse(), ticketsById, key).reverse();
+      }
+      return next;
+    },
+    [cols, sortPref, ticketsById],
+  );
+  const sortedContainers = React.useMemo(() => sortContainers(containers), [sortContainers, containers]);
+  const sortHinted = React.useRef(false);
+
   const [filters, setFilters] = React.useState<Filters>({
     q: "",
     priorities: new Set(),
@@ -390,7 +446,10 @@ export function BoardView({
   }
 
   function onDragStart(e: DragStartEvent) {
-    dragSnapshot.current = containersRef.current;
+    // Drag from what's on screen: sorted columns in their sorted order.
+    const shown = sortContainers(containersRef.current);
+    setCont(shown);
+    dragSnapshot.current = shown;
     const id = String(e.active.id);
     setActiveId(id);
     // Show the origin column's sub-state zones right away.
@@ -474,6 +533,19 @@ export function BoardView({
     if (!finalContainer) return;
     const { colId, sub } = parseSection(finalContainer);
     const col = cols.find((c) => c.id === colId);
+
+    // Reordering inside a sorted column: the sort puts it back — say why, once.
+    const startKey = keyOf(dragSnapshot.current, activeId);
+    if (col && startKey === finalContainer && columnSort(sortPref, col) !== "manual") {
+      const before = dragSnapshot.current[finalContainer] ?? [];
+      if (before.join() !== (result[finalContainer] ?? []).join() && !sortHinted.current) {
+        sortHinted.current = true;
+        const label = SORT_OPTIONS.find((o) => o.key === columnSort(sortPref, col))?.label ?? "";
+        toast({ title: `“${col.name}” is sorted by ${label.toLowerCase()}`, description: "Pick Manual in the column's sort menu (⇅) to arrange it by hand." });
+      }
+      setCont(dragSnapshot.current);
+      return;
+    }
     const position = col ? columnFlat(result, col).indexOf(activeId) : result[finalContainer].indexOf(activeId);
 
     // Into Done with parts still open: ask first; Cancel puts the card back.
@@ -859,9 +931,10 @@ export function BoardView({
       document.getElementById(`tk-${focusedId}`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [focusedId]);
 
+  const view = activeId ? containers : sortedContainers;
   const grid = cols.map((col) => {
     const sections: SectionData[] = columnSectionKeys(col).map((key, i) => {
-      const ids = containers[key] ?? [];
+      const ids = view[key] ?? [];
       const visibleIds = activeFilterCount ? ids.filter((id) => ticketsById[id] && matches(ticketsById[id])) : ids;
       return { key, sub: col.subStates.length ? col.subStates[i] : null, allIds: ids, visibleIds };
     });
@@ -916,6 +989,8 @@ export function BoardView({
         labels={board.labels}
         agents={agents}
         switcher={switcher}
+        sortPref={sortPref}
+        onSortAll={(key) => saveSortPref({ all: key, cols: {} })}
       />
 
       <DndContext
@@ -959,6 +1034,15 @@ export function BoardView({
               onSetSubStates={(s) => setColumnSubStates(col.id, s)}
               onMove={(dir) => moveColumn(col.id, dir)}
               onDelete={() => deleteColumn(col.id)}
+              sort={columnSort(sortPref, col)}
+              sortOverridden={sortPref.cols[col.id] != null}
+              onSort={(key) => {
+                const cols = { ...sortPref.cols };
+                if (key) cols[col.id] = key;
+                else delete cols[col.id];
+                saveSortPref({ ...sortPref, cols });
+              }}
+              onSortAll={(key) => saveSortPref({ all: key, cols: {} })}
             />
           ))}
 
@@ -1002,6 +1086,8 @@ function Toolbar({
   labels,
   agents,
   switcher,
+  sortPref,
+  onSortAll,
 }: {
   filters: Filters;
   setFilters: React.Dispatch<React.SetStateAction<Filters>>;
@@ -1009,6 +1095,8 @@ function Toolbar({
   labels: { id: string; name: string; color: string }[];
   agents: AgentLite[];
   switcher?: React.ReactNode;
+  sortPref: BoardSort;
+  onSortAll: (key: SortKey | undefined) => void;
 }) {
   function toggleSet(key: "priorities" | "labelIds", value: string) {
     setFilters((f) => {
@@ -1087,6 +1175,32 @@ function Toolbar({
         )}
       </Menu>
 
+      <Menu
+        trigger={
+          <button
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium transition-colors hover:bg-surface-2 cursor-pointer"
+            title="Sort every column"
+          >
+            <ArrowUpDown className="h-4 w-4" />
+            <span className="hidden sm:inline">{SORT_OPTIONS.find((o) => o.key === (sortPref.all ?? "due"))?.short}</span>
+            {Object.keys(sortPref.cols).length > 0 && <span className="h-1.5 w-1.5 rounded-full bg-fg-subtle" title="Some columns have their own order" />}
+          </button>
+        }
+        contentClassName="w-64"
+      >
+        {(close) => (
+          <SortOptions
+            title="Sort all columns"
+            current={sortPref.all ?? "due"}
+            note={Object.keys(sortPref.cols).length ? "Resets columns with their own order." : "Done columns stay by completion under Due date."}
+            onPick={(key) => {
+              onSortAll(key === "due" ? undefined : key);
+              close();
+            }}
+          />
+        )}
+      </Menu>
+
       {activeFilterCount > 0 && (
         <button
           onClick={() => setFilters({ q: "", priorities: new Set(), labelIds: new Set(), assignee: "any" })}
@@ -1095,6 +1209,45 @@ function Toolbar({
           <X className="h-3.5 w-3.5" /> Clear
         </button>
       )}
+    </div>
+  );
+}
+
+/** The list of orders, current one ticked, each with a one-line hint. */
+function SortOptions({
+  title,
+  current,
+  note,
+  hideCompleted,
+  onPick,
+  footer,
+}: {
+  title: string;
+  current: SortKey;
+  note?: string;
+  hideCompleted?: boolean;
+  onPick: (key: SortKey) => void;
+  footer?: React.ReactNode;
+}) {
+  return (
+    <div className="p-1">
+      <div className="px-2 pb-1 pt-1.5 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">{title}</div>
+      {SORT_OPTIONS.filter((o) => !(hideCompleted && o.key === "completed")).map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          onClick={() => onPick(o.key)}
+          className={cn("flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2 cursor-pointer", current === o.key && "bg-surface-2")}
+        >
+          <span className="grid h-5 w-4 shrink-0 place-items-center">{current === o.key && <Check className="h-3.5 w-3.5" />}</span>
+          <span className="min-w-0">
+            <span className="block text-sm">{o.label}</span>
+            <span className="block text-xs text-fg-subtle">{o.hint}</span>
+          </span>
+        </button>
+      ))}
+      {note && <p className="px-2 pb-1 pt-1.5 text-[0.6875rem] text-fg-subtle">{note}</p>}
+      {footer}
     </div>
   );
 }
@@ -1154,6 +1307,10 @@ function Column({
   onSetSubStates,
   onMove,
   onDelete,
+  sort,
+  sortOverridden,
+  onSort,
+  onSortAll,
 }: {
   col: ColumnMeta;
   index: number;
@@ -1180,6 +1337,11 @@ function Column({
   onSetSubStates: (subStates: string[]) => void;
   onMove: (dir: "left" | "right") => void;
   onDelete: () => void;
+  /** How this column is ordered, whether it chose that itself, and how to change it (null = back to the board's order). */
+  sort: SortKey;
+  sortOverridden: boolean;
+  onSort: (key: SortKey | null) => void;
+  onSortAll: (key: SortKey | undefined) => void;
 }) {
   const dot = STAGE_DOT[col.stage];
   const overLimit = col.wipLimit != null && totalCount > col.wipLimit;
@@ -1263,6 +1425,57 @@ function Column({
         <Menu
           align="end"
           className="ml-auto"
+          contentClassName="w-64"
+          trigger={
+            <button
+              className={cn(
+                "inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[0.6875rem] font-medium transition-colors hover:bg-surface-2 hover:text-fg cursor-pointer",
+                sortOverridden ? "bg-surface-2 text-fg-muted" : "text-fg-subtle",
+              )}
+              aria-label={`Sort column — now ${SORT_OPTIONS.find((o) => o.key === sort)?.label}`}
+              title={`Sorted by ${SORT_OPTIONS.find((o) => o.key === sort)?.label.toLowerCase()}`}
+            >
+              <ArrowUpDown className="h-3.5 w-3.5" />
+              {SORT_OPTIONS.find((o) => o.key === sort)?.short}
+            </button>
+          }
+        >
+          {(close) => (
+            <SortOptions
+              title={`Sort “${col.name}”`}
+              current={sort}
+              onPick={(key) => {
+                onSort(key);
+                close();
+              }}
+              footer={
+                <div className="mt-1 flex flex-col border-t border-border pt-1">
+                  {sortOverridden && (
+                    <MenuItem
+                      onClick={() => {
+                        onSort(null);
+                        close();
+                      }}
+                    >
+                      Use the board&apos;s order
+                    </MenuItem>
+                  )}
+                  <MenuItem
+                    onClick={() => {
+                      onSortAll(sort === "due" ? undefined : sort);
+                      close();
+                    }}
+                  >
+                    Sort every column like this
+                  </MenuItem>
+                </div>
+              }
+            />
+          )}
+        </Menu>
+
+        <Menu
+          align="end"
           trigger={
             <button
               className="grid h-6 w-6 place-items-center rounded-md text-fg-subtle opacity-100 transition-opacity hover:bg-surface-2 hover:text-fg md:opacity-0 md:group-hover/col:opacity-100 cursor-pointer"
