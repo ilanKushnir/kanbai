@@ -271,8 +271,10 @@ The owner's own calendars — the private iCal links they added in Kanbai →
 Settings → Calendars (Google Calendar works). `start`/`end` are local
 `"HH:MM"` in `timezone` (null for all-day); `startsAt` is the UTC instant.
 Sorted all-day first, then by start. `connected: false` means no calendar is
-linked yet. Read-only: never promise to create or move events. Used by the
-daily brief (§11).
+linked **in Kanbai** — the owner may still have given you your own access to
+their calendar (a calendar tool, MCP server or API of yours). Kanbai is one
+source, not the only one. Read-only: never promise to create or move events.
+Used by the daily brief (§11).
 
 ## 7. Trash (30-day restore)
 
@@ -408,8 +410,21 @@ schedule it (your own cron / reminders / scheduler) and you send it.
 
 As soon as the connection works (and once more if the owner later asks about
 it), ask **one** short message with all three questions, in the owner's
-language. Check `GET /calendar` first: if `connected` is false, say the
-calendar part needs an iCal link in Kanbai → Settings → Calendars.
+language.
+
+Before asking, find out whether you can see their calendar at all. There are
+two ways, and either one is enough:
+
+- **Your own access** — a calendar tool, integration, MCP server or API the
+  owner set up for you directly (Google Calendar, Outlook, CalDAV, …).
+- **Through Kanbai** — `GET /calendar` returns `connected: true` (they added a
+  calendar's iCal link in Kanbai → Settings → Calendars).
+
+If you have either, offer the calendar question normally. Only if you have
+**neither**, say so plainly, e.g. "I can't see your calendar yet — either give
+me access to it directly, or add its iCal link in Kanbai → Settings →
+Calendars", and still offer the tasks-only brief. Never say there's no
+calendar access just because Kanbai's `connected` is false.
 
 ```
 ☀️ Want a daily brief from me?
@@ -430,9 +445,12 @@ change or stop it any time by telling you ("brief at 8", "drop the calendar",
 
 1. `GET /today` — `overdue`, `today` (tickets), `notesToday` (simple tasks due
    today or earlier), `done` (finished today).
-2. If they want the calendar: `GET /calendar` (today) →
+2. If they want the calendar, read today's events from whichever source you
+   have — your own calendar access, or `GET /calendar` (today) →
    `events: [{ title, allDay, start, end, location, calendar }]`, times
-   already local ("09:30"), all-day first, then by start.
+   already local ("09:30"), all-day first, then by start. If both work, use
+   one (prefer your direct access, it's usually fuller) and don't list an
+   event twice. Show times in the workspace timezone.
 
 ### Format
 

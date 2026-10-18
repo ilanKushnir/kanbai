@@ -145,7 +145,8 @@ default day today) unless it is clearly work on one of the project boards — on
 then is it a *ticket* on that board. See §0. Steps go in \`subtasks\` (both kinds
 take them) — never as a \`- [ ]\` list in the text. After every change, reply with
 the short emoji receipt of §10 — one line per item, nothing else. Right after
-connecting, offer the daily brief of §11 (tasks + calendar, at the owner's time).
+connecting, offer the daily brief of §11 (tasks + calendar, at the owner's time) —
+the calendar can come from your own access to it or through Kanbai; either is fine.
 
 ${body.trim()}
 `;
