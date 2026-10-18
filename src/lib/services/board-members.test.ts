@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { db } from "@/lib/db";
 import { HttpError } from "@/lib/api";
-import { listBoardMembers, boardAssigneeUsers, setBoardMemberAccess } from "./board-members";
+import { listBoardMembers, boardAssigneeUsers, setBoardMemberAccess, shareBoardByEmail } from "./board-members";
 import { updateAgent } from "./agents";
 import { agentAccessibleBoardIds, assertAgentBoardAccess } from "@/lib/access";
 
@@ -148,4 +148,32 @@ test("assertAgentBoardAccess: 404 outside the owner's boards", async () => {
     () => assertAgentBoardAccess(limited, boardBId),
     (e: unknown) => e instanceof HttpError && e.status === 404,
   );
+});
+
+// ── Sharing by email (one step, no invite link) ──
+
+test("shareBoardByEmail: an existing account outside the workspace joins as member with the grant", async () => {
+  const res = await shareBoardByEmail(boardBId, "  Mallory@BM.test ", "view", ACTOR);
+  assert.equal(res.userId, mallory);
+  assert.equal(res.implicit, false);
+  const m = await db.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: wsId, userId: mallory } } });
+  assert.equal(m?.role, "member");
+  const g = await db.boardAccess.findUnique({ where: { boardId_userId: { boardId: boardBId, userId: mallory } } });
+  assert.equal(g?.level, "view");
+  // Only the shared board — not the rest of the workspace.
+  assert.equal(await db.boardAccess.count({ where: { boardId: boardAId, userId: mallory } }), 0);
+});
+
+test("shareBoardByEmail: managers are left alone, unknown emails are refused", async () => {
+  const res = await shareBoardByEmail(boardBId, "adam@bm.test", "view", ACTOR);
+  assert.equal(res.implicit, true);
+  const adamRole = await db.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: wsId, userId: adam } } });
+  assert.equal(adamRole?.role, "admin");
+
+  const users = await db.user.count();
+  await assert.rejects(
+    () => shareBoardByEmail(boardBId, "nobody@bm.test", "edit", ACTOR),
+    (e: unknown) => e instanceof HttpError && e.status === 422,
+  );
+  assert.equal(await db.user.count(), users);
 });

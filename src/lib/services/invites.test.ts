@@ -11,6 +11,7 @@ import {
   applyWorkspaceInvite,
   redeemSystemInviteSignup,
   findValidInvite,
+  acceptPendingInvitesFor,
 } from "./invites";
 import { setBoardMemberAccess } from "./board-members";
 import { POST as V1_MEMBERS_POST } from "@/app/api/v1/members/route";
@@ -260,4 +261,34 @@ test("v1 members POST rejects unknown emails and only attaches existing users", 
     where: { workspaceId_userId: { workspaceId: wsId, userId: outsider } },
   });
   assert.equal(membership?.role, "member");
+});
+
+// ── Pending invites apply on sign-in ──
+
+test("acceptPendingInvitesFor: a live invite to this email applies without opening the link", async () => {
+  const u = await db.user.create({ data: { email: "yael@inv.test", name: "Yael" } });
+  const { invite } = await createWorkspaceInvite({
+    workspaceId: wsId,
+    invitedById: root.id,
+    actorRole: "owner",
+    email: "Yael@inv.test",
+    boardAccess: [{ boardId, level: "edit" }],
+  });
+  // An expired one for another workspace stays put.
+  const other = await db.workspace.create({ data: { name: "Other", slug: "inv-other" } });
+  await db.invite.create({
+    data: { token: "expired-tok", kind: "workspace", role: "member", workspaceId: other.id, email: "yael@inv.test", invitedById: root.id, expiresAt: new Date(Date.now() - 1000) },
+  });
+
+  await acceptPendingInvitesFor(u);
+
+  const m = await db.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: wsId, userId: u.id } } });
+  assert.equal(m?.role, "member");
+  const g = await db.boardAccess.findUnique({ where: { boardId_userId: { boardId, userId: u.id } } });
+  assert.equal(g?.level, "edit");
+  assert.equal((await db.invite.findUnique({ where: { id: invite.id } }))?.status, "accepted");
+  assert.equal(await db.workspaceMember.count({ where: { workspaceId: other.id, userId: u.id } }), 0);
+
+  await acceptPendingInvitesFor(u); // idempotent — nothing pending now
+  assert.equal(await db.workspaceMember.count({ where: { userId: u.id } }), 1);
 });

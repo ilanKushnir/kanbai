@@ -268,6 +268,11 @@ export const setBoardMemberAccessSchema = z.object({
   level: z.enum(["view", "edit"]).nullable(),
 });
 
+export const shareBoardByEmailSchema = z.object({
+  email: z.string().trim().email().max(254),
+  level: z.enum(["view", "edit"]).default("edit"),
+});
+
 /** Pin/unpin a board for the signed-in user (a personal bookmark, not board state). */
 export const pinBoardSchema = z.object({
   pinned: z.boolean(),

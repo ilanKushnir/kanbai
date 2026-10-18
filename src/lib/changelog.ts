@@ -10,6 +10,15 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.20.0",
+    date: "2026-10-18",
+    items: [
+      { emoji: "🤝", title: "Sharing a board just works", body: "In a board's Members, type someone's Kanbai email and tap Share — they see the board right away, nothing to accept. Invites that were already sent apply the next time that person opens Kanbai." },
+      { emoji: "🧭", title: "Shared boards are easy to find", body: "If you belong to more than one workspace, Kanbai opens in the one that has your boards, and the Boards page lists boards from your other workspaces — tap one to jump straight in." },
+      { emoji: "🗄️", title: "Archive from the Boards page", body: "Each board card has a ⋯ menu with Pin and Archive. Archived boards wait under Archived at the bottom of the page, ready to restore." },
+    ],
+  },
+  {
     version: "0.19.0",
     date: "2026-10-18",
     items: [

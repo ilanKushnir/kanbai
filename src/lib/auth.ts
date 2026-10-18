@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { db } from "./db";
 import { sha256, randomToken } from "./password";
 import { HttpError } from "./api";
+import { acceptPendingInvitesFor } from "./services/invites";
 import type { User, Workspace } from "@/generated/prisma";
 
 const SESSION_COOKIE = "kanbai_session";
@@ -46,6 +47,10 @@ export const getSessionUser = cache(async (): Promise<User | null> => {
 });
 
 async function buildContext(user: User): Promise<Context> {
+  // A workspace invite addressed to this account counts as accepted the
+  // moment they're signed in — sharing shouldn't hinge on opening a link.
+  await acceptPendingInvitesFor(user);
+
   const memberships = await db.workspaceMember.findMany({
     where: { userId: user.id },
     include: { workspace: true },
@@ -55,10 +60,7 @@ async function buildContext(user: User): Promise<Context> {
 
   const jar = await cookies();
   const wsId = jar.get(WS_COOKIE)?.value;
-  const active =
-    memberships.find((m) => m.workspaceId === wsId) ??
-    memberships.find((m) => m.role === "owner") ??
-    memberships[0];
+  const active = memberships.find((m) => m.workspaceId === wsId) ?? (await defaultMembership(user.id, memberships));
 
   const role = active.role as WorkspaceRole;
   return {
@@ -69,6 +71,29 @@ async function buildContext(user: User): Promise<Context> {
     isSystemAdmin: user.systemRole === "admin",
     memberships: memberships.map((m) => ({ workspace: m.workspace, role: m.role as WorkspaceRole })),
   };
+}
+
+/**
+ * Where to land without a remembered choice: the user's own workspace if it
+ * has boards, else the first workspace that shows them a board (someone
+ * shared one), else their own. Someone who only joined to see a shared board
+ * shouldn't open the app into their own empty workspace.
+ */
+async function defaultMembership<M extends { workspaceId: string; role: string }>(userId: string, memberships: M[]): Promise<M> {
+  const owned = memberships.find((m) => m.role === "owner");
+  if (memberships.length === 1) return memberships[0];
+  const visible = await db.board.findMany({
+    where: {
+      archived: false,
+      OR: memberships.map((m) =>
+        m.role === "member" ? { workspaceId: m.workspaceId, access: { some: { userId } } } : { workspaceId: m.workspaceId },
+      ),
+    },
+    select: { workspaceId: true },
+  });
+  const withBoards = new Set(visible.map((b) => b.workspaceId));
+  if (owned && withBoards.has(owned.workspaceId)) return owned;
+  return memberships.find((m) => withBoards.has(m.workspaceId)) ?? owned ?? memberships[0];
 }
 
 /** For API routes — throws 401/403 (handled by handler()). */

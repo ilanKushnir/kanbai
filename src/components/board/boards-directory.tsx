@@ -4,7 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import { ThemedArt } from "@/components/ui/themed-art";
 import { useRouter } from "next/navigation";
-import { Globe, LayoutGrid, Pin, Users } from "lucide-react";
+import { Archive, Globe, LayoutGrid, MoreHorizontal, Pin, PinOff, Users } from "lucide-react";
+import { Menu, MenuItem } from "@/components/ui/menu";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, tone } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -81,7 +82,33 @@ export function BoardsDirectory({
     }
   }
 
-  const sections = buildBoardSections(boards, pinnedIds, isManager);
+  // Archiving hides the card at once; the refresh moves it under Archived.
+  const [archivedIds, setArchivedIds] = React.useState<string[]>([]);
+  async function setArchived(board: BoardCardData, archived: boolean) {
+    setArchivedIds((prev) => (archived ? [...prev, board.id] : prev.filter((id) => id !== board.id)));
+    try {
+      await api(`/api/boards/${board.id}`, { method: "PATCH", body: { archived } });
+      router.refresh();
+      if (archived) {
+        toast({
+          title: `Archived ${board.name}`,
+          description: "It's under Archived at the bottom of this page.",
+          actionLabel: "Undo",
+          onAction: () => void setArchived(board, false),
+        });
+      }
+    } catch (e) {
+      setArchivedIds((prev) => (archived ? prev.filter((id) => id !== board.id) : [...prev, board.id]));
+      toast({
+        title: archived ? "Couldn't archive" : "Couldn't restore",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "error",
+      });
+    }
+  }
+
+  const visible = archivedIds.length ? boards.filter((b) => !archivedIds.includes(b.id)) : boards;
+  const sections = buildBoardSections(visible, pinnedIds, isManager);
   const showHeadings = sections.length > 1 || sections[0]?.key !== "workspace";
 
   return (
@@ -110,6 +137,7 @@ export function BoardsDirectory({
                   board={b}
                   pinned={pinnedIds.includes(b.id)}
                   onTogglePin={() => togglePin(b)}
+                  onArchive={isManager ? () => setArchived(b, true) : undefined}
                 />
               ))}
             </div>
@@ -124,10 +152,13 @@ function BoardCard({
   board: b,
   pinned,
   onTogglePin,
+  onArchive,
 }: {
   board: BoardCardData;
   pinned: boolean;
   onTogglePin: () => void;
+  /** Managers only — members can't archive a board for everyone. */
+  onArchive?: () => void;
 }) {
   const t = tone(b.color);
   const open = b.ticketCount - b.doneCount;
@@ -192,19 +223,59 @@ function BoardCard({
         </div>
       </Link>
 
-      <button
-        type="button"
-        onClick={onTogglePin}
-        aria-pressed={pinned}
-        aria-label={pinned ? `Unpin ${b.name}` : `Pin ${b.name}`}
-        title={pinned ? "Unpin" : "Pin"}
-        className={cn(
-          "absolute right-1.5 top-1.5 z-10 grid h-9 w-9 place-items-center rounded-lg bg-surface/80 backdrop-blur transition-colors cursor-pointer",
-          pinned ? "text-primary hover:bg-primary-soft" : "text-fg-subtle/70 hover:bg-surface-2 hover:text-fg-muted",
-        )}
-      >
-        <Pin className={cn("h-4 w-4", pinned && "fill-current")} />
-      </button>
+      {onArchive ? (
+        <Menu
+          align="end"
+          className="absolute right-1.5 top-1.5 z-10"
+          contentClassName="w-44"
+          trigger={
+            <button
+              type="button"
+              aria-label={`${b.name} options`}
+              title="Options"
+              className="grid h-9 w-9 place-items-center rounded-lg bg-surface/80 text-fg-muted backdrop-blur transition-colors hover:bg-surface-2 hover:text-fg cursor-pointer"
+            >
+              {pinned ? <Pin className="h-4 w-4 fill-current text-primary" /> : <MoreHorizontal className="h-4 w-4" />}
+            </button>
+          }
+        >
+          {(close) => (
+            <>
+              <MenuItem
+                onClick={() => {
+                  close();
+                  onTogglePin();
+                }}
+              >
+                {pinned ? <PinOff className="h-4 w-4 text-fg-subtle" /> : <Pin className="h-4 w-4 text-fg-subtle" />}
+                {pinned ? "Unpin" : "Pin to top"}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  close();
+                  onArchive();
+                }}
+              >
+                <Archive className="h-4 w-4 text-fg-subtle" /> Archive
+              </MenuItem>
+            </>
+          )}
+        </Menu>
+      ) : (
+        <button
+          type="button"
+          onClick={onTogglePin}
+          aria-pressed={pinned}
+          aria-label={pinned ? `Unpin ${b.name}` : `Pin ${b.name}`}
+          title={pinned ? "Unpin" : "Pin"}
+          className={cn(
+            "absolute right-1.5 top-1.5 z-10 grid h-9 w-9 place-items-center rounded-lg bg-surface/80 backdrop-blur transition-colors cursor-pointer",
+            pinned ? "text-primary hover:bg-primary-soft" : "text-fg-subtle/70 hover:bg-surface-2 hover:text-fg-muted",
+          )}
+        >
+          <Pin className={cn("h-4 w-4", pinned && "fill-current")} />
+        </button>
+      )}
     </div>
   );
 }

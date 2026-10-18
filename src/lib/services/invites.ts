@@ -105,9 +105,14 @@ export async function applyWorkspaceInvite(invite: Invite, userId: string) {
   if (invite.kind !== "workspace" || !invite.workspaceId) {
     throw new HttpError(400, "Not a workspace invite");
   }
+  const existing = await db.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId: invite.workspaceId, userId } },
+    select: { role: true },
+  });
   await db.workspaceMember.upsert({
     where: { workspaceId_userId: { workspaceId: invite.workspaceId, userId } },
-    update: { role: invite.role },
+    // An invite never demotes the workspace's owner.
+    update: existing?.role === "owner" ? {} : { role: invite.role },
     create: { workspaceId: invite.workspaceId, userId, role: invite.role },
   });
 
@@ -166,4 +171,16 @@ export async function redeemSystemInviteSignup(
 
 export async function markInviteAccepted(inviteId: string, userId: string) {
   await db.invite.update({ where: { id: inviteId }, data: { status: "accepted", acceptedById: userId } });
+}
+
+/**
+ * Apply every live workspace invite addressed to this account's email. The
+ * invite was made for exactly this account (workspace invites only ever
+ * target existing ones), so being signed in as it is acceptance enough.
+ */
+export async function acceptPendingInvitesFor(user: { id: string; email: string }) {
+  const pending = await db.invite.findMany({
+    where: { kind: "workspace", status: "pending", email: user.email.toLowerCase(), expiresAt: { gt: new Date() } },
+  });
+  for (const invite of pending) await applyWorkspaceInvite(invite, user.id);
 }

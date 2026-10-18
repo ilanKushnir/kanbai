@@ -10,6 +10,7 @@ import type { BoardCardData } from "@/lib/board-directory";
 import { NewBoardButton } from "@/components/board/new-board-modal";
 import { ArchivedBoards } from "@/components/board/archived-boards";
 import { BoardsDirectory } from "@/components/board/boards-directory";
+import { OtherWorkspaceBoards, type OtherWorkspaceGroup } from "@/components/board/other-workspace-boards";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export const metadata: Metadata = { title: "Boards" };
@@ -23,8 +24,10 @@ export default async function BoardsPage({
   const ctx = await getContext();
   const sp = await searchParams;
 
+  const others = ctx.memberships.filter((m) => m.workspace.id !== ctx.workspace.id);
+
   // Managers can see + restore archived boards.
-  const [boards, archivedBoards] = await Promise.all([
+  const [boards, archivedBoards, otherBoards] = await Promise.all([
     db.board.findMany({
       where: boardWhereForContext(ctx),
       orderBy: { position: "asc" },
@@ -42,7 +45,30 @@ export default async function BoardsPage({
           select: { id: true, name: true, slug: true, color: true },
         })
       : Promise.resolve([]),
+    // What the viewer can open in their other workspaces (shared boards live there).
+    others.length
+      ? db.board.findMany({
+          where: {
+            archived: false,
+            OR: others.map((m) =>
+              m.role === "member"
+                ? { workspaceId: m.workspace.id, access: { some: { userId: ctx.user.id } } }
+                : { workspaceId: m.workspace.id },
+            ),
+          },
+          orderBy: { position: "asc" },
+          select: { id: true, name: true, slug: true, color: true, workspaceId: true },
+        })
+      : Promise.resolve([]),
   ]);
+
+  const otherGroups: OtherWorkspaceGroup[] = others
+    .map((m) => ({
+      workspaceId: m.workspace.id,
+      workspaceName: m.workspace.name,
+      boards: otherBoards.filter((b) => b.workspaceId === m.workspace.id),
+    }))
+    .filter((g) => g.boards.length > 0);
 
   const cards: BoardCardData[] = boards.map((b) => ({
     id: b.id,
@@ -71,6 +97,8 @@ export default async function BoardsPage({
         </div>
         {ctx.isManager && <NewBoardButton defaultOpen={sp.new === "1"} />}
       </header>
+
+      {cards.length === 0 && otherGroups.length > 0 && <OtherWorkspaceBoards groups={otherGroups} className="mb-8" />}
 
       {cards.length === 0 && !ctx.isManager ? (
         <EmptyState
@@ -111,6 +139,8 @@ export default async function BoardsPage({
       ) : (
         <BoardsDirectory boards={cards} pinnedBoardIds={pinnedBoardIds} isManager={ctx.isManager} />
       )}
+
+      {cards.length > 0 && <OtherWorkspaceBoards groups={otherGroups} className="mt-8" />}
 
       {ctx.isManager && <ArchivedBoards boards={archivedBoards} />}
     </div>

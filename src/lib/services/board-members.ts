@@ -97,3 +97,29 @@ export async function setBoardMemberAccess(
     meta: { userId, level },
   });
 }
+
+/**
+ * Share a board with an existing account by email, in one step: they join the
+ * workspace as a member (if they aren't in it yet) and get the grant now — no
+ * link to pass around and accept. Owners/admins already see every board, so
+ * for them this only confirms access. Never creates accounts.
+ */
+export async function shareBoardByEmail(boardId: string, email: string, level: "view" | "edit", actor: Actor) {
+  const board = await db.board.findUnique({ where: { id: boardId }, select: { workspaceId: true } });
+  if (!board) throw new HttpError(404, "Board not found");
+  const user = await db.user.findUnique({ where: { email: email.trim().toLowerCase() }, select: { id: true, name: true, status: true } });
+  if (!user || user.status !== "active") {
+    throw new HttpError(422, "No Kanbai account uses that email. A system admin can create one from Admin → Invites.", "unknown_email");
+  }
+  const membership = await db.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId: board.workspaceId, userId: user.id } },
+    select: { role: true },
+  });
+  if (!membership) {
+    await db.workspaceMember.create({ data: { workspaceId: board.workspaceId, userId: user.id, role: "member" } });
+  } else if (membership.role === "owner" || membership.role === "admin") {
+    return { userId: user.id, name: user.name, implicit: true };
+  }
+  await setBoardMemberAccess(boardId, user.id, level, actor);
+  return { userId: user.id, name: user.name, implicit: false };
+}
