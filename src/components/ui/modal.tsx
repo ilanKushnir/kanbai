@@ -42,12 +42,37 @@ export function Modal({
     };
   }, [open, onClose]);
 
+  // iOS doesn't shrink the page for the on-screen keyboard: a bottom sheet would
+  // sit behind it. Follow the visual viewport instead, so the sheet (and the
+  // field being typed into) rides on top of the keyboard.
+  const [viewport, setViewport] = React.useState<{ top: number; height: number } | null>(null);
+  React.useEffect(() => {
+    const vv = window.visualViewport;
+    if (!open || !vv) return;
+    const sync = () => {
+      const covered = window.innerHeight - vv.height > 1 || vv.offsetTop > 0;
+      setViewport(covered ? { top: vv.offsetTop, height: vv.height } : null);
+    };
+    const raf = requestAnimationFrame(sync);
+    vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", sync);
+    return () => {
+      cancelAnimationFrame(raf);
+      vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", sync);
+      setViewport(null);
+    };
+  }, [open]);
+
   if (!mounted || !open) return null;
 
   const widths = { sm: "sm:max-w-sm", md: "sm:max-w-lg", lg: "sm:max-w-2xl", xl: "sm:max-w-4xl" };
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex touch-none items-end justify-center overflow-hidden sm:items-center sm:p-4">
+    <div
+      className="fixed inset-0 z-50 flex touch-none items-end justify-center overflow-hidden sm:items-center sm:p-4"
+      style={viewport ? { top: viewport.top, height: viewport.height, bottom: "auto" } : undefined}
+    >
       <div
         className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-[2px] animate-fade-in"
         onClick={onClose}
@@ -59,7 +84,7 @@ export function Modal({
         className={cn(
           "relative w-full bg-surface shadow-lg border border-border",
           "rounded-t-2xl sm:rounded-2xl",
-          "max-h-[92vh] sm:max-h-[88vh] flex flex-col",
+          "max-h-[92%] sm:max-h-[88%] flex flex-col",
           "animate-slide-up sm:animate-scale-in",
           widths[size],
           className,
