@@ -10,6 +10,17 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.17.0",
+    date: "2026-10-18",
+    items: [
+      { emoji: "☑️", title: "Subtasks, for every task", body: "Simple tasks and tickets can both be broken into steps. A small ring on the row shows how far along it is; tap it to open the list, tick steps, add or rename them. “Break into subtasks” is in the row's ⋯ menu." },
+      { emoji: "🤔", title: "Done with all of it?", body: "Completing a task or a ticket with steps still open asks first: complete everything, or just the task. The same question comes up when a ticket is dragged into Done." },
+      { emoji: "🤖", title: "Your agent breaks things down", body: "Your agent now adds real subtasks instead of writing “- [ ]” lists into the text, and lists written that way before were turned into subtasks." },
+      { emoji: "◎", title: "Overdue in Focus", body: "Focus mode shows what's overdue in its own section above Today — closed until you open it." },
+      { emoji: "🎨", title: "Calmer colours", body: "Today is set apart by depth instead of orange, focus rings are neutral, and the afternoon illustration keeps its kite in view." },
+    ],
+  },
+  {
     version: "0.16.0",
     date: "2026-10-18",
     items: [

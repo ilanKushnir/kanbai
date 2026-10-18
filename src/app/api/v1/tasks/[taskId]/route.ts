@@ -18,7 +18,7 @@ export const GET = handler(async (req: Request, { params }: Ctx) => {
   return ok({ task: toSimpleTask(serializeNote(note)) });
 });
 
-/** PATCH { title?, day?, done?, priority? } — rename, reschedule, complete/reopen. */
+/** PATCH { title?, day?, done?, priority?, completeSubtasks? } — rename, reschedule, complete/reopen. */
 export const PATCH = handler(async (req: Request, { params }: Ctx) => {
   const agent = await requireAgent(req);
   requireScope(agent, "notes:write");
@@ -32,6 +32,7 @@ export const PATCH = handler(async (req: Request, { params }: Ctx) => {
       scheduledDay: input.day === undefined ? undefined : resolveTaskDay(input.day),
       doneOn: input.done === undefined ? undefined : input.done ? notesToday() : null,
       priority: input.priority,
+      completeSubtasks: input.done ? input.completeSubtasks ?? true : undefined,
     },
     { type: "agent", id: agent.id, name: agent.name },
   );

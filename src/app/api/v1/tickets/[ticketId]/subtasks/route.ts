@@ -3,7 +3,7 @@ import { requireAgent, requireScope } from "@/lib/agent-auth";
 import { assertAgentTicketAccess } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { createSubtaskSchema } from "@/lib/validation";
-import { createSubtask } from "@/lib/services/subtasks";
+import { createSubtask, createSubtasks } from "@/lib/services/subtasks";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -29,8 +29,10 @@ export const POST = handler(
     requireScope(agent, "tickets:write");
     const { ticketId } = await params;
     await assertAgentTicketAccess(agent, ticketId);
-    const { title } = parse(createSubtaskSchema, await readJson(req));
-    const result = await createSubtask(ticketId, title, { type: "agent", id: agent.id, name: agent.name });
+    // One ({ title }) or several at once ({ titles: [...] }).
+    const { title, titles } = parse(createSubtaskSchema, await readJson(req));
+    const actor = { type: "agent" as const, id: agent.id, name: agent.name };
+    const result = titles ? await createSubtasks(ticketId, titles, actor) : await createSubtask(ticketId, title!, actor);
     return created(result);
   },
 );

@@ -65,7 +65,7 @@
   --danger:  #c62f2f;
   --danger-soft: #f9dede;
 
-  --ring: var(--vermilion);
+  --ring: color-mix(in oklab, var(--fg) 55%, transparent);
 
   /* Column stage colour language */
   --stage-intake:  #8f8f8f;
@@ -127,7 +127,7 @@
   --danger:  #ff7070;
   --danger-soft: #3a1414;
 
-  --ring: var(--vermilion-bright);
+  --ring: color-mix(in oklab, var(--fg) 60%, transparent);
 
   --stage-intake:  #7d7d7d;
   --stage-backlog: #a6a6a6;
@@ -435,14 +435,18 @@ body {
   animation: kb-today-flash 0.9s var(--ease-out-soft) both;
 }
 
-/* "Today" bucket (week view / day groupings): the one place on a calendar
-   surface that carries the signal colour — a vermilion wash and top hairline. */
+/* "Today" bucket (Today list, week view): set apart by lift, not by colour —
+   a crisper edge and a soft shadow, so the signal colour stays rare. */
 .kb-today {
-  background: color-mix(in oklab, var(--accent-soft) 40%, var(--color-surface) 60%);
-  border-color: color-mix(in oklab, var(--color-accent) 40%, transparent);
+  background: var(--color-surface);
+  border-color: color-mix(in oklab, var(--color-fg) 16%, transparent);
   box-shadow:
-    inset 0 1.5px 0 color-mix(in oklab, var(--color-accent) 60%, transparent),
-    var(--shadow-sm);
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 8px 24px -12px rgb(0 0 0 / 0.14);
+}
+.dark .kb-today {
+  border-color: color-mix(in oklab, var(--color-fg) 22%, transparent);
+  box-shadow: 0 8px 28px -14px rgb(0 0 0 / 0.8);
 }
 
 /* ── Hero art (Today, login, board covers) ───────────────────────────────────
@@ -471,6 +475,14 @@ body {
 }
 /* White-on-white paper needs a touch more bite at phone crop sizes. */
 .kb-hero .kb-art-light { filter: contrast(1.12); }
+/* Each illustration keeps its subject in the strip a wide hero shows. */
+.kb-hero > img { object-position: 50% 50%; }
+.kb-hero[data-period="morning"] > img { object-position: 50% 42%; }
+.kb-hero[data-period="afternoon"] > img { object-position: 50% 12%; }
+.kb-hero[data-period="evening"] > img { object-position: 50% 72%; }
+.kb-hero[data-period="night"] > img { object-position: 50% 55%; }
+/* White clouds on white paper: extra contrast turns their soft shadows into stripes. */
+.kb-hero[data-period="afternoon"] .kb-art-light { filter: none; }
 .dark .kb-hero { background: #000; color: #fff; }
 .dark .kb-hero::after {
   background:
@@ -508,8 +520,8 @@ body {
   transition: border-color var(--motion-base) ease, box-shadow var(--motion-base) ease;
 }
 .kb-quickadd:focus-within {
-  border-color: color-mix(in oklab, var(--color-accent) 60%, var(--color-border));
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 16%, transparent), var(--shadow-md);
+  border-color: color-mix(in oklab, var(--color-fg) 32%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-fg) 7%, transparent), var(--shadow-md);
 }
 .kb-quickadd textarea:focus-visible { outline: none; }
 .kb-quickadd textarea { transition: min-height var(--motion-slow) var(--ease-out-emph); }
@@ -671,3 +683,25 @@ html.kb-plan-dragging, html.kb-plan-dragging * { cursor: grabbing !important; -w
 }
 ::view-transition-old(root),
 ::view-transition-new(root) { animation-duration: 260ms; animation-timing-function: var(--ease-out-soft); }
+
+/* ── Subtasks ────────────────────────────────────────────────────────────── */
+/* A smaller, squarer sibling of .kb-check: the parts, not the whole. */
+.kb-subcheck {
+  width: 0.9375rem;
+  height: 0.9375rem;
+  border-radius: 0.3125rem;
+  border: 1.5px solid var(--color-border-strong);
+  background: var(--color-surface);
+  display: grid;
+  place-items: center;
+  color: transparent;
+  flex-shrink: 0;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease, scale 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+button.kb-subcheck:not(:disabled):hover { border-color: var(--color-fg); color: var(--color-fg-subtle); }
+button.kb-subcheck:not(:disabled):active { scale: 0.86; }
+.kb-subcheck[data-checked="true"] {
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: var(--color-success-fg, #fff);
+}

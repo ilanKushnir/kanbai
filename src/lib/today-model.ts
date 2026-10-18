@@ -11,6 +11,7 @@
 
 import { ymd, addDays, startOfDay, parseYmd } from "./notes-schedule";
 import { PRIORITY_META, type Priority } from "./constants";
+import type { SubtaskItem } from "./subtask-list";
 
 export type TodayBoardRef = { id: string; name: string; slug: string; color: string; doneColumnId: string | null };
 
@@ -27,8 +28,8 @@ export type TodayTicket = {
   isDone: boolean;
   board: TodayBoardRef;
   labels: { id: string; name: string; color: string }[];
-  subtasksDone: number;
-  subtasksTotal: number;
+  /** Its checklist (absent in copies saved on the device before 0.17). */
+  subtasks?: SubtaskItem[];
   commentCount: number;
   createdByType: string;
   createdAt: string;
@@ -46,6 +47,8 @@ export type TodayNote = {
   updatedAt: string;
   assignedAgent: { id: string; name: string } | null;
   ticket: { id: string; title: string; boardId: string } | null;
+  /** Its checklist (absent in copies saved on the device before 0.17). */
+  subtasks?: SubtaskItem[];
 };
 
 export type TaskItem =

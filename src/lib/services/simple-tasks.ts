@@ -1,5 +1,6 @@
 import { addDaysYmd } from "@/lib/tz";
 import { notesToday, serializeNote } from "./notes";
+import type { SubtaskItem } from "@/lib/subtask-list";
 
 /**
  * Simple tasks are the agent-facing name for Today's plain to-dos ("order
@@ -17,6 +18,8 @@ export type SimpleTask = {
   done: boolean;
   doneOn: string | null;
   priority: string;
+  /** Its checklist, in order. */
+  subtasks: SubtaskItem[];
   /** Set once the task was promoted to a board ticket. */
   ticket: { id: string; title: string; boardId: string } | null;
   createdAt: string;
@@ -40,6 +43,7 @@ export function toSimpleTask(n: ReturnType<typeof serializeNote>): SimpleTask {
     done: n.doneOn != null,
     doneOn: n.doneOn,
     priority: n.priority,
+    subtasks: n.subtasks,
     ticket: n.ticket,
     createdAt: n.createdAt,
     updatedAt: n.updatedAt,

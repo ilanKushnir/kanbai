@@ -39,6 +39,9 @@ import { clientId, toTodayTicket, type TodayData } from "@/lib/offline/today-syn
 import { textDirection } from "@/lib/text-direction";
 import { useFocus } from "@/components/focus-mode";
 import { FocusList } from "./focus-list";
+import { SubtaskList, SubtaskToggle, useCompleteGuard, type CompleteChoice, type SubtaskEdit } from "./subtasks";
+import type { SubtaskItem } from "@/lib/subtask-list";
+import { enqueueSubtaskEdit } from "@/lib/offline/subtask-edits";
 
 const SERVER_SYNC_SNAPSHOT: sync.SyncSnapshot = { status: { online: true, syncing: false, pending: 0, authNeeded: false, baseAt: null, stale: false, syncedAt: 0 }, data: null };
 const getServerSyncSnapshot = () => SERVER_SYNC_SNAPSHOT;
@@ -156,13 +159,29 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     sync.enqueue({ kind: "ticket.patch", id, body, optimistic });
 
   const moveTicket = (t: TodayTicket, columnId: string, subState: string | null, optimistic: Partial<TodayTicket>) =>
-    sync.enqueue({ kind: "ticket.move", id: t.id, body: { columnId, position: 0, subState }, optimistic });
+    sync.enqueue({
+      kind: "ticket.move",
+      id: t.id,
+      body: { columnId, position: 0, subState, ...(optimistic.subtasks ? { completeSubtasks: true } : {}) },
+      optimistic,
+    });
 
-  function toggleDone(item: TaskItem) {
+  const editSubtasks = enqueueSubtaskEdit;
+
+  const guard = useCompleteGuard();
+
+  function toggleDone(item: TaskItem, opts: { completeSubtasks?: boolean } = {}) {
     if (item.kind === "note") {
       const n = item.note;
       const wasDone = n.doneOn != null;
-      patchNote(n.id, { doneOn: wasDone ? null : todayYmd }, { doneOn: wasDone ? null : todayYmd });
+      const before = n.subtasks ?? [];
+      const tick = !wasDone && opts.completeSubtasks && before.some((s) => !s.completed);
+      if (tick) {
+        const all = before.map((s) => ({ ...s, completed: true }));
+        patchNote(n.id, { doneOn: todayYmd, completeSubtasks: true }, { doneOn: todayYmd, subtasks: all });
+      } else {
+        patchNote(n.id, { doneOn: wasDone ? null : todayYmd }, { doneOn: wasDone ? null : todayYmd });
+      }
       if (!wasDone) {
         toast({
           title: "Done",
@@ -170,7 +189,8 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
           variant: "success",
           actionLabel: "Undo",
           duration: 6000,
-          onAction: () => patchNote(n.id, { doneOn: null }, { doneOn: null }),
+          onAction: () =>
+            tick ? patchNote(n.id, { doneOn: null, subtasks: before }, { doneOn: null, subtasks: before }) : patchNote(n.id, { doneOn: null }, { doneOn: null }),
         });
       }
       return;
@@ -190,7 +210,9 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     }
     const previous = { columnId: t.columnId, subState: t.subState, columnName: t.columnName };
     const doneName = boards.find((x) => x.id === t.board.id)?.columns.find((c) => c.id === t.board.doneColumnId)?.name;
+    const reopenIds = opts.completeSubtasks ? (t.subtasks ?? []).filter((s) => !s.completed).map((s) => s.id) : [];
     moveTicket(t, t.board.doneColumnId, null, {
+      ...(reopenIds.length ? { subtasks: (t.subtasks ?? []).map((s) => ({ ...s, completed: true })) } : {}),
       isDone: true,
       completedAt: new Date().toISOString(),
       columnId: t.board.doneColumnId,
@@ -203,7 +225,10 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
       variant: "success",
       actionLabel: "Undo",
       duration: 6000,
-      onAction: () => moveTicket(t, previous.columnId, previous.subState, { isDone: false, completedAt: null, ...previous }),
+      onAction: () => {
+        moveTicket(t, previous.columnId, previous.subState, { isDone: false, completedAt: null, ...previous });
+        for (const id of reopenIds) sync.enqueue({ kind: "ticket.subtask.patch", ticketId: t.id, id, body: { completed: false } });
+      },
     });
   }
 
@@ -288,8 +313,7 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
           isDone: false,
           board: { id: board.id, name: board.name, slug: board.slug, color: board.color, doneColumnId: board.columns.find((c) => c.isDone)?.id ?? null },
           labels: [],
-          subtasksDone: 0,
-          subtasksTotal: 0,
+          subtasks: [],
           commentCount: 0,
           createdByType: "user",
           createdAt: nowIso,
@@ -340,11 +364,14 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
             onDelete={remove}
             onMoveToBoard={moveNoteToBoard}
             onEditNote={editNote}
+            onSubtask={editSubtasks}
+            confirmComplete={guard.confirm}
           />
         )}
         composer={(onAdded) => (
           <QuickAdd boards={boards} todayYmd={todayYmd} defaultDay={null} onAdd={quickAdd} onAdded={onAdded} dictationLanguage={dictationLanguage} autoFocus />
         )}
+        after={guard.dialog}
       />
     );
   }
@@ -367,9 +394,12 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
           onDelete={remove}
           onMoveToBoard={moveNoteToBoard}
           onEditNote={editNote}
+          onSubtask={editSubtasks}
+          confirmComplete={guard.confirm}
           focusId={focusId}
         />
       ))}
+      {guard.dialog}
     </div>
   );
 }
@@ -607,13 +637,15 @@ function Section({
   onDelete: (i: TaskItem) => void;
   onMoveToBoard: (n: TodayNote, b: TodayBoard) => void;
   onEditNote: (n: TodayNote, body: string) => void;
+  onSubtask: (i: TaskItem, e: SubtaskEdit) => void;
+  confirmComplete: (title: string, subtasks: SubtaskItem[] | undefined) => Promise<CompleteChoice>;
 }) {
   const count = section.items.length;
   const isEmptyToday = section.key === "today" && count === 0;
   const Icon = section.key === "inbox" ? Inbox : section.key === "done" ? Check : null;
 
   return (
-    <section className={cn("rounded-2xl border border-border bg-surface", section.key === "today" && "kb-today", section.key === "overdue" && "border-danger/30")}>
+    <section className={cn("rounded-2xl border border-border bg-surface", section.key === "today" && "kb-today")}>
       <button
         type="button"
         onClick={onToggle}
@@ -692,6 +724,8 @@ function Row({
   onDelete,
   onMoveToBoard,
   onEditNote,
+  onSubtask,
+  confirmComplete,
 }: {
   item: TaskItem;
   todayYmd: string;
@@ -700,14 +734,19 @@ function Row({
   /** Focus: just the task, its board and priority — no columns, labels, counts or menu. */
   quiet?: boolean;
   highlight?: boolean;
-  onToggleDone: (i: TaskItem) => void;
+  onToggleDone: (i: TaskItem, opts?: { completeSubtasks?: boolean }) => void;
   onReschedule: (i: TaskItem, day: string | null) => void;
   onPriority: (i: TaskItem, p: Priority) => void;
   onDelete: (i: TaskItem) => void;
   onMoveToBoard: (n: TodayNote, b: TodayBoard) => void;
   onEditNote: (n: TodayNote, body: string) => void;
+  onSubtask: (i: TaskItem, e: SubtaskEdit) => void;
+  confirmComplete: (title: string, subtasks: SubtaskItem[] | undefined) => Promise<CompleteChoice>;
 }) {
   const [editing, setEditing] = React.useState(false);
+  const subtasks = (item.kind === "note" ? item.note.subtasks : item.ticket.subtasks) ?? [];
+  const [expanded, setExpanded] = React.useState(false);
+  const [addingSub, setAddingSub] = React.useState(0);
   const [draft, setDraft] = React.useState(item.title);
   const [phase, setPhase] = React.useState<"idle" | "completing" | "leaving">("idle");
   const [landed] = React.useState(() => justCompleted.delete(item.id) && item.done);
@@ -730,12 +769,15 @@ function Row({
     setPhase("idle");
   }
 
-  function check() {
+  async function check() {
     if (phase !== "idle") return;
     if (item.done) {
       onToggleDone(item);
       return;
     }
+    const choice = await confirmComplete(item.title, subtasks);
+    if (!choice) return;
+    const opts = { completeSubtasks: choice === "all" };
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     setPhase("completing");
     try {
@@ -744,7 +786,7 @@ function Row({
     setTimeout(() => setPhase("leaving"), reduce ? 0 : COMPLETE_HOLD_MS);
     setTimeout(() => {
       justCompleted.add(item.id);
-      onToggleDone(item);
+      onToggleDone(item, opts);
     }, reduce ? 0 : COMPLETE_HOLD_MS + COMPLETE_FOLD_MS);
     // If the row is still here (the write failed), bring it back.
     setTimeout(() => setPhase("idle"), COMPLETE_HOLD_MS + COMPLETE_FOLD_MS + 1500);
@@ -831,11 +873,7 @@ function Row({
             </Link>
           )}
           {!quiet && ticket && !ticket.isDone && ticket.columnName && <span className="text-fg-subtle/80">{ticket.columnName}</span>}
-          {!quiet && ticket && ticket.subtasksTotal > 0 && (
-            <span className="inline-flex items-center gap-1">
-              <ListChecks className="h-3 w-3" /> {ticket.subtasksDone}/{ticket.subtasksTotal}
-            </span>
-          )}
+          {subtasks.length > 0 && <SubtaskToggle items={subtasks} open={expanded} onClick={() => setExpanded((v) => !v)} />}
           {!quiet && ticket && ticket.commentCount > 0 && (
             <span className="inline-flex items-center gap-1">
               <MessageSquare className="h-3 w-3" /> {ticket.commentCount}
@@ -868,6 +906,9 @@ function Row({
             </span>
           )}
         </div>
+        {(subtasks.length > 0 || addingSub > 0) && (
+          <SubtaskList items={subtasks} open={expanded} autoAdd={addingSub} onEdit={(e) => onSubtask(item, e)} readOnly={item.done} />
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-md:opacity-100">
@@ -896,6 +937,17 @@ function Row({
                   }}
                 >
                   <Pencil className="h-4 w-4 text-fg-subtle" /> Edit
+                </MenuItem>
+              )}
+              {!item.done && (
+                <MenuItem
+                  onClick={() => {
+                    setExpanded(true);
+                    setAddingSub((n) => n + 1);
+                    close();
+                  }}
+                >
+                  <ListChecks className="h-4 w-4 text-fg-subtle" /> {subtasks.length ? "Add a subtask" : "Break into subtasks"}
                 </MenuItem>
               )}
               {ticket && (

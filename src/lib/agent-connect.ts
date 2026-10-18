@@ -139,8 +139,9 @@ over REST with a bearer key; nothing is pushed to you.
 
 **Most important rule:** "add a task" is a *simple task* on Today (\`POST /tasks\`,
 default day today) unless it is clearly work on one of the project boards — only
-then is it a *ticket* on that board. See §0. After every change, reply with the
-short emoji receipt of §10 — one line per item, nothing else.
+then is it a *ticket* on that board. See §0. Steps go in \`subtasks\` (both kinds
+take them) — never as a \`- [ ]\` list in the text. After every change, reply with
+the short emoji receipt of §10 — one line per item, nothing else.
 
 ${body.trim()}
 `;

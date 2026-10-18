@@ -28,6 +28,8 @@ import { cn } from "@/lib/utils";
 import type { TodayBoard } from "@/components/today/today-view";
 import { SwipePager, type PagerHandle } from "./swipe-pager";
 import { DragGhost, usePlanDrag, type PlanDrag } from "./plan-drag";
+import { SubtaskList, SubtaskToggle, useCompleteGuard } from "@/components/today/subtasks";
+import { enqueueSubtaskEdit, itemSubtasks } from "@/lib/offline/subtask-edits";
 
 export type PlanBoard = TodayBoard;
 type Feed = { id: string; name: string; color: string };
@@ -247,8 +249,18 @@ export function PlanView({
     reveal(day);
   }
 
-  function toggleDone(item: TaskItem) {
+  const guard = useCompleteGuard();
+
+  async function toggleDone(item: TaskItem) {
     if (item.kind !== "note") return;
+    if (!item.done) {
+      const choice = await guard.confirm(item.title, item.note.subtasks);
+      if (!choice) return;
+      if (choice === "all") {
+        const all = (item.note.subtasks ?? []).map((s) => ({ ...s, completed: true }));
+        sync.enqueue({ kind: "note.patch", id: item.id, body: { subtasks: all }, optimistic: { subtasks: all } });
+      }
+    }
     record({ kind: "done", item, done: !item.done });
   }
 
@@ -562,6 +574,7 @@ export function PlanView({
       <Modal open={sheetDay != null} onClose={() => setSheetDay(null)} title={sheetDay ? dayTitle(sheetDay, todayYmd) : ""} size="md">
         {sheetDay && <DayList {...cellProps(sheetDay, false)} onPick={startPick} pickedId={null} draggable={false} />}
       </Modal>
+      {guard.dialog}
 
       {picked && (
         <PickBar
@@ -901,20 +914,24 @@ function DayList(p: CellProps & { onPick: (i: TaskItem) => void; pickedId: strin
 
 function DayRow({ item, draggable, drag, onToggle, onOpenTicket, onPick, pickedId }: { item: TaskItem; draggable: boolean; drag: PlanDrag; onToggle: (i: TaskItem) => void; onOpenTicket: (id: string) => void; onPick: (i: TaskItem) => void; pickedId: string | null }) {
   const title = firstLine(item.title);
+  const subtasks = itemSubtasks(item);
+  const [open, setOpen] = React.useState(false);
   const ticket = item.kind === "ticket" ? item.ticket : null;
   const lifted = drag.active?.item.id === item.id;
   return (
     <div
       {...(draggable ? drag.source(item, item.done) : {})}
       className={cn(
-        "group/row flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors",
+        "group/row flex items-start gap-2 rounded-xl px-2 py-1.5 transition-colors",
         draggable && !item.done && "cursor-grab",
         pickedId === item.id ? "bg-primary-soft" : "hover:bg-surface-2",
         lifted && "opacity-35",
       )}
     >
-      <ItemMark item={item} onToggle={onToggle} roomy />
-      <div className="min-w-0 flex-1" dir={textDirection(title)}>
+      <span className="flex h-8 shrink-0 items-center">
+        <ItemMark item={item} onToggle={onToggle} roomy />
+      </span>
+      <div className="min-w-0 flex-1 py-1.5" dir={textDirection(title)}>
         {ticket ? (
           <button type="button" onClick={() => onOpenTicket(ticket.id)} className={cn("line-clamp-2 w-full text-start text-sm leading-5 cursor-pointer hover:underline", item.done && "text-fg-muted line-through")}>
             {ticket.number != null && <span className="text-fg-subtle">#{ticket.number} </span>}
@@ -923,12 +940,18 @@ function DayRow({ item, draggable, drag, onToggle, onOpenTicket, onPick, pickedI
         ) : (
           <span className={cn("line-clamp-2 text-sm leading-5", item.done && "text-fg-muted line-through")}>{title}</span>
         )}
-        {ticket && (
-          <span className="mt-0.5 flex items-center gap-1 text-[0.6875rem] text-fg-subtle">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(ticket.board.color).dot }} />
-            <span dir="auto">{ticket.board.name}</span>
+        {(ticket || subtasks.length > 0) && (
+          <span className="mt-0.5 flex items-center gap-2 text-[0.6875rem] text-fg-subtle">
+            {ticket && (
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(ticket.board.color).dot }} />
+                <span dir="auto">{ticket.board.name}</span>
+              </span>
+            )}
+            {subtasks.length > 0 && <SubtaskToggle items={subtasks} open={open} onClick={() => setOpen((v) => !v)} />}
           </span>
         )}
+        {subtasks.length > 0 && <SubtaskList items={subtasks} open={open} onEdit={(e) => enqueueSubtaskEdit(item, e)} readOnly={item.done} />}
       </div>
       {!item.done && (
         <button

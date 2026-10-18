@@ -292,6 +292,8 @@ model Note {
   deletedAt    DateTime? // soft-delete; restorable for 30 days, then purged
   position  Int      @default(0)
   priority  String   @default("none") // none | low | medium | high | urgent
+  /// A simple task's checklist: JSON [{ id, title, completed }] (see lib/subtask-list).
+  subtasks  String   @default("[]")
 
   // Context the user attaches when sending to an agent to sort
   sortContext     String? // free-text instruction

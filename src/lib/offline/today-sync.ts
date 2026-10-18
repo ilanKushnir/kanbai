@@ -12,6 +12,7 @@
 
 import type { TodayNote, TodayTicket } from "@/lib/today-model";
 import type { SerializedTicket } from "@/lib/serialize";
+import type { SubtaskItem } from "@/lib/subtask-list";
 
 export type TodayBoardData = {
   id: string;
@@ -33,6 +34,10 @@ export type TodayOp = OpBase &
     | { kind: "ticket.patch"; id: string; body: Record<string, unknown>; optimistic: Partial<TodayTicket> }
     | { kind: "ticket.move"; id: string; body: Record<string, unknown>; optimistic: Partial<TodayTicket> }
     | { kind: "ticket.delete"; id: string }
+    // A ticket's subtasks live in their own table, so they get their own ops.
+    | { kind: "ticket.subtask.create"; ticketId: string; subtask: SubtaskItem }
+    | { kind: "ticket.subtask.patch"; ticketId: string; id: string; body: { title?: string; completed?: boolean } }
+    | { kind: "ticket.subtask.delete"; ticketId: string; id: string }
   );
 
 /** Distributes Omit over the op union (plain Omit collapses it). */
@@ -55,6 +60,12 @@ export function opRequest(op: TodayOp): { method: string; path: string; body?: R
       return { method: "POST", path: `/api/tickets/${op.id}/move`, body: op.body };
     case "ticket.delete":
       return { method: "DELETE", path: `/api/tickets/${op.id}` };
+    case "ticket.subtask.create":
+      return { method: "POST", path: `/api/tickets/${op.ticketId}/subtasks`, body: { id: op.subtask.id, title: op.subtask.title } };
+    case "ticket.subtask.patch":
+      return { method: "PATCH", path: `/api/tickets/${op.ticketId}/subtasks/${op.id}`, body: op.body };
+    case "ticket.subtask.delete":
+      return { method: "DELETE", path: `/api/tickets/${op.ticketId}/subtasks/${op.id}` };
   }
 }
 
@@ -77,6 +88,24 @@ export function applyOp(data: TodayData, op: TodayOp): TodayData {
       return { ...data, tickets: data.tickets.map((t) => (t.id === op.id ? { ...t, ...op.optimistic } : t)) };
     case "ticket.delete":
       return { ...data, tickets: data.tickets.filter((t) => t.id !== op.id) };
+    case "ticket.subtask.create":
+    case "ticket.subtask.patch":
+    case "ticket.subtask.delete":
+      return {
+        ...data,
+        tickets: data.tickets.map((t) => (t.id === op.ticketId ? { ...t, subtasks: applySubtaskOp(t.subtasks ?? [], op) } : t)),
+      };
+  }
+}
+
+function applySubtaskOp(list: SubtaskItem[], op: Extract<TodayOp, { kind: `ticket.subtask.${string}` }>): SubtaskItem[] {
+  switch (op.kind) {
+    case "ticket.subtask.create":
+      return list.some((s) => s.id === op.subtask.id) ? list : [...list, op.subtask];
+    case "ticket.subtask.patch":
+      return list.map((s) => (s.id === op.id ? { ...s, ...op.body } : s));
+    case "ticket.subtask.delete":
+      return list.filter((s) => s.id !== op.id);
   }
 }
 
@@ -91,7 +120,10 @@ export function confirmOp(base: TodayData, op: TodayOp, response: unknown): Toda
       return res.note ? { ...base, notes: upsert(base.notes, toTodayNote(res.note)) } : applyOp(base, op);
     case "ticket.create":
     case "ticket.patch":
-    case "ticket.move": {
+    case "ticket.move":
+    case "ticket.subtask.create":
+    case "ticket.subtask.patch":
+    case "ticket.subtask.delete": {
       if (!res.ticket) return applyOp(base, op);
       const prev = base.tickets.find((t) => t.id === res.ticket!.id) ?? (op.kind === "ticket.create" ? op.ticket : undefined);
       return { ...base, tickets: upsert(base.tickets, toTodayTicket(res.ticket, base.boards, prev)) };
@@ -113,7 +145,7 @@ export type SendOutcome = "ok" | "network" | "auth" | "rejected";
 export function classifyResponse(op: TodayOp, status: number): SendOutcome {
   if (status >= 200 && status < 300) return "ok";
   if (status === 401) return "auth";
-  if (status === 404 && (op.kind === "note.delete" || op.kind === "ticket.delete")) return "ok";
+  if (status === 404 && (op.kind === "note.delete" || op.kind === "ticket.delete" || op.kind === "ticket.subtask.delete")) return "ok";
   if (status === 408 || status === 425 || status === 429 || status >= 500) return "network";
   return "rejected";
 }
@@ -141,6 +173,7 @@ export type NoteResponse = {
   updatedAt: string;
   assignedAgent: { id: string; name: string } | null;
   ticket: { id: string; title: string; boardId: string } | null;
+  subtasks?: SubtaskItem[];
 };
 
 export const toTodayNote = (n: NoteResponse): TodayNote => ({
@@ -155,6 +188,7 @@ export const toTodayNote = (n: NoteResponse): TodayNote => ({
   updatedAt: n.updatedAt,
   assignedAgent: n.assignedAgent,
   ticket: n.ticket,
+  subtasks: n.subtasks ?? [],
 });
 
 /** Convert a freshly-serialized ticket (API response) into a Today row. */
@@ -177,8 +211,7 @@ export function toTodayTicket(t: SerializedTicket, boards: TodayBoardData[], pre
     isDone: t.isDone,
     board,
     labels: t.labels,
-    subtasksDone: t.subtasks.filter((s) => s.completed).length,
-    subtasksTotal: t.subtasks.length,
+    subtasks: t.subtasks.map((s) => ({ id: s.id, title: s.title, completed: s.completed })),
     commentCount: t.commentCount,
     createdByType: t.createdBy?.type ?? "user",
     createdAt: t.createdAt,

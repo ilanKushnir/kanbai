@@ -66,6 +66,7 @@ import {
 } from "@/lib/board-section-visibility";
 import type { BoardData } from "@/lib/services/boards";
 import type { SerializedTicket } from "@/lib/serialize";
+import { useCompleteGuard } from "@/components/today/subtasks";
 
 type AgentLite = {
   id: string;
@@ -287,6 +288,8 @@ export function BoardView({
   // Snapshot of containers at drag start, so a cancel (Escape) or a release onto
   // nothing reverts the optimistic cross-container moves made during onDragOver.
   const dragSnapshot = React.useRef<Record<string, string[]>>({});
+  // Into a done column with open subtasks: ask whether they're done too.
+  const guard = useCompleteGuard();
   const activeIdRef = React.useRef<string | null>(null);
   activeIdRef.current = activeId;
 
@@ -430,7 +433,7 @@ export function BoardView({
     });
   }
 
-  function onDragEnd(e: DragEndEvent) {
+  async function onDragEnd(e: DragEndEvent) {
     setActiveId(null);
     setZoneColId(null);
     const { active, over } = e;
@@ -473,6 +476,20 @@ export function BoardView({
     const col = cols.find((c) => c.id === colId);
     const position = col ? columnFlat(result, col).indexOf(activeId) : result[finalContainer].indexOf(activeId);
 
+    // Into Done with parts still open: ask first; Cancel puts the card back.
+    const moving = ticketsById[activeId];
+    const wasDone = cols.find((c) => c.id === moving?.columnId)?.isDone ?? false;
+    let completeSubtasks = false;
+    if (col?.isDone && !wasDone && moving?.subtasks.some((s) => !s.completed)) {
+      const before = dragSnapshot.current;
+      const choice = await guard.confirm(moving.title, moving.subtasks);
+      if (!choice) {
+        setCont(before);
+        return;
+      }
+      completeSubtasks = choice === "all";
+    }
+
     // Drag moves are announced via DndContext's accessibility.announcements.
     if (col?.isDone) {
       setCelebrateId(activeId);
@@ -490,15 +507,15 @@ export function BoardView({
       setTicketsById((m) => ({ ...m, [activeId]: { ...m[activeId], subState: null } }));
     }
 
-    void persistMove(activeId, colId, position, subState);
+    void persistMove(activeId, colId, position, subState, completeSubtasks);
   }
 
-  async function persistMove(ticketId: string, columnId: string, position: number, subState?: string | null) {
+  async function persistMove(ticketId: string, columnId: string, position: number, subState?: string | null, completeSubtasks?: boolean) {
     if (ticketId.startsWith("tmp-")) return; // optimistic card not saved yet — nothing to move
     await tracked(async () => {
       try {
         const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}/move`, {
-          body: { columnId, position, ...(subState !== undefined ? { subState } : {}) },
+          body: { columnId, position, ...(subState !== undefined ? { subState } : {}), ...(completeSubtasks ? { completeSubtasks } : {}) },
         });
         setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
       } catch {
@@ -544,9 +561,16 @@ export function BoardView({
   }
 
   /** Move via the "Move to" menu (no drag): mirrors onDragEnd's optimistic update. */
-  function moveTicketTo(ticketId: string, columnId: string, subState?: string) {
+  async function moveTicketTo(ticketId: string, columnId: string, subState?: string) {
     if (ticketId.startsWith("tmp-")) return; // optimistic card not saved yet
     const col = cols.find((c) => c.id === columnId);
+    const moving = ticketsById[ticketId];
+    let completeSubtasks = false;
+    if (col?.isDone && !cols.find((c) => c.id === moving?.columnId)?.isDone) {
+      const choice = await guard.confirm(moving?.title ?? "", moving?.subtasks);
+      if (!choice) return;
+      completeSubtasks = choice === "all";
+    }
     const targetSub = effectiveSub(col?.subStates ?? [], subState);
     const targetKey = sectionKey(columnId, targetSub);
     const prev = containersRef.current;
@@ -568,7 +592,7 @@ export function BoardView({
     if (liveRef.current)
       liveRef.current.textContent = `Moved ${ticketsById[ticketId]?.title ?? "card"} to ${col?.name ?? ""}${targetSub ? " · " + targetSub : ""}`;
     const flat = col ? columnFlat(containersRef.current, col) : containersRef.current[targetKey] ?? [];
-    void persistMove(ticketId, columnId, flat.indexOf(ticketId), targetSub);
+    void persistMove(ticketId, columnId, flat.indexOf(ticketId), targetSub, completeSubtasks);
   }
 
   async function handleCreate(columnId: string, title: string, assignee?: NewAssignee | null) {
@@ -754,7 +778,7 @@ export function BoardView({
     }
   }
 
-  async function moveTicketToDone(ticketId: string): Promise<SerializedTicket> {
+  async function moveTicketToDone(ticketId: string, opts: { completeSubtasks?: boolean } = {}): Promise<SerializedTicket> {
     const doneColumn = cols.find((c) => c.isDone);
     if (!doneColumn) throw new Error("No done column is configured for this board.");
     const sub = doneColumn.subStates.length ? doneColumn.subStates[0] : null;
@@ -765,7 +789,7 @@ export function BoardView({
     const flat = columnFlat(prev, doneColumn);
     const position = sameCol ? Math.max(0, flat.indexOf(ticketId)) : flat.length;
     const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}/move`, {
-      body: { columnId: doneColumn.id, position, subState: sub },
+      body: { columnId: doneColumn.id, position, subState: sub, completeSubtasks: opts.completeSubtasks },
     });
 
     setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
@@ -963,9 +987,10 @@ export function BoardView({
           onClose={() => setSelectedId(null)}
           onUpdated={handleTicketUpdated}
           onDeleted={handleTicketDeleted}
-          onMoveToDone={() => moveTicketToDone(selectedTicket.id)}
+          onMoveToDone={(opts) => moveTicketToDone(selectedTicket.id, opts)}
         />
       )}
+      {guard.dialog}
     </div>
   );
 }

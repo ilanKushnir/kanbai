@@ -25,6 +25,7 @@ export const POST = handler(
       input.position,
       { type: "user", id: ctx.user.id, name: ctx.user.name },
       input.subState,
+      { completeSubtasks: input.completeSubtasks },
     );
     return ok({ ticket });
   },

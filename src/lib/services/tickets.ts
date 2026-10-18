@@ -273,6 +273,8 @@ export async function createTicket(
     labelIds?: string[];
     /** Labels by name — missing ones are created on the board. Merged with labelIds. */
     labelNames?: string[];
+    /** Checklist to start with — titles, or { title, completed }. */
+    subtasks?: (string | { title: string; completed?: boolean })[];
     number?: number; // explicit number (migration); otherwise auto-assigned
     createdAt?: string | null; // preserve original creation time on migration
   },
@@ -359,6 +361,17 @@ export async function createTicket(
     // createdById has a FK to User, so only set it for human actors.
     createdById: actor.type === "user" ? actor.id ?? null : null,
     labels: labelIds.length ? { create: labelIds.map((labelId) => ({ labelId })) } : undefined,
+    subtasks: input.subtasks?.length
+      ? {
+          create: input.subtasks.map((s, position) => ({
+            title: typeof s === "string" ? s : s.title,
+            completed: typeof s === "string" ? false : s.completed === true,
+            position,
+            createdByType: actor.type === "agent" ? "agent" : "user",
+            createdById: actor.id ?? null,
+          })),
+        }
+      : undefined,
   };
 
   // Per-board sequential reference number (#12). The (boardId, number) unique
@@ -420,6 +433,8 @@ export async function updateTicket(
     labelIds: string[];
     /** Replaces the full label set by name (missing names auto-created on the board). */
     labelNames: string[];
+    /** Moving into a done column: tick the open subtasks too. */
+    completeSubtasks: boolean;
   }>,
   actor: Actor,
 ) {
@@ -436,12 +451,12 @@ export async function updateTicket(
   // band grouping is preserved, and the sub-state is validated — a raw columnId
   // write keeps the stale position and the card lands mid-column after reload.
   if (input.columnId !== undefined && input.columnId !== existing.columnId) {
-    const { columnId, position: _position, subState, column: _c, columnName: _cn, stage: _st, ...rest } = input;
+    const { columnId, position: _position, subState, column: _c, columnName: _cn, stage: _st, completeSubtasks, ...rest } = input;
     void _position;
     void _c;
     void _cn;
     void _st;
-    const moved = await moveTicket(ticketId, columnId, Number.MAX_SAFE_INTEGER, actor, subState);
+    const moved = await moveTicket(ticketId, columnId, Number.MAX_SAFE_INTEGER, actor, subState, { completeSubtasks });
     if (Object.keys(rest).length === 0) return moved;
     return updateTicket(ticketId, rest, actor);
   }
@@ -551,6 +566,7 @@ export async function moveTicket(
   position: number | null | undefined,
   actor: Actor,
   subState?: string | null,
+  opts: { completeSubtasks?: boolean } = {},
 ) {
   const ticket = await loadTicket(ticketId);
   const board = await boardCtx(ticket.boardId);
@@ -635,6 +651,11 @@ export async function moveTicket(
         .filter(({ t, idx }) => t.position !== idx)
         .map(({ t, idx }) => db.ticket.update({ where: { id: t.id }, data: { position: idx } })),
     );
+  }
+
+  // Done with everything: tick the checklist too, when asked.
+  if (targetColumn.isDone && opts.completeSubtasks) {
+    await db.subtask.updateMany({ where: { ticketId, completed: false }, data: { completed: true } });
   }
 
   const updated = await loadTicket(ticketId);
@@ -772,11 +793,11 @@ export async function boardDoneColumnId(boardId: string): Promise<string | null>
   return col?.id ?? null;
 }
 
-export async function moveTicketToDone(ticketId: string, actor: Actor) {
+export async function moveTicketToDone(ticketId: string, actor: Actor, opts: { completeSubtasks?: boolean } = {}) {
   const ticket = await loadTicket(ticketId);
   const doneColumnId = await boardDoneColumnId(ticket.boardId);
   if (!doneColumnId) throw new HttpError(422, "No done column is configured for this board.");
-  return moveTicket(ticketId, doneColumnId, Number.MAX_SAFE_INTEGER, actor, null);
+  return moveTicket(ticketId, doneColumnId, Number.MAX_SAFE_INTEGER, actor, null, opts);
 }
 
 /** Complete a ticket: move it to its board's done column (= moveTicketToDone). */

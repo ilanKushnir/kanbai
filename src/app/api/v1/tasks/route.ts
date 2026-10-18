@@ -37,7 +37,7 @@ export const GET = handler(async (req: Request) => {
   return ok({ tasks });
 });
 
-/** POST /api/v1/tasks { title, day?, priority? } — add a plain to-do (default: today). */
+/** POST /api/v1/tasks { title, day?, priority?, subtasks? } — add a plain to-do (default: today). */
 export const POST = handler(async (req: Request) => {
   const agent = await requireAgent(req);
   requireScope(agent, "notes:write");
@@ -46,7 +46,7 @@ export const POST = handler(async (req: Request) => {
   const note = await createNote(
     userId,
     (input.title ?? input.body)!,
-    { scheduledDay: resolveTaskDay(input.day), priority: input.priority },
+    { scheduledDay: resolveTaskDay(input.day), priority: input.priority, subtasks: input.subtasks },
     { type: "agent", id: agent.id, name: agent.name },
   );
   return created({ task: toSimpleTask(note) });

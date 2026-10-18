@@ -9,6 +9,7 @@ import { compareAgendaTickets, ticketListInclude, toAgendaTicket, workspaceUsers
 import { guardAgentSnapshot } from "@/lib/snapshots";
 import { addDaysYmd, endOfDayInTz, startOfDayInTz, todayYmd, workspaceTz } from "@/lib/tz";
 import { db } from "@/lib/db";
+import { liftChecklist } from "@/lib/subtask-list";
 
 export const dynamic = "force-dynamic";
 
@@ -129,6 +130,9 @@ export const POST = handler(async (req: Request) => {
     assigneeUserId = member.userId;
   }
 
+  // A checklist written into the description is meant as subtasks: make them real.
+  const lifted = input.description ? liftChecklist(input.description) : { text: input.description, items: [] };
+
   const ticket = await createTicket(
     {
       boardId: input.boardId,
@@ -137,11 +141,12 @@ export const POST = handler(async (req: Request) => {
       columnName: input.columnName,
       stage: input.stage,
       title: input.title,
-      description: input.description,
+      description: lifted.text,
       priority: input.priority,
       dueDate: input.dueDate ?? null,
       labelIds: input.labelIds,
       labelNames: input.labelNames,
+      subtasks: [...lifted.items, ...(input.subtasks ?? [])],
       assigneeType,
       assigneeUserId,
       assigneeAgentId,

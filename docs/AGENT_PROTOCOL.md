@@ -39,7 +39,13 @@ Rules:
    the owner gave one.
 4. **The owner said where.** "Add to the X board" → ticket on X. "Just a
    to-do", "on my today list" → simple task. Their words win over these rules.
-5. Then tell the owner what you did, in the format of §10.
+5. **Steps are subtasks.** When a task or ticket has parts ("first get a SIM,
+   then connect WhatsApp, then Home Assistant"), or breaking it down would
+   help, send them as `subtasks` — an array of short titles — when you create
+   it, or add them later (`POST …/subtasks`). Both kinds of item take them.
+   **Never** write a checklist (`- [ ] …`) into a title or description: it
+   shows up as raw text, not as subtasks.
+6. Then tell the owner what you did, in the format of §10.
 
 ## 1. Auth and `/me`
 
@@ -109,23 +115,37 @@ no columns: a title, a day, done or not. (Under the hood these are notes, §6;
 ```
 GET    /tasks?day=all|today|tomorrow|someday|YYYY-MM-DD&status=open|done|all   notes:read
                                          default: every day, open only
-POST   /tasks              { title, day?, priority? }      → 201 { task }        notes:write
+POST   /tasks              { title, day?, priority?, subtasks? } → 201 { task }  notes:write
 GET    /tasks/{id}                                          → { task }
-PATCH  /tasks/{id}         { title?, day?, done?, priority? } → { task }
-POST   /tasks/{id}/done                                     → { task }  (completes it today)
+PATCH  /tasks/{id}         { title?, day?, done?, priority?, completeSubtasks? } → { task }
+POST   /tasks/{id}/done    { completeSubtasks? }            → { task }  (completes it today)
 DELETE /tasks/{id}         soft-delete → trash, restorable 30 days
+GET    /tasks/{id}/subtasks                                 → { subtasks }
+POST   /tasks/{id}/subtasks             { title } | { titles:[…] } → 201 { subtasks (new), task }
+PATCH  /tasks/{id}/subtasks/{subId}     { title?, completed? }     → { subtask, task }
+DELETE /tasks/{id}/subtasks/{subId}                                → { ok, task }
 ```
 
 `day`: `"today"` (the default), `"tomorrow"`, `"YYYY-MM-DD"`, or `"someday"` /
 `null` for no day (the Inbox). `PATCH {"done": false}` reopens. A task object:
-`{ id, kind:"task", title, day, done, doneOn, priority, ticket, createdAt, updatedAt }`
-(`ticket` is set once it was promoted to a board, §6).
+`{ id, kind:"task", title, day, done, doneOn, priority, subtasks, ticket, createdAt, updatedAt }`
+(`ticket` is set once it was promoted to a board, §6). `subtasks` is the
+task's checklist, in order: `[{ id, title, completed }]`.
+
+**Subtasks.** Break a task into steps by passing `subtasks` (up to 50 short
+titles) on create, or append with `POST /tasks/{id}/subtasks`. Tick one with
+`PATCH …/subtasks/{subId} {"completed":true}`. Completing the task
+(`/done`, or `PATCH {"done":true}`) also ticks its open subtasks — send
+`"completeSubtasks": false` to leave them open. Promoting a task to a ticket
+keeps its subtasks.
 
 ```bash
 curl -X POST $BASE/tasks -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
   -d '{"title":"Order meat"}'                            # today
 curl -X POST $BASE/tasks -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
   -d '{"title":"Call the bank","day":"2026-10-20"}'      # a named day
+curl -X POST $BASE/tasks -H "Authorization: Bearer $KANBAI_KEY" -H "content-type: application/json" \
+  -d '{"title":"Set up the new phone","subtasks":["Buy a SIM","Connect WhatsApp","Add to Home Assistant"]}'
 ```
 
 Open tasks also appear in `GET /today` as `notesToday` (due today or earlier)
@@ -163,11 +183,11 @@ POST   /tickets                                create                           
 GET    /tickets/{id}                           read (comments, subtasks, labels inline)  tickets:read
 PATCH  /tickets/{id}                           update any field, move, relabel           tickets:write
 POST   /tickets/{id}/move                      { columnId | column | stage, position?, subState? }
-POST   /tickets/{id}/done                      straight to the board's done column
+POST   /tickets/{id}/done                      straight to the board's done column { completeSubtasks? }
 DELETE /tickets/{id}                           soft-delete → trash, restorable 30 days
 POST   /tickets/{id}/comments                  { body } or { content }                   comments:write
 GET    /tickets/{id}/subtasks                  checklist                                 tickets:read
-POST   /tickets/{id}/subtasks                  { title }           → { subtask, ticket } tickets:write
+POST   /tickets/{id}/subtasks                  { title } | { titles:[…] } → { subtask, ticket } tickets:write
 PATCH  /tickets/{id}/subtasks/{subId}          { title?, completed? } → { subtask, ticket }
 DELETE /tickets/{id}/subtasks/{subId}          → { ok, subtask, ticket }
 POST   /tickets/{id}/subtasks/reorder          { orderedIds } → { subtask:null, ticket }
@@ -180,7 +200,8 @@ POST   /tickets/{id}/subtasks/reorder          { orderedIds } → { subtask:null
   "column": "Backlog",            // or "columnId": "…" or "stage": "backlog"; default: first column
   "priority": "high",             // none | low | medium | high | urgent (default medium)
   "dueDate": "2026-10-20",        // see §8; null = none
-  "description": "Bring **two** photos.\n\n- [ ] Book slot\n- [ ] Pay fee",
+  "description": "Bring **two** photos.",
+  "subtasks": ["Book a slot", "Pay the fee"],   // the checklist — never "- [ ]" in the description
   "labelNames": ["errand"],       // created on the board if missing (or "labelIds")
   "assigneeUserId": "…" }         // or "assigneeEmail" / "assigneeAgentId"; default: unassigned
 → 201 { "ticket": {...} }
@@ -203,6 +224,8 @@ by name; human assignees without access to the target board are unassigned.
 Logs `ticket.transferred`. Never emulate it with create + delete.
 Landing in a done column stamps `completedAt` and logs `ticket.done`; leaving
 one clears it (`ticket.reopened`). `POST /tickets/{id}/done` is the shortcut.
+Moving to done (either way) also completes the ticket's open subtasks; send
+`"completeSubtasks": false` to leave them open.
 
 A ticket object: `id, number, boardId, columnId, column (name), title,
 description (sanitized HTML), priority, subState, dueDate, completedAt, isDone,
@@ -255,8 +278,10 @@ purge is human-only.
   A bare local datetime without a zone is rejected (422). Responses always
   return a UTC instant.
 - **Stages:** `intake | backlog | active | done`; `done` ⇔ `isDone`.
-- **Description:** Markdown (GFM: headings, lists, `- [ ]` checklists, bold,
-  links, code) — stored and returned as written, rendered formatted in the UI.
+- **Description:** Markdown (GFM: headings, lists, bold, links, code) — stored
+  and returned as written, rendered formatted in the UI. Steps belong in
+  `subtasks`, not in a `- [ ]` list (a checklist sent on create is converted
+  to subtasks).
   Simple HTML (`p b i u h3 ul ol li blockquote a`) is still accepted and
   sanitized; older descriptions may come back as that HTML.
 - **Column by name** is case-insensitive; a miss is `422 column_not_found` and
@@ -335,6 +360,7 @@ should see at a glance what changed and where.
 | 📅 | rescheduled / due date | `📅 Call the bank → Sun 25 Oct` |
 | 🔀 | moved | `🔀 #17 Fix login bug → In Work` / `🔀 #4 Order meat · General → Family` |
 | ✏️ | edited | `✏️ #42 Design LED add-on · priority high` |
+| ☑️ | subtasks added / ticked | `☑️ Set up the new phone · +3 subtasks` / `☑️ Buy a SIM (Set up the new phone)` |
 | 💬 | commented | `💬 #42 Design LED add-on` |
 | 🗑️ | deleted (restorable 30 days) | `🗑️ Old errand` |
 | ⚠️ | failed / needs the owner | `⚠️ No board for "garden" — which one?` |

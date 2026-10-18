@@ -64,8 +64,17 @@ async function finish(
   return { subtask, ticket: serialized };
 }
 
-export async function createSubtask(ticketId: string, title: string, actor: Actor): Promise<SubtaskResult> {
+export async function createSubtask(ticketId: string, title: string, actor: Actor, id?: string): Promise<SubtaskResult> {
   const ticket = await ticketCtx(ticketId);
+  if (id) {
+    // Idempotent retry (offline outbox): the same client id answers with the row already made.
+    const existing = await db.subtask.findUnique({ where: { id } });
+    if (existing) {
+      if (existing.ticketId !== ticketId) throw new HttpError(409, "Id already in use");
+      const serialized = await serializedTicket(ticketId);
+      return { subtask: serialized.subtasks.find((s) => s.id === id) ?? null, ticket: serialized };
+    }
+  }
   await onMutation(actor, ticket.workspaceId);
   const last = await db.subtask.findFirst({
     where: { ticketId },
@@ -74,6 +83,7 @@ export async function createSubtask(ticketId: string, title: string, actor: Acto
   });
   const row = await db.subtask.create({
     data: {
+      ...(id ? { id } : {}),
       ticketId,
       title,
       position: (last?.position ?? -1) + 1,
@@ -82,6 +92,13 @@ export async function createSubtask(ticketId: string, title: string, actor: Acto
     },
   });
   return finish("subtask.created", ticket, actor, row.id, { title });
+}
+
+/** Several at once, appended in order (an agent breaking a ticket down). */
+export async function createSubtasks(ticketId: string, titles: string[], actor: Actor): Promise<SubtaskResult> {
+  let result: SubtaskResult | null = null;
+  for (const title of titles) result = await createSubtask(ticketId, title, actor);
+  return { subtask: null, ticket: result!.ticket };
 }
 
 export async function updateSubtask(

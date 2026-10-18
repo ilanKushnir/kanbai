@@ -261,11 +261,11 @@ export function WeekView({
     router.refresh();
   }
 
-  async function moveTicketToDone(ticketId: string): Promise<SerializedTicket> {
+  async function moveTicketToDone(ticketId: string, opts: { completeSubtasks?: boolean } = {}): Promise<SerializedTicket> {
     const doneColumn = board.columns.find((c) => c.isDone);
     if (!doneColumn) throw new Error("No done column is configured for this board.");
     const { ticket } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${ticketId}/move`, {
-      body: { columnId: doneColumn.id, position: Number.MAX_SAFE_INTEGER },
+      body: { columnId: doneColumn.id, position: Number.MAX_SAFE_INTEGER, completeSubtasks: opts.completeSubtasks },
     });
     setTicketsById((m) => ({ ...m, [ticketId]: ticket }));
     return ticket;
@@ -436,7 +436,7 @@ export function WeekView({
           onClose={() => setSelectedId(null)}
           onUpdated={handleTicketUpdated}
           onDeleted={handleTicketDeleted}
-          onMoveToDone={() => moveTicketToDone(selectedTicket.id)}
+          onMoveToDone={(opts) => moveTicketToDone(selectedTicket.id, opts)}
         />
       )}
     </div>

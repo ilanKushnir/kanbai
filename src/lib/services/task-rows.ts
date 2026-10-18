@@ -30,8 +30,7 @@ export function toTicketRow(t: TicketRowSource, usersById: Map<string, UserLite>
     isDone: s.isDone,
     board: { id: t.board.id, name: t.board.name, slug: t.board.slug, color: t.board.color, doneColumnId: doneColumnByBoard.get(t.board.id) ?? null },
     labels: s.labels,
-    subtasksDone: s.subtasks.filter((x) => x.completed).length,
-    subtasksTotal: s.subtasks.length,
+    subtasks: s.subtasks.map((x) => ({ id: x.id, title: x.title, completed: x.completed })),
     commentCount: s.commentCount,
     createdByType: s.createdBy.type,
     createdAt: s.createdAt,
@@ -56,6 +55,7 @@ export function toNoteRow(n: ReturnType<typeof serializeNote>): TodayNote {
     updatedAt: n.updatedAt,
     assignedAgent: n.assignedAgent ? { id: n.assignedAgent.id, name: n.assignedAgent.name } : null,
     ticket: n.ticket,
+    subtasks: n.subtasks,
   };
 }
 

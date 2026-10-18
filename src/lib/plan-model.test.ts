@@ -13,7 +13,7 @@ function ticket(id: string, due: Date | null, columnId: string, isDone = false):
   return {
     id, title: id, number: 1, priority: "medium", dueDate: due ? due.toISOString() : null, columnId, columnName: "", subState: null,
     completedAt: isDone ? NOW.toISOString() : null, isDone, board: { id: "b", name: "B", slug: "b", color: "blue", doneColumnId: "done" },
-    labels: [], subtasksDone: 0, subtasksTotal: 0, commentCount: 0, createdByType: "user", createdAt: "2026-10-01T00:00:00Z",
+    labels: [], subtasks: [], commentCount: 0, createdByType: "user", createdAt: "2026-10-01T00:00:00Z",
   };
 }
 const columns = new Map<string, PlanColumn>([

@@ -21,6 +21,7 @@ export function FocusList({
   name,
   renderRow,
   composer,
+  after,
 }: {
   model: TodayModel;
   now: Date;
@@ -28,9 +29,12 @@ export function FocusList({
   renderRow: (item: TaskItem, showDay: boolean) => React.ReactNode;
   /** The add box; `onAdded` reports each task it adds. */
   composer: (onAdded: (title: string, day: string | null) => void) => React.ReactNode;
+  /** Dialogs the rows need (e.g. the open-subtasks question). */
+  after?: React.ReactNode;
 }) {
   const [depth, setDepth] = React.useState<0 | 1 | 2>(0);
   const [showDone, setShowDone] = React.useState(false);
+  const [showOverdue, setShowOverdue] = React.useState(false);
   const [adding, setAdding] = React.useState(false);
   const mounted = React.useSyncExternalStore(noop, () => true, () => false);
   const [added, setAdded] = React.useState<{ title: string; day: string | null }[]>([]);
@@ -67,7 +71,8 @@ export function FocusList({
         <div className="pt-6 pb-7 md:pt-12">
           <h1 className="font-display text-[2.1rem] font-medium leading-[1.05] tracking-tight md:text-[2.6rem]">{greeting}</h1>
           <p className="mt-2 text-[0.95rem] text-fg-muted">
-            {left === 0 ? (doneCount ? `All clear — ${doneCount} done today.` : "Nothing left for today.") : `${left} to do today${doneCount ? ` · ${doneCount} done` : ""}`}
+            {today.length === 0 ? (doneCount ? `All clear — ${doneCount} done today.` : "Nothing left for today.") : `${today.length} to do today${doneCount ? ` · ${doneCount} done` : ""}`}
+            {overdue.length > 0 && <span className="text-danger"> · {overdue.length} overdue</span>}
           </p>
           {total > 0 && (
             <div className="mt-4 h-1 overflow-hidden rounded-full bg-surface-3" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={doneCount} aria-label="Done today">
@@ -76,10 +81,38 @@ export function FocusList({
           )}
         </div>
 
-        {/* Today — the one card. Anything late leads it. */}
+        {/* Overdue — above today, closed until asked: it shouldn't crowd today, nor hide. */}
+        {overdue.length > 0 && (
+          <section className={cn("mb-4 rounded-[1.25rem] border transition-colors duration-150", showOverdue ? "border-border bg-surface px-2 pt-1 pb-2" : "border-border")}>
+            <button
+              type="button"
+              onClick={() => setShowOverdue((v) => !v)}
+              aria-expanded={showOverdue}
+              className="flex w-full items-center gap-3 rounded-[1.25rem] px-3 py-2.5 text-start cursor-pointer"
+            >
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-2 text-fg-muted">
+                <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", showOverdue && "rotate-180")} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-danger">Overdue</span>
+                {!showOverdue && <span className="block truncate text-xs text-fg-subtle">{overdueHint(overdue, model.todayYmd)}</span>}
+              </span>
+              <span className="rounded-full bg-danger px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums text-white">{overdue.length}</span>
+            </button>
+            {showOverdue && (
+              <div className="animate-fade-in">
+                {overdue.map((it) => (
+                  <React.Fragment key={it.id}>{renderRow(it, true)}</React.Fragment>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Today — the one card. */}
         <section className="kb-focus-today rounded-[1.5rem] border border-border bg-surface px-2 pt-3 pb-2">
-          <BlockHead label="Today" count={left} />
-          {left === 0 ? (
+          <BlockHead label="Today" count={today.length} />
+          {today.length === 0 ? (
             <div className="flex items-center gap-3 px-3 pt-1 pb-4 text-sm text-fg-muted">
               <span className="grid h-8 w-8 place-items-center rounded-full bg-success-soft text-success">
                 <Check className="h-4 w-4" strokeWidth={2.5} />
@@ -87,14 +120,7 @@ export function FocusList({
               {doneCount ? "That's everything for today." : "A free day. Tomorrow is below."}
             </div>
           ) : (
-            <>
-              {overdue.map((it) => (
-                <React.Fragment key={it.id}>{renderRow(it, true)}</React.Fragment>
-              ))}
-              {today.map((it) => (
-                <React.Fragment key={it.id}>{renderRow(it, false)}</React.Fragment>
-              ))}
-            </>
+            today.map((it) => <React.Fragment key={it.id}>{renderRow(it, false)}</React.Fragment>)
           )}
         </section>
 
@@ -196,6 +222,7 @@ export function FocusList({
           document.body,
         )}
 
+      {after}
       <Modal
         open={adding}
         onClose={() => {
@@ -226,6 +253,14 @@ export function FocusList({
 }
 
 const noop = () => () => {};
+
+/** "Since Oct 12" / "From yesterday" — how far back it goes. */
+function overdueHint(items: TaskItem[], todayYmd: string) {
+  const oldest = items.reduce<string | null>((m, i) => (i.day && (!m || i.day < m) ? i.day : m), null);
+  if (!oldest) return "";
+  if (oldest === ymd(addDays(parseYmd(todayYmd), -1))) return "From yesterday";
+  return `Since ${parseYmd(oldest).toLocaleDateString(LOCALE, { month: "short", day: "numeric" })}`;
+}
 
 function whereLabel(day: string | null, todayYmd: string) {
   if (!day) return "Inbox";

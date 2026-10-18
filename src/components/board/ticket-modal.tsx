@@ -32,6 +32,7 @@ import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
 import { priorityMeta, dueMeta, completionMeta, assigneeLabel } from "@/lib/display";
 import { timeAgo, cn } from "@/lib/utils";
 import type { SerializedTicket } from "@/lib/serialize";
+import { useCompleteGuard } from "@/components/today/subtasks";
 
 type ColumnMeta = { id: string; name: string; isDone: boolean; subStates: string[] };
 type LabelLite = { id: string; name: string; color: string };
@@ -61,7 +62,7 @@ export function TicketModal({
   onClose: () => void;
   onUpdated: (t: SerializedTicket) => void;
   onDeleted: (id: string) => void;
-  onMoveToDone?: () => Promise<SerializedTicket>;
+  onMoveToDone?: (opts: { completeSubtasks: boolean }) => Promise<SerializedTicket>;
   onDoneComplete?: (result: { ticket: SerializedTicket; previous: { columnId: string; subState: string | null } }) => void;
 }) {
   const { toast } = useToast();
@@ -72,6 +73,19 @@ export function TicketModal({
   const [comment, setComment] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [doneClosing, setDoneClosing] = React.useState(false);
+  // Finishing with open subtasks asks first (Mark done, or picking a done column).
+  const guard = useCompleteGuard();
+
+  async function moveToColumn(c: ColumnMeta, subState: string | null) {
+    if (c.id === t.columnId && t.subState === subState) return;
+    let completeSubtasks = false;
+    if (c.isDone && !isDone) {
+      const choice = await guard.confirm(t.title, t.subtasks);
+      if (!choice) return;
+      completeSubtasks = choice === "all";
+    }
+    patch({ columnId: c.id, subState, ...(completeSubtasks ? { completeSubtasks } : {}) });
+  }
   const doneCloseTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
@@ -136,9 +150,11 @@ export function TicketModal({
   async function moveToDone() {
     if (!onMoveToDone || !doneColumn || isDone || doneClosing) return;
     const previous = { columnId: t.columnId, subState: t.subState };
+    const choice = await guard.confirm(t.title, t.subtasks);
+    if (!choice) return;
     setSaving(true);
     try {
-      const next = await onMoveToDone();
+      const next = await onMoveToDone({ completeSubtasks: choice === "all" });
       apply(next);
       setDoneClosing(true);
       doneCloseTimer.current = setTimeout(() => {
@@ -187,6 +203,7 @@ export function TicketModal({
   }, [members, currentUser]);
 
   return (
+    <>
     <Modal open onClose={handleClose} size="lg" hideClose className={cn(doneClosing && "kb-ticket-modal-done-close")}>
       {doneClosing && (
         <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-[inherit] bg-surface/70 backdrop-blur-[1px] animate-fade-in">
@@ -216,7 +233,7 @@ export function TicketModal({
                     active={c.id === t.columnId}
                     onClick={() => {
                       close();
-                      if (c.id !== t.columnId || t.subState) patch({ columnId: c.id, subState: null });
+                      void moveToColumn(c, null);
                     }}
                   >
                     {c.name}
@@ -232,7 +249,7 @@ export function TicketModal({
                         active={c.id === t.columnId && t.subState === s}
                         onClick={() => {
                           close();
-                          patch({ columnId: c.id, subState: s });
+                          void moveToColumn(c, s);
                         }}
                       >
                         <span className="pl-1.5">{s}</span>
@@ -584,6 +601,8 @@ export function TicketModal({
         </div>
       </div>
     </Modal>
+    {guard.dialog}
+    </>
   );
 }
 

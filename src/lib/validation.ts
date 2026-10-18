@@ -4,6 +4,18 @@ import { COLUMN_STAGES } from "./column-stage";
 import { isAvatarColor } from "./avatar-colors";
 import { zonedTime, workspaceTz } from "./tz";
 
+// ── Subtasks (shared by tasks and tickets) ──
+const subtaskTitle = z.string().trim().min(1).max(200);
+/** A checklist to create with a task or ticket: titles, in order. */
+const subtaskTitles = z.array(subtaskTitle).max(50);
+
+/** A simple task's whole checklist, as the client holds it. */
+const subtaskList = z
+  .array(z.object({ id: z.string().min(1).max(40), title: subtaskTitle, completed: z.boolean() }))
+  .max(50);
+
+const completeSubtasks = z.boolean().optional();
+
 /**
  * A due date in ISO 8601, accepted in any of three unambiguous shapes:
  *   • date-only      "2026-06-20"            (→ 12:00 local in KANBAI_TZ)
@@ -145,6 +157,7 @@ export const createTicketV1Schema = z.object({
   assigneeEmail: z.email().optional(),
   labelIds: z.array(z.string()).optional(),
   labelNames: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  subtasks: subtaskTitles.optional(),
   number: z.number().int().min(0).optional(),
   createdAt: z.iso.datetime().optional(),
 });
@@ -177,6 +190,7 @@ export const createTicketSchema = z.object({
   assigneeUserIds: z.array(z.string().min(1)).max(20).nullable().optional(),
   assigneeAgentId: z.string().nullable().optional(),
   labelIds: z.array(z.string()).optional(),
+  subtasks: subtaskTitles.optional(),
 });
 
 export const updateTicketSchema = z.object({
@@ -195,6 +209,8 @@ export const updateTicketSchema = z.object({
   labelIds: z.array(z.string()).optional(),
   // Replaces the whole label set by name; unknown names are created on the board.
   labelNames: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  /** With a move into a done column: tick the open subtasks too. */
+  completeSubtasks,
 });
 
 /**
@@ -208,6 +224,8 @@ export const moveTicketSchema = z
     boardId: z.string().min(1).optional(),
     position: z.number().int().min(0).optional(),
     subState: z.string().max(24).nullable().optional(),
+    /** Landing in a done column: tick the open subtasks too. */
+    completeSubtasks,
   })
   .refine((v) => v.boardId || v.columnId || v.column || v.columnName || v.stage, {
     message: "Provide a target: boardId and/or a column (columnId, column name or stage).",
@@ -223,9 +241,14 @@ export const createCommentSchema = z
   .refine((v) => v.body.length > 0, { message: "body: comment text is required" });
 
 // ── Subtasks ──
-export const createSubtaskSchema = z.object({
-  title: z.string().trim().min(1).max(200),
-});
+/** One subtask (`title`), or several at once (`titles`). `id`: client id for an idempotent create. */
+export const createSubtaskSchema = z
+  .object({
+    id: z.string().regex(/^c[a-z0-9]{24}$/, "Invalid id").optional(),
+    title: subtaskTitle.optional(),
+    titles: subtaskTitles.min(1).optional(),
+  })
+  .refine((v) => v.title || v.titles, { message: "title (or titles) is required", path: ["title"] });
 
 export const updateSubtaskSchema = z
   .object({
@@ -297,6 +320,7 @@ export const createNoteSchema = z.object({
   scheduledDay: dayString.nullable().optional(),
   bucket: z.enum(NOTE_BUCKETS).optional(), // legacy fallback if scheduledDay omitted
   priority: z.enum(PRIORITIES).optional(),
+  subtasks: subtaskTitles.optional(),
 });
 
 export const updateNoteSchema = z.object({
@@ -306,6 +330,9 @@ export const updateNoteSchema = z.object({
   scheduledDay: dayString.nullable().optional(),
   doneOn: dayString.nullable().optional(),
   priority: z.enum(PRIORITIES).optional(),
+  subtasks: subtaskList.optional(),
+  /** With doneOn: tick the open subtasks too. */
+  completeSubtasks,
 });
 
 export const moveNoteSchema = z.object({
@@ -336,6 +363,7 @@ export const createTaskV1Schema = z
     body: z.string().trim().min(1).max(10_000).optional(),
     day: taskDay.optional(), // default "today"
     priority: z.enum(PRIORITIES).optional(),
+    subtasks: subtaskTitles.optional(),
   })
   .refine((v) => v.title || v.body, { message: "title is required", path: ["title"] });
 
@@ -345,7 +373,17 @@ export const updateTaskV1Schema = z.object({
   day: taskDay.optional(),
   done: z.boolean().optional(),
   priority: z.enum(PRIORITIES).optional(),
+  /** With done:true — default true: finishing a task ticks its subtasks. */
+  completeSubtasks,
 });
+
+/** POST …/done — `completeSubtasks` defaults to true. */
+export const doneV1Schema = z.object({ completeSubtasks }).optional();
+
+/** PATCH a simple task's subtask. */
+export const updateTaskSubtaskSchema = z
+  .object({ title: subtaskTitle.optional(), completed: z.boolean().optional() })
+  .refine((v) => v.title !== undefined || v.completed !== undefined, { message: "Provide title and/or completed" });
 
 /** Agent queues a note to an agent to sort (defaults to itself). */
 export const queueNoteV1Schema = z.object({

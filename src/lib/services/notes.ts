@@ -6,6 +6,7 @@ import { ticketInclude, serializeTicket } from "@/lib/serialize";
 import { coarseBucket, dueFromDay, dayFromBucket } from "@/lib/notes-schedule";
 import { zonedTime, todayYmd, workspaceTz } from "@/lib/tz";
 import { htmlToPlainText } from "@/lib/utils";
+import { liftChecklist, newSubtasks, parseSubtasks, MAX_SUBTASKS, type SubtaskItem } from "@/lib/subtask-list";
 import { createTicket, type Actor, type ColumnRef } from "./tickets";
 
 /**
@@ -62,6 +63,7 @@ export function serializeNote(n: NoteWithRelations) {
     doneOn: n.doneOn,
     position: n.position,
     priority: n.priority,
+    subtasks: parseSubtasks(n.subtasks),
     suggestedDueDate: dueFromDay(n.scheduledDay),
     sortContext: n.sortContext,
     assignedAgent: n.assignedAgent
@@ -82,7 +84,25 @@ export function serializeNote(n: NoteWithRelations) {
   };
 }
 
+/**
+ * Tasks written with a markdown checklist in their text ("- [ ] Buy a SIM",
+ * the way agents used to break things down) get real subtasks, once.
+ */
+async function liftLegacyChecklists(where: Prisma.NoteWhereInput) {
+  const rows = await db.note.findMany({
+    where: { ...where, deletedAt: null, subtasks: "[]", OR: [{ body: { contains: "[ ]" } }, { body: { contains: "[x]" } }, { body: { contains: "[X]" } }] },
+    select: { id: true, body: true },
+  });
+  for (const r of rows) {
+    const { text, items } = liftChecklist(r.body);
+    if (!items.length) continue;
+    const subtasks = newSubtasks(items.map((i) => i.title)).map((s, i) => ({ ...s, completed: items[i].completed }));
+    await db.note.update({ where: { id: r.id }, data: { body: text, subtasks: JSON.stringify(subtasks) } });
+  }
+}
+
 export async function listNotesForUser(userId: string) {
+  await liftLegacyChecklists({ userId });
   const notes = await db.note.findMany({
     where: { userId, deletedAt: null },
     orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -138,6 +158,7 @@ export async function listNotesForWorkspace(
   if (filters.status) where.status = filters.status;
   if (filters.bucket) where.bucket = filters.bucket;
   if (filters.assignedAgentId) where.assignedAgentId = filters.assignedAgentId;
+  await liftLegacyChecklists(where);
   const notes = await db.note.findMany({
     where,
     orderBy: [{ bucket: "asc" }, { position: "asc" }, { createdAt: "asc" }],
@@ -199,7 +220,7 @@ export async function getNoteForAgent(noteId: string, agentId: string) {
 export async function createNote(
   userId: string,
   body: string,
-  opts?: { scheduledDay?: string | null; bucket?: string; priority?: string; id?: string },
+  opts?: { scheduledDay?: string | null; bucket?: string; priority?: string; id?: string; subtasks?: string[] },
   actor?: Actor | null,
 ) {
   if (opts?.id) {
@@ -219,11 +240,19 @@ export async function createNote(
     orderBy: { position: "desc" },
     select: { position: true },
   });
+  // A checklist written into the text becomes the task's subtasks.
+  const lifted = liftChecklist(body);
+  body = lifted.text;
+  const subtasks = [
+    ...newSubtasks(lifted.items.map((i) => i.title)).map((s, i) => ({ ...s, completed: lifted.items[i].completed })),
+    ...newSubtasks(opts?.subtasks ?? []),
+  ].slice(0, MAX_SUBTASKS);
   const note = await db.note.create({
     data: {
       ...(opts?.id ? { id: opts.id } : {}),
       userId,
       body,
+      subtasks: JSON.stringify(subtasks),
       scheduledDay,
       bucket: coarseBucket(scheduledDay, workspaceNow()),
       priority: opts?.priority ?? "none",
@@ -248,21 +277,41 @@ export async function updateNote(
     scheduledDay: string | null;
     doneOn: string | null;
     priority: string;
+    /** The whole checklist (replaces it). */
+    subtasks: SubtaskItem[];
+    /** With doneOn: tick every open subtask too. */
+    completeSubtasks: boolean;
   }>,
   actor?: Actor | null,
 ) {
-  const before = await db.note.findUnique({ where: { id: noteId }, select: { doneOn: true, body: true } });
-  const data: Record<string, unknown> = { ...input };
+  const before = await db.note.findUnique({ where: { id: noteId }, select: { doneOn: true, body: true, subtasks: true } });
+  const { subtasks: nextSubtasks, completeSubtasks, ...fields } = input;
+  const data: Record<string, unknown> = { ...fields };
+  let list = nextSubtasks ?? parseSubtasks(before?.subtasks);
+  let listChanged = nextSubtasks !== undefined;
+  if (input.body !== undefined) {
+    const lifted = liftChecklist(input.body);
+    if (lifted.items.length) {
+      data.body = lifted.text;
+      list = [...list, ...newSubtasks(lifted.items.map((i) => i.title)).map((s, i) => ({ ...s, completed: lifted.items[i].completed }))];
+      listChanged = true;
+    }
+  }
+  if (completeSubtasks && input.doneOn) {
+    list = list.map((s) => ({ ...s, completed: true }));
+    listChanged = true;
+  }
+  if (listChanged) data.subtasks = JSON.stringify(list.slice(0, MAX_SUBTASKS));
   // Keep the coarse bucket cache in sync when the schedule changes.
   if (input.scheduledDay !== undefined) data.bucket = coarseBucket(input.scheduledDay, workspaceNow());
   const note = await db.note.update({ where: { id: noteId }, data, include: noteInclude });
-  const fields = Object.keys(input).filter((k) => (input as Record<string, unknown>)[k] !== undefined);
+  const changed = Object.keys(input).filter((k) => (input as Record<string, unknown>)[k] !== undefined);
   const nowDone = input.doneOn !== undefined && input.doneOn != null && before?.doneOn == null;
   const reopened = input.doneOn !== undefined && input.doneOn == null && before?.doneOn != null;
   await logActivity({
     actor: noteActor(actor),
     action: nowDone ? "note.done" : reopened ? "note.reopened" : "note.updated",
-    meta: { noteId, excerpt: excerpt(note.body), fields, ...(nowDone ? { doneOn: input.doneOn } : {}) },
+    meta: { noteId, excerpt: excerpt(note.body), fields: changed, ...(nowDone ? { doneOn: input.doneOn } : {}) },
   });
   return serializeNote(note);
 }
@@ -403,6 +452,8 @@ export async function fulfillNote(
       dueDate: input.dueDate,
       labelIds: input.labelIds,
       labelNames: input.labelNames,
+      // The task's checklist comes along as the ticket's subtasks.
+      subtasks: parseSubtasks(note.subtasks).map((s) => ({ title: s.title, completed: s.completed })),
     },
     actor,
   );
@@ -424,4 +475,37 @@ export async function fulfillNote(
 
   const linked = await db.ticket.findUnique({ where: { id: ticket.id }, include: ticketInclude });
   return linked ? serializeTicket(linked) : ticket;
+}
+
+// ── A simple task's subtasks ────────────────────────────────────────────────
+
+async function noteSubtasks(noteId: string) {
+  const n = await db.note.findUnique({ where: { id: noteId }, select: { subtasks: true } });
+  if (!n) throw new HttpError(404, "Task not found");
+  return parseSubtasks(n.subtasks);
+}
+
+/** Append subtasks (in order) to a simple task. */
+export async function addNoteSubtasks(noteId: string, titles: string[], actor?: Actor | null) {
+  const list = await noteSubtasks(noteId);
+  if (list.length + titles.length > MAX_SUBTASKS) throw new HttpError(422, `A task holds at most ${MAX_SUBTASKS} subtasks`);
+  const added = newSubtasks(titles);
+  const note = await updateNote(noteId, { subtasks: [...list, ...added] }, actor);
+  return { subtasks: added, note };
+}
+
+export async function updateNoteSubtask(noteId: string, subtaskId: string, patch: { title?: string; completed?: boolean }, actor?: Actor | null) {
+  const list = await noteSubtasks(noteId);
+  const current = list.find((s) => s.id === subtaskId);
+  if (!current) throw new HttpError(404, "Subtask not found");
+  const next = { ...current, ...(patch.title !== undefined ? { title: patch.title } : {}), ...(patch.completed !== undefined ? { completed: patch.completed } : {}) };
+  const note = await updateNote(noteId, { subtasks: list.map((s) => (s.id === subtaskId ? next : s)) }, actor);
+  return { subtask: next, note };
+}
+
+export async function deleteNoteSubtask(noteId: string, subtaskId: string, actor?: Actor | null) {
+  const list = await noteSubtasks(noteId);
+  if (!list.some((s) => s.id === subtaskId)) throw new HttpError(404, "Subtask not found");
+  const note = await updateNote(noteId, { subtasks: list.filter((s) => s.id !== subtaskId) }, actor);
+  return { note };
 }

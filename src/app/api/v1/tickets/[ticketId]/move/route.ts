@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
  * `columnName`, case-insensitive) or by `stage` (intake|backlog|active|done).
  * `position` is optional (default: end of the column); `subState` passes through.
  * `boardId` of another board moves the ticket there (see transferTicket).
+ * Landing in a done column also completes open subtasks (`completeSubtasks: false` keeps them open).
  */
 export const POST = handler(
   async (req: Request, { params }: { params: Promise<{ ticketId: string }> }) => {
@@ -34,6 +35,8 @@ export const POST = handler(
       input.position,
       { type: "agent", id: agent.id, name: agent.name },
       input.subState,
+      // Moving to done ticks the checklist too, unless told otherwise.
+      { completeSubtasks: input.completeSubtasks ?? true },
     );
     return ok({ ticket: moved });
   },

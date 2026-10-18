@@ -49,12 +49,12 @@ export function TodayTicketModal({
     }
   }
 
-  async function moveToDone() {
+  async function moveToDone({ completeSubtasks }: { completeSubtasks: boolean }) {
     const doneColumn = columns.find((c) => c.isDone);
     if (!doneColumn) throw new Error("This board has no Done column.");
     const subState = doneColumn.subStates[0] ?? null;
     const { ticket: next } = await api<{ ticket: SerializedTicket }>(`/api/tickets/${current.id}/move`, {
-      body: { columnId: doneColumn.id, position: 0, subState },
+      body: { columnId: doneColumn.id, position: 0, subState, completeSubtasks },
     });
     return next;
   }
