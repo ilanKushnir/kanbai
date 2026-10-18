@@ -511,6 +511,7 @@ body {
   border-color: color-mix(in oklab, var(--color-accent) 60%, var(--color-border));
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 16%, transparent), var(--shadow-md);
 }
+.kb-quickadd textarea:focus-visible { outline: none; }
 .kb-quickadd textarea { transition: min-height var(--motion-slow) var(--ease-out-emph); }
 
 /* Markdown rendering */
@@ -656,3 +657,17 @@ html.kb-plan-dragging, html.kb-plan-dragging * { cursor: grabbing !important; -w
 .kb-drag-lift { animation: drag-lift 0.16s var(--ease-out-emph) both; transform-origin: 30% 50%; }
 @keyframes drop-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 0%, transparent) } 50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-primary) 22%, transparent) } }
 .kb-pick-armed { animation: drop-pulse 1.8s ease-in-out infinite; }
+
+/* ── Focus (Today, nothing else) ─────────────────────────────────────────── */
+/* A faint warmth at the top of the page, and a raised card for today. */
+.kb-focus-page {
+  background: radial-gradient(110% 38rem at 50% -12rem, color-mix(in oklab, var(--color-accent) 9%, transparent), transparent 70%);
+}
+.kb-focus-today { box-shadow: var(--shadow-card); }
+.kb-focus-fab {
+  box-shadow:
+    0 10px 24px -8px color-mix(in oklab, var(--color-primary) 55%, transparent),
+    0 2px 6px rgb(0 0 0 / 0.12);
+}
+::view-transition-old(root),
+::view-transition-new(root) { animation-duration: 260ms; animation-timing-function: var(--ease-out-soft); }

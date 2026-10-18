@@ -37,6 +37,8 @@ import type { SerializedTicket } from "@/lib/serialize";
 import * as sync from "@/lib/offline/sync-store";
 import { clientId, toTodayTicket, type TodayData } from "@/lib/offline/today-sync";
 import { textDirection } from "@/lib/text-direction";
+import { useFocus } from "@/components/focus-mode";
+import { FocusList } from "./focus-list";
 
 const SERVER_SYNC_SNAPSHOT: sync.SyncSnapshot = { status: { online: true, syncing: false, pending: 0, authNeeded: false, baseAt: null, stale: false, syncedAt: 0 }, data: null };
 const getServerSyncSnapshot = () => SERVER_SYNC_SNAPSHOT;
@@ -71,6 +73,8 @@ type Props = {
   compose?: boolean;
   /** Server "now" (ISO) for the first render; the client takes over after mount. */
   initialNow: string;
+  /** For the focus greeting. */
+  userName?: string | null;
 };
 
 const SECTION_DEFAULT_OPEN: Record<SectionKey, boolean> = {
@@ -83,7 +87,7 @@ const SECTION_DEFAULT_OPEN: Record<SectionKey, boolean> = {
   done: false,
 };
 
-export function TodayView({ syncScope, tickets: initialTickets, notes: initialNotes, boards: initialBoards, dictationLanguage, focusId, compose, initialNow }: Props) {
+export function TodayView({ syncScope, tickets: initialTickets, notes: initialNotes, boards: initialBoards, dictationLanguage, focusId, compose, initialNow, userName }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = React.useState<Record<SectionKey, boolean>>(SECTION_DEFAULT_OPEN);
@@ -314,6 +318,36 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
   }, [focusId]);
 
   const visibleSections = model.sections.filter((s) => s.items.length > 0 || s.key === "today");
+  const { focus } = useFocus();
+
+  if (focus) {
+    return (
+      <FocusList
+        model={model}
+        now={now}
+        name={userName}
+        renderRow={(it, showDay) => (
+          <Row
+            item={it}
+            todayYmd={todayYmd}
+            boards={boards}
+            showDay={showDay}
+            quiet
+            highlight={focusId === it.id}
+            onToggleDone={toggleDone}
+            onReschedule={reschedule}
+            onPriority={setPriority}
+            onDelete={remove}
+            onMoveToBoard={moveNoteToBoard}
+            onEditNote={editNote}
+          />
+        )}
+        composer={(onAdded) => (
+          <QuickAdd boards={boards} todayYmd={todayYmd} defaultDay={null} onAdd={quickAdd} onAdded={onAdded} dictationLanguage={dictationLanguage} autoFocus />
+        )}
+      />
+    );
+  }
 
   return (
     <div className="min-w-0 space-y-5">
@@ -353,13 +387,18 @@ function sectionFor(day: string, todayYmd: string): SectionKey {
 function QuickAdd({
   boards,
   todayYmd,
+  defaultDay = todayYmd,
   onAdd,
+  onAdded,
   dictationLanguage,
   autoFocus,
 }: {
   boards: TodayBoard[];
   todayYmd: string;
+  /** Where a task with no date in its text goes (Today; null = no day yet). */
+  defaultDay?: string | null;
   onAdd: (text: string, dayOverride: string | null | undefined) => Promise<void>;
+  onAdded?: (title: string, day: string | null) => void;
   dictationLanguage: string;
   autoFocus?: boolean;
 }) {
@@ -368,7 +407,7 @@ function QuickAdd({
   const [busy, setBusy] = React.useState(false);
   const ref = React.useRef<HTMLTextAreaElement>(null);
   const parsed = React.useMemo(() => (text.trim() ? parseQuickAdd(text, boards, new Date()) : null), [text, boards]);
-  const effectiveDay = dayOverride === undefined ? parsed?.day ?? todayYmd : dayOverride;
+  const effectiveDay = dayOverride === undefined ? parsed?.day ?? defaultDay : dayOverride;
 
   const dictation = useDictation((t) => setText((cur) => (cur ? cur.replace(/\s*$/, " ") : "") + t), dictationLanguage);
 
@@ -381,7 +420,9 @@ function QuickAdd({
     if (!v || busy) return;
     setBusy(true);
     try {
-      await onAdd(v, dayOverride);
+      // A date written in the text wins; otherwise the picked day, or the default.
+      await onAdd(v, dayOverride !== undefined ? dayOverride : parsed?.day ? undefined : defaultDay);
+      onAdded?.(parsed?.title ?? v, effectiveDay);
       setText("");
       setDayOverride(undefined);
     } finally {
@@ -643,6 +684,7 @@ function Row({
   todayYmd,
   boards,
   showDay,
+  quiet,
   highlight,
   onToggleDone,
   onReschedule,
@@ -655,6 +697,8 @@ function Row({
   todayYmd: string;
   boards: TodayBoard[];
   showDay: boolean;
+  /** Focus: just the task, its board and priority — no columns, labels, counts or menu. */
+  quiet?: boolean;
   highlight?: boolean;
   onToggleDone: (i: TaskItem) => void;
   onReschedule: (i: TaskItem, day: string | null) => void;
@@ -783,26 +827,26 @@ function Row({
             <Link href={`/boards/${ticket.board.slug}`} className="inline-flex items-center gap-1 hover:text-fg" dir="auto">
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(ticket.board.color).dot }} />
               {ticket.board.name}
-              {ticket.number != null && <span className="text-fg-subtle/70">#{ticket.number}</span>}
+              {!quiet && ticket.number != null && <span className="text-fg-subtle/70">#{ticket.number}</span>}
             </Link>
           )}
-          {ticket && !ticket.isDone && ticket.columnName && <span className="text-fg-subtle/80">{ticket.columnName}</span>}
-          {ticket && ticket.subtasksTotal > 0 && (
+          {!quiet && ticket && !ticket.isDone && ticket.columnName && <span className="text-fg-subtle/80">{ticket.columnName}</span>}
+          {!quiet && ticket && ticket.subtasksTotal > 0 && (
             <span className="inline-flex items-center gap-1">
               <ListChecks className="h-3 w-3" /> {ticket.subtasksDone}/{ticket.subtasksTotal}
             </span>
           )}
-          {ticket && ticket.commentCount > 0 && (
+          {!quiet && ticket && ticket.commentCount > 0 && (
             <span className="inline-flex items-center gap-1">
               <MessageSquare className="h-3 w-3" /> {ticket.commentCount}
             </span>
           )}
-          {ticket?.labels.map((l) => (
+          {!quiet && ticket?.labels.map((l) => (
             <span key={l.id} className="inline-flex items-center gap-1 rounded-full px-1.5 py-px" style={{ backgroundColor: tone(l.color).bg, color: tone(l.color).fg }}>
               {l.name}
             </span>
           ))}
-          {item.priority !== "none" && (
+          {(quiet ? item.priority === "high" || item.priority === "urgent" : item.priority !== "none") && (
             <span className="inline-flex items-center gap-1" style={{ color: pm.color }}>
               <Flag className="h-3 w-3" /> {pm.label}
             </span>
@@ -810,7 +854,7 @@ function Row({
           {showDay && dayMeta && (
             <span className={cn("inline-flex items-center gap-1", item.day && item.day < todayYmd && !item.done && "text-danger")}>
               <CalendarDays className="h-3 w-3" /> {dayMeta.label}
-              {dayMeta.sublabel && ` · ${dayMeta.sublabel}`}
+              {!quiet && dayMeta.sublabel && ` · ${dayMeta.sublabel}`}
             </span>
           )}
           {queued && (
@@ -818,7 +862,7 @@ function Row({
               <Sparkles className="h-3 w-3" /> <span className="ai-shimmer">{note?.assignedAgent?.name ?? "Agent"} is filing this…</span>
             </span>
           )}
-          {ticket?.createdByType === "agent" && !queued && (
+          {!quiet && ticket?.createdByType === "agent" && !queued && (
             <span className="inline-flex items-center gap-1 text-fg-subtle/80" title="Added by your agent">
               <Sparkles className="h-3 w-3" />
             </span>
@@ -832,7 +876,7 @@ function Row({
             <CalendarDays className="h-4 w-4" />
           </span>
         </DayPicker>
-        <Menu
+        {!quiet && <Menu
           align="end"
           contentClassName="w-52"
           trigger={
@@ -913,7 +957,7 @@ function Row({
               </MenuItem>
             </>
           )}
-        </Menu>
+        </Menu>}
       </div>
     </div>
     </div>

@@ -7,9 +7,12 @@ import { addDays, startOfDay } from "@/lib/notes-schedule";
 import { countNotesAttention } from "@/lib/notes-badge";
 import { parseUserSettings } from "@/lib/user-settings";
 import { WhatsNew } from "@/components/whats-new";
+import { cookies } from "next/headers";
+import { FOCUS_COOKIE } from "@/lib/focus";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getContext();
+  const focus = (await cookies()).get(FOCUS_COOKIE)?.value === "1";
 
   const startTomorrow = addDays(startOfDay(new Date()), 1);
   const [boards, badgeNotes, dueTickets] = await Promise.all([
@@ -64,6 +67,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           active: m.workspace.id === ctx.workspace.id,
         }))}
         todayCount={todayCount}
+        initialFocus={focus}
       >
         {children}
       </AppShell>

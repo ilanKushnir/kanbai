@@ -10,6 +10,15 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.16.0",
+    date: "2026-10-18",
+    items: [
+      { emoji: "◎", title: "Focus mode", body: "Flip the Focus switch at the top and everything else steps aside — no boards, no menus, no side panels. Just what's on today, anything carried over, and tomorrow." },
+      { emoji: "🪜", title: "The rest, one step at a time", body: "The rest of the week is one tap away, and only then everything else (later and Inbox). Each time you open Focus, it starts small again." },
+      { emoji: "➕", title: "Jot it down", body: "The + button in Focus adds a task straight to Inbox without asking for a day, so you can get it out of your head and keep going." },
+    ],
+  },
+  {
     version: "0.15.0",
     date: "2026-10-17",
     items: [

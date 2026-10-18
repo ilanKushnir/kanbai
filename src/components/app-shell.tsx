@@ -13,11 +13,25 @@ import * as sync from "@/lib/offline/sync-store";
 import { buildToday } from "@/lib/today-model";
 import { tone } from "@/components/ui/badge";
 import { POWERED_BY } from "@/lib/version";
+import { FocusProvider, FocusToggle, useFocus } from "@/components/focus-mode";
 import { cn } from "@/lib/utils";
 
 export type NavBoard = { id: string; name: string; slug: string; color: string };
 
-export function AppShell({
+type ShellProps = React.ComponentProps<typeof Shell>;
+
+export function AppShell({ initialFocus, ...props }: ShellProps & { initialFocus: boolean }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  // Focus lives on Today: turning it on from anywhere else goes there.
+  return (
+    <FocusProvider initial={initialFocus} onEnter={() => pathname !== "/today" && router.push("/today")}>
+      <Shell {...props} />
+    </FocusProvider>
+  );
+}
+
+function Shell({
   children,
   boards,
   syncScope,
@@ -48,6 +62,8 @@ export function AppShell({
   const userMenuProps = { userName, userEmail, userAvatarUrl, userAvatarColor, isManager, isSystemAdmin, workspaces };
   const pathname = usePathname();
   const router = useRouter();
+  // In focus, Today is the whole app: no sidebar, top bar or tab bar.
+  const focused = useFocus().focus && pathname === "/today";
   const [optimisticPath, setOptimisticPath] = React.useState<string | null>(null);
   // Any landed navigation (tab or not) settles the optimistic tab.
   const [seenPath, setSeenPath] = React.useState(pathname);
@@ -125,12 +141,15 @@ export function AppShell({
   return (
     <div className="kb-app flex h-dvh overflow-hidden bg-bg">
       {/* ── Desktop sidebar ───────────────────────────── */}
-      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-surface">
+      <aside className={cn("hidden w-60 shrink-0 flex-col border-r border-border bg-surface", !focused && "md:flex")}>
         <div className="px-4 h-16 flex items-center">
           <Link href="/today" className="flex items-center">
             <Logo />
           </Link>
-          <SyncIndicator className="ml-auto" />
+          <div className="ml-auto flex items-center gap-2">
+            <SyncIndicator />
+            <FocusToggle />
+          </div>
         </div>
 
         <nav className="px-3 mt-1 space-y-0.5">
@@ -213,10 +232,11 @@ export function AppShell({
       {/* ── Main column ───────────────────────────── */}
       <div className="flex-1 flex min-h-0 flex-col min-w-0">
         {/* Mobile top bar */}
-        <header className="md:hidden sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between border-b border-border bg-surface/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+        <header className={cn("md:hidden sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between border-b border-border bg-surface/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md", focused && "hidden")}>
           <Link href="/today"><Logo markClassName="h-7 w-7" /></Link>
           <div className="flex items-center gap-1.5">
             <SyncIndicator />
+            <FocusToggle className="mr-1" />
             <UserMenu compact placement="down" {...userMenuProps} />
           </div>
         </header>
@@ -233,7 +253,7 @@ export function AppShell({
       {/* ── Mobile bottom nav ───────────────────────────── */}
       {/* In the layout flow (not position:fixed) so it sits on the real bottom
           edge even where iOS standalone mis-sizes the fixed viewport. */}
-      <nav className="kb-tabbar md:hidden shrink-0 z-30 border-t border-border bg-surface">
+      <nav className={cn("kb-tabbar md:hidden shrink-0 z-30 border-t border-border bg-surface", focused && "hidden")}>
         <div className="relative grid" style={{ gridTemplateColumns: `repeat(${mobileNav.length}, minmax(0, 1fr))` }}>
           {/* One pill that glides to the active tab. */}
           {activeTab >= 0 && (

@@ -16,6 +16,7 @@ import { TodayHero } from "@/components/today/today-hero";
 import { TodayView, type TodayBoard } from "@/components/today/today-view";
 import { TodayTicketModal } from "@/components/today/today-ticket-modal";
 import { RecentChanges } from "@/components/today/recent-changes";
+import { TodayFrame } from "@/components/today/today-frame";
 
 export const metadata: Metadata = { title: "Today" };
 export const dynamic = "force-dynamic";
@@ -93,53 +94,53 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
   const agent = agents[0] ?? null;
 
-  return (
-    <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-10 md:px-8 md:pt-8">
-      <TodayHero name={ctx.user.name} period={period} greeting={greeting} dateLabel={dateLabel} summary={summaryLine(model.counts)} />
-
-      <div className="mt-6 grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <TodayView syncScope={`${ctx.user.id}:${ctx.workspace.id}`} tickets={tickets} notes={todayNotes} boards={boards} dictationLanguage={dictationLanguage} focusId={sp.focus ?? null} compose={sp.compose === "1"} initialNow={now.toISOString()} />
-
-        <aside className="min-w-0 space-y-5 lg:pt-1">
-          {/* Agent */}
-          <section className="overflow-hidden rounded-2xl border border-border bg-surface">
-            <div className="flex items-center gap-3 px-4 pt-4">
-              <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-surface-2">
-                <ThemedArt name="agent" sizes="44px" className="object-cover" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-display text-[1.1rem] font-medium leading-tight">{agent ? agent.name : "Your agent"}</div>
-                <div className="truncate text-xs text-fg-subtle">
-                  {agent
-                    ? agent.lastSeenAt
-                      ? `Last seen ${timeAgoLabel(agent.lastSeenAt)}`
-                      : "Connected · not seen yet"
-                    : "Not connected yet"}
-                </div>
-              </div>
-              {ctx.isManager && (
-                <Link href="/agents" className="grid h-8 w-8 place-items-center rounded-lg text-fg-subtle hover:bg-surface-2 hover:text-fg" aria-label="Agent settings">
-                  <ArrowUpRight className="h-4 w-4" />
-                </Link>
-              )}
+  const aside = (
+    <aside className="min-w-0 space-y-5 lg:pt-1">
+      {/* Agent */}
+      <section className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <div className="flex items-center gap-3 px-4 pt-4">
+          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-surface-2">
+            <ThemedArt name="agent" sizes="44px" className="object-cover" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-display text-[1.1rem] font-medium leading-tight">{agent ? agent.name : "Your agent"}</div>
+            <div className="truncate text-xs text-fg-subtle">
+              {agent
+                ? agent.lastSeenAt
+                  ? `Last seen ${timeAgoLabel(agent.lastSeenAt)}`
+                  : "Connected · not seen yet"
+                : "Not connected yet"}
             </div>
-            {/* What it did lives in Recent changes (Agent filter) — no second list here. */}
-            {agent ? (
-              <div className="pb-4" />
-            ) : (
-              <p className="px-4 pb-4 pt-2.5 text-xs text-fg-subtle">Connect an agent to let it add and complete tasks for you.</p>
-            )}
-          </section>
-
-          <RecentChanges items={changes} currentUserId={ctx.user.id} />
-
-          {!agent && ctx.isManager && (
-            <Link href="/agents" className="flex items-center gap-2 rounded-2xl border border-dashed border-border px-4 py-3 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg">
-              <Sparkles className="h-4 w-4" /> Connect an agent
+          </div>
+          {ctx.isManager && (
+            <Link href="/agents" className="grid h-8 w-8 place-items-center rounded-lg text-fg-subtle hover:bg-surface-2 hover:text-fg" aria-label="Agent settings">
+              <ArrowUpRight className="h-4 w-4" />
             </Link>
           )}
-        </aside>
-      </div>
+        </div>
+        {/* What it did lives in Recent changes (Agent filter) — no second list here. */}
+        {agent ? (
+          <div className="pb-4" />
+        ) : (
+          <p className="px-4 pb-4 pt-2.5 text-xs text-fg-subtle">Connect an agent to let it add and complete tasks for you.</p>
+        )}
+      </section>
+
+      <RecentChanges items={changes} currentUserId={ctx.user.id} />
+
+      {!agent && ctx.isManager && (
+        <Link href="/agents" className="flex items-center gap-2 rounded-2xl border border-dashed border-border px-4 py-3 text-sm text-fg-muted hover:bg-surface-2 hover:text-fg">
+          <Sparkles className="h-4 w-4" /> Connect an agent
+        </Link>
+      )}
+    </aside>
+  );
+
+  return (
+    <>
+      <TodayFrame hero={<TodayHero name={ctx.user.name} period={period} greeting={greeting} dateLabel={dateLabel} summary={summaryLine(model.counts)} />} aside={aside}>
+        <TodayView syncScope={`${ctx.user.id}:${ctx.workspace.id}`} tickets={tickets} notes={todayNotes} boards={boards} dictationLanguage={dictationLanguage} focusId={sp.focus ?? null} compose={sp.compose === "1"} initialNow={now.toISOString()} userName={ctx.user.name} />
+      </TodayFrame>
 
       {modal && (
         <TodayTicketModal
@@ -151,7 +152,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           currentUser={{ id: ctx.user.id, name: ctx.user.name }}
         />
       )}
-    </div>
+    </>
   );
 }
 
