@@ -171,7 +171,6 @@ export type NoteResponse = {
   position: number;
   createdAt: string;
   updatedAt: string;
-  assignedAgent: { id: string; name: string } | null;
   ticket: { id: string; title: string; boardId: string } | null;
   subtasks?: SubtaskItem[];
 };
@@ -186,7 +185,6 @@ export const toTodayNote = (n: NoteResponse): TodayNote => ({
   position: n.position,
   createdAt: n.createdAt,
   updatedAt: n.updatedAt,
-  assignedAgent: n.assignedAgent,
   ticket: n.ticket,
   subtasks: n.subtasks ?? [],
 });

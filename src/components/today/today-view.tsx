@@ -325,7 +325,7 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     sync.enqueue({
       kind: "note.create",
       body: { body: parsed.title, scheduledDay: day, priority },
-      note: { id: clientId(), body: parsed.title, status: "inbox", scheduledDay: day, doneOn: null, priority: priority ?? "none", position: 1e9, createdAt: nowIso, updatedAt: nowIso, assignedAgent: null, ticket: null },
+      note: { id: clientId(), body: parsed.title, status: "inbox", scheduledDay: day, doneOn: null, priority: priority ?? "none", position: 1e9, createdAt: nowIso, updatedAt: nowIso, ticket: null },
     });
   }
 
@@ -754,7 +754,6 @@ function Row({
   const isTicket = item.kind === "ticket";
   const ticket = isTicket ? item.ticket : null;
   const note = !isTicket ? item.note : null;
-  const queued = note?.status === "queued";
   const firstLine = item.title.split("\n")[0];
   const extra = item.title.split("\n").length > 1;
   const dayMeta = item.day ? dayLabel(item.day, todayYmd) : null;
@@ -854,7 +853,6 @@ function Row({
       <button
         type="button"
         onClick={check}
-        disabled={queued}
         aria-label={item.done ? "Mark not done" : "Mark done"}
         data-checked={item.done || phase !== "idle"}
         className="kb-check mt-1 cursor-pointer disabled:opacity-40"
@@ -895,12 +893,7 @@ function Row({
               {!quiet && dayMeta.sublabel && ` · ${dayMeta.sublabel}`}
             </span>
           )}
-          {queued && (
-            <span className="inline-flex items-center gap-1 text-primary">
-              <Sparkles className="h-3 w-3" /> <span className="ai-shimmer">{note?.assignedAgent?.name ?? "Agent"} is filing this…</span>
-            </span>
-          )}
-          {!quiet && ticket?.createdByType === "agent" && !queued && (
+          {!quiet && ticket?.createdByType === "agent" && (
             <span className="inline-flex items-center gap-1 text-fg-subtle/80" title="Added by your agent">
               <Sparkles className="h-3 w-3" />
             </span>

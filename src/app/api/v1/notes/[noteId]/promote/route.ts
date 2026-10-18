@@ -3,7 +3,7 @@ import { requireAgent, requireScope } from "@/lib/agent-auth";
 import { assertAgentBoardAccess, agentNoteScope } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { promoteNoteV1Schema } from "@/lib/validation";
-import { getWorkspaceNote, fulfillNote } from "@/lib/services/notes";
+import { getWorkspaceNote, promoteNote } from "@/lib/services/notes";
 import { htmlToPlainText } from "@/lib/utils";
 import { guardAgentSnapshot } from "@/lib/snapshots";
 
@@ -12,8 +12,7 @@ export const dynamic = "force-dynamic";
 /**
  * Promote ANY workspace note into a ticket in ONE action: creates the ticket
  * from the note and atomically marks the note "sorted" (linked to the ticket,
- * hidden from the inbox, fully recoverable — nothing is deleted). Unlike
- * POST /inbox/{id}/sort, the note does not have to be queued to this agent.
+ * gone from Today, fully recoverable — nothing is deleted).
  *
  * `title` defaults to the note's first line; when the note has more content and
  * no `description` is given, the full note body carries over as the description.
@@ -44,7 +43,7 @@ export const POST = handler(
     const description =
       input.description ?? (note.body.trim() !== firstLine.trim() ? note.body : undefined);
 
-    const ticket = await fulfillNote(
+    const ticket = await promoteNote(
       noteId,
       {
         boardId: input.boardId,

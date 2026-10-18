@@ -29,7 +29,7 @@ export const GET = handler(async (req: Request) => {
   const userId = (await agentNoteScope(agent)) ?? (await resolveWorkspaceUserId(agent.workspaceId, {}));
   const wantDay = day === "all" ? undefined : resolveTaskDay(day);
   const tasks = (await listNotesForWorkspace(agent.workspaceId, { userId }))
-    .filter((n) => n.status === "inbox" || n.status === "queued")
+    .filter((n) => n.status === "inbox")
     .filter((n) => wantDay === undefined || n.scheduledDay === wantDay)
     .filter((n) => status === "all" || (status === "done") === (n.doneOn != null))
     .map(toSimpleTask)

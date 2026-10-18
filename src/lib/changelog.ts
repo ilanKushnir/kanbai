@@ -10,6 +10,15 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.18.0",
+    date: "2026-10-18",
+    items: [
+      { emoji: "☀️", title: "A daily brief from your agent", body: "Right after it connects, your agent offers a short morning brief — today's tasks, sorted, with a fitting emoji each, and your calendar if you want it — at the time you choose. Ask “brief me” any time for the same." },
+      { emoji: "🗓️", title: "Your agent can read your calendar", body: "The calendars you linked under Settings → Calendars are now readable by your agent (read-only), so the brief can include today's meetings." },
+      { emoji: "🧹", title: "Old “send to agent” is gone", body: "The old flow for queueing tasks to an agent to sort is removed. Just tell your agent what to do — or use “Move to board” on a task to turn it into a ticket." },
+    ],
+  },
+  {
     version: "0.17.0",
     date: "2026-10-18",
     items: [

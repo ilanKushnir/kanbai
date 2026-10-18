@@ -91,6 +91,9 @@ Connect code: ${code}
 4. Verify: GET {baseUrl}/me with  Authorization: Bearer <apiKey>
    Then tell the owner in one line that you're connected.
 
+5. Right after that, offer the owner a daily brief — the exact question and
+   format are in the skill, §11 "The daily brief". Set it up the way they answer.
+
 ## If something fails
 - 401 invalid_code / code_expired → ask the owner for a fresh brief (Agents → ${name} → Connect).
 - 403 "error code: 1010" → a CDN bot filter: send the user-agent header above, or use baseUrl.
@@ -141,7 +144,8 @@ over REST with a bearer key; nothing is pushed to you.
 default day today) unless it is clearly work on one of the project boards — only
 then is it a *ticket* on that board. See §0. Steps go in \`subtasks\` (both kinds
 take them) — never as a \`- [ ]\` list in the text. After every change, reply with
-the short emoji receipt of §10 — one line per item, nothing else.
+the short emoji receipt of §10 — one line per item, nothing else. Right after
+connecting, offer the daily brief of §11 (tasks + calendar, at the owner's time).
 
 ${body.trim()}
 `;

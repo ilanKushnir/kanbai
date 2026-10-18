@@ -7,7 +7,7 @@ import type { TodayNote, TodayTicket } from "./today-model";
 const NOW = new Date(2026, 9, 17, 10); // Sat Oct 17 2026, local
 
 function note(id: string, scheduledDay: string | null, doneOn: string | null = null): TodayNote {
-  return { id, body: id, status: "inbox", scheduledDay, doneOn, priority: "none", position: 0, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z", assignedAgent: null, ticket: null };
+  return { id, body: id, status: "inbox", scheduledDay, doneOn, priority: "none", position: 0, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z", ticket: null };
 }
 function ticket(id: string, due: Date | null, columnId: string, isDone = false): TodayTicket {
   return {

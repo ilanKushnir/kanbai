@@ -33,13 +33,13 @@ test("Note → ticket promotion is one action, dual-scoped, and never deletes th
   // scope so an owned agent can't promote another member's private note.
   assert.match(promoteRoute, /getWorkspaceNote\(noteId, agent\.workspaceId, await agentNoteScope\(agent\)\)/);
   assert.match(promoteRoute, /guardAgentSnapshot/); // undoable via snapshot restore
-  assert.match(promoteRoute, /fulfillNote\(/); // shared service: create ticket + mark sorted
+  assert.match(promoteRoute, /promoteNote\(/); // shared service: create ticket + mark sorted
   assert.match(promoteRoute, /409, "Note already sorted/);
   // The note is marked sorted (recoverable), NEVER soft- or hard-deleted.
   assert.doesNotMatch(promoteRoute, /deleteNote|deletedAt: new Date|note\.delete\(/);
 });
 
-test("fulfillNote links the ticket and marks the note sorted atomically", () => {
+test("promoteNote links the ticket and marks the note sorted atomically", () => {
   assert.match(notesSvc, /db\.\$transaction\(\[\s*db\.ticket\.update\(\{ where: \{ id: ticket\.id \}, data: \{ sourceNoteId: noteId \} \}\),\s*db\.note\.update\(\{ where: \{ id: noteId \}, data: \{ status: "sorted" \} \}\),\s*\]\)/);
 });
 

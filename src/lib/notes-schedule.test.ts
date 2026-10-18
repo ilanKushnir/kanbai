@@ -139,7 +139,7 @@ test("isSectionVisibleNote keeps active notes and notes done today, sweeps the r
   const today = "2026-06-21";
   // Active notes always occupy their section.
   assert.equal(isSectionVisibleNote({ status: "inbox", doneOn: null }, today), true);
-  assert.equal(isSectionVisibleNote({ status: "queued", doneOn: null }, today), true);
+  assert.equal(isSectionVisibleNote({ status: "sorted", doneOn: null }, today), false);
   // Done *today* stays in its section (sunk to the bottom).
   assert.equal(isSectionVisibleNote({ status: "inbox", doneOn: today }, today), true);
   // Done on an earlier day is swept out by next-day archival.

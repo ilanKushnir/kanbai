@@ -127,8 +127,8 @@ async function main() {
     position: 0,
   });
   await createTicket(product.id, pCols["To Do"], {
-    title: "Agent inbox triage endpoint",
-    description: "`GET /api/v1/inbox` returns notes queued to the agent for sorting.",
+    title: "Agent daily digest",
+    description: "`GET /api/v1/today` gives the agent the whole day in one call.",
     priority: "medium",
     labels: [pLabels["Feature"]],
     assigneeAgentId: hermes.id,
@@ -215,19 +215,10 @@ async function main() {
     priority?: string;
     status?: string;
     pinned?: boolean;
-    agentId?: string;
-    sortContext?: string;
   }[] = [
     { body: "Call the bank about the new card", when: "today", priority: "high" },
     { body: "Reply to Dana's thread about the launch checklist", when: "today", priority: "medium", doneOn: todayYmd },
-    {
-      body: "Follow up with the design contractor about the icon set",
-      when: "today",
-      priority: "medium",
-      status: "queued",
-      agentId: hermes.id,
-      sortContext: "Put this on the Product board, it's a design task, medium priority.",
-    },
+    { body: "Follow up with the design contractor about the icon set", when: "today", priority: "medium" },
     { body: "Bug — dragging a card to an empty column sometimes snaps back", when: "tomorrow", priority: "high" },
     { body: "Prep the standup notes", when: "tomorrow" },
     { body: "Blog post: how my agent runs my day through the Kanbai API", when: "next_week", priority: "low" },
@@ -254,9 +245,6 @@ async function main() {
         priority: n.priority ?? "none",
         status: n.status ?? "inbox",
         pinned: n.pinned ?? false,
-        assignedAgentId: n.agentId ?? null,
-        sortContext: n.sortContext ?? null,
-        queuedAt: n.status === "queued" ? new Date() : null,
       },
     });
   }

@@ -49,7 +49,6 @@ const note = (id: string, extra: Partial<TodayNote> = {}): TodayNote => ({
   position: 0,
   createdAt: "2026-10-15T08:00:00.000Z",
   updatedAt: "2026-10-15T08:00:00.000Z",
-  assignedAgent: null,
   ticket: null,
   ...extra,
 });

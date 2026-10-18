@@ -35,8 +35,7 @@ function note(p: Partial<TodayNote> & { id: string }): TodayNote {
     position: 0,
     createdAt: "2026-10-01T00:00:00.000Z",
     updatedAt: "2026-10-01T00:00:00.000Z",
-    assignedAgent: null,
-    ticket: null,
+      ticket: null,
     ...p,
   };
 }

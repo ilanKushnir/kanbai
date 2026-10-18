@@ -26,7 +26,7 @@ test("Notes badge counts today + overdue notes and reflected tickets together", 
     notes: [
       note({}), // scheduled today
       note({ scheduledDay: "2026-06-19" }), // overdue → classifies into Today
-      note({ status: "queued" }), // queued notes still occupy the Today section
+      note({ scheduledDay: "2026-06-20" }), // overdue → classifies into Today
     ],
     reflections: [
       reflection({}), // due today

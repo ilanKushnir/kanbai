@@ -69,7 +69,7 @@ export type RecentActionT = {
 export type NoteT = {
   id: string;
   body: string;
-  status: string; // inbox | queued | sorted | archived
+  status: string; // inbox | sorted | archived
   pinned: boolean;
   bucket: string; // coarse, derived: today | tomorrow | next_week | next_month | general
   scheduledDay: string | null; // local "YYYY-MM-DD"; null = General
@@ -77,11 +77,8 @@ export type NoteT = {
   position: number;
   priority: string; // none | low | medium | high | urgent
   suggestedDueDate: string | null;
-  sortContext: string | null;
-  assignedAgent: AgentLite | null;
   attachments: AttachmentT[];
   ticket: { id: string; title: string; boardId: string } | null;
-  queuedAt: string | null;
   createdAt: string;
   updatedAt: string;
   /** Client-only: note captured offline, awaiting sync. */

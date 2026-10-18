@@ -94,3 +94,58 @@ test("feed URLs: webcal becomes https, private and plain-http addresses are refu
   }
   assert.equal(feedHost("https://calendar.google.com/calendar/ical/x/private-y/basic.ics"), "calendar.google.com");
 });
+
+test("agentCalendar: local times in the workspace zone, all-day first, only the asked days", async () => {
+  const { agentCalendar, clearFeedCache } = await import("./calendar-feeds");
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:lunch",
+    "SUMMARY:Lunch with Yuval",
+    "LOCATION:Café Noir",
+    "DTSTART:20261018T100000Z",
+    "DTEND:20261018T110000Z",
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    "UID:standup",
+    "SUMMARY:Standup",
+    "DTSTART:20261018T063000Z",
+    "DTEND:20261018T070000Z",
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    "UID:bday",
+    "SUMMARY:Mom's birthday",
+    "DTSTART;VALUE=DATE:20261018",
+    "DTEND;VALUE=DATE:20261019",
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    "UID:tomorrow",
+    "SUMMARY:Dentist",
+    "DTSTART:20261019T080000Z",
+    "DTEND:20261019T083000Z",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(ics, { status: 200 })) as typeof fetch;
+  try {
+    clearFeedCache();
+    const settings = JSON.stringify({ calendarFeeds: [{ id: "f1", name: "Family", url: "https://calendar.example.com/a.ics", color: "blue" }] });
+    const cal = await agentCalendar(settings, "2026-10-18", "2026-10-18", "Asia/Jerusalem");
+    assert.equal(cal.connected, true);
+    assert.deepEqual(
+      cal.events.map((e) => [e.title, e.allDay, e.start, e.end, e.calendar]),
+      [
+        ["Mom's birthday", true, null, null, "Family"],
+        ["Standup", false, "09:30", "10:00", "Family"],
+        ["Lunch with Yuval", false, "13:00", "14:00", "Family"],
+      ],
+    );
+    assert.equal(cal.events[2].location, "Café Noir");
+    assert.deepEqual(await agentCalendar(null, "2026-10-18", "2026-10-18", "Asia/Jerusalem"), { connected: false, events: [], errors: [] });
+  } finally {
+    globalThis.fetch = realFetch;
+    clearFeedCache();
+  }
+});

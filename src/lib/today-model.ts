@@ -38,14 +38,13 @@ export type TodayTicket = {
 export type TodayNote = {
   id: string;
   body: string;
-  status: string; // inbox | queued | sorted | archived
+  status: string; // inbox | sorted | archived
   scheduledDay: string | null;
   doneOn: string | null;
   priority: string;
   position: number;
   createdAt: string;
   updatedAt: string;
-  assignedAgent: { id: string; name: string } | null;
   ticket: { id: string; title: string; boardId: string } | null;
   /** Its checklist (absent in copies saved on the device before 0.17). */
   subtasks?: SubtaskItem[];
@@ -94,7 +93,7 @@ function toItems(tickets: TodayTicket[], notes: TodayNote[]): TaskItem[] {
     items.push({ kind: "ticket", id: t.id, title: t.title, day: ticketDay(t), priority: t.priority, done: t.isDone, ticket: t });
   }
   for (const n of notes) {
-    if (n.status !== "inbox" && n.status !== "queued") continue;
+    if (n.status !== "inbox") continue;
     items.push({ kind: "note", id: n.id, title: n.body, day: n.scheduledDay, priority: n.priority, done: n.doneOn != null, note: n });
   }
   return items;

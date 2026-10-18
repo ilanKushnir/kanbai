@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { db } from "@/lib/db";
 import { createTicket, type Actor } from "./tickets";
-import { fulfillNote } from "./notes";
+import { promoteNote } from "./notes";
 
 /** Tickets on a user's own plate: primary assignee or any co-assignee. */
 function myDayTicketScope(userId: string) {
@@ -128,14 +128,14 @@ test("agent- and system-created tickets never inherit a human assignee", async (
 
 test("a note promoted by its user lands on that user's plate; agent promotions stay unassigned", async () => {
   const userNote = await db.note.create({ data: { userId: seed.ilan.id!, body: "capture me" } });
-  const promoted = await fulfillNote(userNote.id, { boardId: seed.boardId, title: "From my note" }, seed.ilan);
+  const promoted = await promoteNote(userNote.id, { boardId: seed.boardId, title: "From my note" }, seed.ilan);
   assert.deepEqual(
     { type: promoted.assignee?.type, id: promoted.assignee?.id },
     { type: "user", id: seed.ilan.id },
   );
 
   const agentNote = await db.note.create({ data: { userId: seed.ilan.id!, body: "agent sorts me" } });
-  const sorted = await fulfillNote(
+  const sorted = await promoteNote(
     agentNote.id,
     { boardId: seed.boardId, title: "Agent sorted" },
     { type: "agent", id: seed.botId, name: "Hermes" },

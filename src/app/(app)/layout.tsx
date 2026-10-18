@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         userId: ctx.user.id,
         deletedAt: null,
         doneOn: null,
-        status: { in: ["inbox", "queued"] },
+        status: "inbox",
         scheduledDay: { not: null },
       },
       select: { status: true, scheduledDay: true, bucket: true, doneOn: true },

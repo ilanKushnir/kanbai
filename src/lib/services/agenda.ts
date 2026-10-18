@@ -45,7 +45,7 @@ export type Agenda = {
   tomorrow: AgendaTicket[];
   /** Due in the next 7 days, excluding today and tomorrow. */
   upcoming: AgendaTicket[];
-  /** Open, unscheduled notes (status inbox|queued, no scheduledDay, not done, not deleted). */
+  /** Open, unscheduled notes (status inbox, no scheduledDay, not done, not deleted). */
   inbox: AgendaNote[];
   /** Notes scheduled for today or earlier, not done, not deleted. */
   notesToday: AgendaNote[];
@@ -153,11 +153,10 @@ export async function getAgenda(input: {
       include: agendaInclude,
     }),
     db.note.findMany({
-      where: { userId: input.userId, deletedAt: null, status: { in: ["inbox", "queued"] } },
+      where: { userId: input.userId, deletedAt: null, status: "inbox" },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
       include: {
         attachments: true,
-        assignedAgent: { select: { id: true, name: true, color: true, kind: true } },
         ticket: { select: { id: true, title: true, boardId: true } },
       },
     }),

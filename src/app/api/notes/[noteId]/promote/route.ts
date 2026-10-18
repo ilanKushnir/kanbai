@@ -3,7 +3,7 @@ import { getCurrentContext } from "@/lib/auth";
 import { assertBoardAccess } from "@/lib/authz";
 import { parse, readJson } from "@/lib/parse";
 import { promoteNoteSchema } from "@/lib/validation";
-import { fulfillNote } from "@/lib/services/notes";
+import { promoteNote } from "@/lib/services/notes";
 import { db } from "@/lib/db";
 
 /** Turn a captured note into a ticket as the user, resolving label names (created on the board when missing). */
@@ -18,7 +18,7 @@ export const POST = handler(
     const input = parse(promoteNoteSchema, await readJson(req));
     await assertBoardAccess(ctx, input.boardId, true);
 
-    const ticket = await fulfillNote(
+    const ticket = await promoteNote(
       noteId,
       {
         boardId: input.boardId,

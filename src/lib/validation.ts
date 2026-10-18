@@ -385,40 +385,12 @@ export const updateTaskSubtaskSchema = z
   .object({ title: subtaskTitle.optional(), completed: z.boolean().optional() })
   .refine((v) => v.title !== undefined || v.completed !== undefined, { message: "Provide title and/or completed" });
 
-/** Agent queues a note to an agent to sort (defaults to itself). */
-export const queueNoteV1Schema = z.object({
-  agentId: z.string().min(1).optional(),
-  sortContext: z.string().max(4000).optional(),
-});
-
-export const ingestNoteSchema = z.object({
-  ingest: z.boolean(),
-  agentId: z.string().min(1).nullable().optional(),
-});
-
 export const attachmentSchema = z.object({
   kind: z.enum(["audio", "image", "file"]).optional(),
   mimeType: z.string().min(1).max(120),
   dataUrl: z.string().min(1).max(12_000_000), // ~9MB of base64; swap for object storage in prod
   filename: z.string().max(200).optional(),
   durationMs: z.number().int().nonnegative().optional(),
-});
-
-export const sortNoteSchema = z.object({
-  agentId: z.string().min(1),
-  sortContext: z.string().max(4000).optional(),
-});
-
-/** Agent uses this to turn a queued note into a real ticket (same aliases as promote). */
-export const fulfillNoteSchema = z.object({
-  boardId: z.string().min(1),
-  ...columnRefFields,
-  title: z.string().trim().min(1).max(200),
-  description: z.string().max(20_000).optional(),
-  priority: z.enum(PRIORITIES).optional(),
-  dueDate: dueDateInput.optional(),
-  labelIds: z.array(z.string()).optional(),
-  labelNames: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
 });
 
 /** User files a note into a ticket themselves (no agent), with label names resolved/created. */
@@ -509,7 +481,6 @@ export const trashActionSchema = z.object({
 
 export const updateWorkspaceSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
-  defaultAgentId: z.string().max(60).nullable().optional().or(z.literal("")),
   snapshotLimit: z.number().int().min(1).max(200).optional(),
 });
 

@@ -20,14 +20,6 @@ export const PATCH = handler(
       data.name = input.name;
     }
     if (input.snapshotLimit !== undefined) data.snapshotLimit = input.snapshotLimit;
-    if (input.defaultAgentId !== undefined) {
-      const id = input.defaultAgentId || null;
-      if (id) {
-        const a = await db.agent.findUnique({ where: { id }, select: { workspaceId: true } });
-        if (!a || a.workspaceId !== ctx.workspace.id) throw new HttpError(404, "Agent not found");
-      }
-      data.defaultAgentId = id;
-    }
 
     if (Object.keys(data).length) await db.workspace.update({ where: { id: ctx.workspace.id }, data });
     return ok({ ok: true });

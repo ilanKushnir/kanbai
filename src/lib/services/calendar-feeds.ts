@@ -1,6 +1,7 @@
 import ICAL from "ical.js";
 import { HttpError } from "@/lib/api";
-import type { CalendarFeed } from "@/lib/user-settings";
+import { parseUserSettings, type CalendarFeed } from "@/lib/user-settings";
+import { addDaysYmd } from "@/lib/tz";
 
 /**
  * Read-only external calendars (Google's "secret address in iCal format",
@@ -208,4 +209,34 @@ export async function loadEvents(feeds: CalendarFeed[], from: string, to: string
 /** Test seam: forget cached feed bodies. */
 export function clearFeedCache() {
   cache.clear();
+}
+
+/**
+ * A person's calendar for agents: their feeds' events between two local days,
+ * with times already in the workspace timezone ("09:30") and in order — all-day
+ * first, then by start. `connected` is false when they linked no calendar.
+ */
+export async function agentCalendar(settingsRaw: string | null | undefined, from: string, to: string, tz: string) {
+  const { calendarFeeds } = parseUserSettings(settingsRaw);
+  if (!calendarFeeds.length) return { connected: false, events: [], errors: [] };
+  // A day of margin each side: the expansion works in server days, the answer in workspace days.
+  const { events, errors } = await loadEvents(calendarFeeds, addDaysYmd(from, -1), addDaysYmd(to, 1));
+  const names = new Map(calendarFeeds.map((f) => [f.id, f.name]));
+  const hm = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
+  const day = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+  const out = events
+    .map((e) => ({
+      title: e.title,
+      calendar: names.get(e.feedId) ?? null,
+      allDay: e.allDay,
+      day: e.allDay ? e.startDay ?? null : e.start ? day(e.start) : null,
+      endDay: e.allDay ? e.endDay ?? e.startDay ?? null : e.end ? day(e.end) : null,
+      start: e.allDay ? null : e.start ? hm(e.start) : null,
+      end: e.allDay ? null : e.end ? hm(e.end) : null,
+      startsAt: e.start ?? null,
+      location: e.location ?? null,
+    }))
+    .filter((e) => e.day != null && e.day <= to && (e.endDay ?? e.day) >= from)
+    .sort((a, b) => (a.allDay !== b.allDay ? (a.allDay ? -1 : 1) : (a.startsAt ?? "").localeCompare(b.startsAt ?? "")));
+  return { connected: true, events: out, errors: errors.map((e) => ({ calendar: e.name, message: e.message })) };
 }

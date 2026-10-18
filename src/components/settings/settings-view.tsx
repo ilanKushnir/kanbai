@@ -40,12 +40,11 @@ type Props = {
   handedness: string;
   dictationLanguage: string;
   workspaceId: string;
-  workspace: { name: string; defaultAgentId: string | null; snapshotLimit: number } | null;
-  agents: { id: string; name: string }[];
+  workspace: { name: string; snapshotLimit: number } | null;
   calendarFeeds: PublicFeed[];
 };
 
-export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn, handedness, dictationLanguage, workspaceId, workspace, agents, calendarFeeds }: Props) {
+export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn, handedness, dictationLanguage, workspaceId, workspace, calendarFeeds }: Props) {
   const router = useRouter();
   const { toast } = useToast();
 
@@ -162,7 +161,6 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
           isOwner={isOwner}
           workspaceId={workspaceId}
           initial={workspace}
-          agents={agents}
         />
       )}
 
@@ -177,23 +175,19 @@ function WorkspaceSettings({
   isOwner,
   workspaceId,
   initial,
-  agents,
 }: {
   isOwner: boolean;
   workspaceId: string;
-  initial: { name: string; defaultAgentId: string | null; snapshotLimit: number };
-  agents: { id: string; name: string }[];
+  initial: { name: string; snapshotLimit: number };
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [name, setName] = React.useState(initial.name);
-  const [defaultAgentId, setDefaultAgentId] = React.useState(initial.defaultAgentId ?? "");
   const [snapshotLimit, setSnapshotLimit] = React.useState(String(initial.snapshotLimit));
   const [saving, setSaving] = React.useState(false);
 
   const dirty =
     name !== initial.name ||
-    defaultAgentId !== (initial.defaultAgentId ?? "") ||
     snapshotLimit !== String(initial.snapshotLimit);
 
   async function save() {
@@ -204,7 +198,6 @@ function WorkspaceSettings({
         method: "PATCH",
         body: {
           ...(isOwner ? { name: name.trim() } : {}),
-          defaultAgentId: defaultAgentId || null,
           snapshotLimit: limit,
         },
       });
@@ -231,23 +224,6 @@ function WorkspaceSettings({
             maxLength={80}
           />
           {!isOwner && <p className="mt-1.5 text-xs text-fg-subtle">Only the owner can rename the workspace.</p>}
-        </div>
-        <div>
-          <Label htmlFor="ws-agent">Default agent for note ingestion</Label>
-          <select
-            id="ws-agent"
-            className={selectCls}
-            value={defaultAgentId}
-            onChange={(e) => setDefaultAgentId(e.target.value)}
-          >
-            <option value="">Oldest active agent</option>
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1.5 text-xs text-fg-subtle">Which agent picks up notes you mark for ingestion.</p>
         </div>
         <div>
           <Label htmlFor="ws-snap">Snapshots to keep</Label>

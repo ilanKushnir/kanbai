@@ -30,8 +30,6 @@ export const ALL_SCOPES = [
   "boards:write",
   "tickets:read",
   "tickets:write",
-  "inbox:read",
-  "inbox:write",
   "notes:read",
   "notes:write",
   "comments:write",
@@ -52,12 +50,12 @@ export const API_VERSION = "v1";
  * Kanbai never calls the agent back.
  */
 export const AGENT_CAPABILITIES = {
-  resources: ["tasks", "boards", "columns", "tickets", "subtasks", "inbox", "notes", "comments", "members", "trash", "activity"],
+  resources: ["tasks", "boards", "columns", "tickets", "subtasks", "notes", "calendar", "comments", "members", "trash", "activity"],
   // /tasks — the owner's plain Today to-dos (no board): POST { title, day? }
   // defaults to today; POST /tasks/:id/done completes one. Tickets are for project work.
   simpleTasks: true,
   // GET /today — the whole day's agenda (overdue / today / tomorrow / upcoming
-  // tickets, inbox + today's notes, done-today) in one call.
+  // tickets, today's tasks and the no-day Inbox, done-today) in one call.
   agenda: true,
   // GET /tickets — cross-board ticket list with filters (status, due, assigned, q).
   ticketsList: true,
@@ -73,7 +71,7 @@ export const AGENT_CAPABILITIES = {
     noteDone: true,
     // POST /notes/{id}/promote converts ANY workspace note into a ticket in one
     // atomic action (title defaults from the note; note becomes "sorted",
-    // recoverable). POST /inbox/{id}/sort is the same for queued-to-me notes.
+    // recoverable). The UI's "Move to board" does the same.
     notePromote: true,
     // DELETE tickets/notes soft-deletes into a 30-day restorable trash;
     // GET/POST /api/v1/trash lists and restores. Permanent purge is human-only.

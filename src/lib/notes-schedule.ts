@@ -201,13 +201,13 @@ export function noteSectionKey(schedule: Schedule, note: ScheduledNoteLike): str
 }
 
 /**
- * Whether a note still occupies a time-section. Active inbox/queued notes always
+ * Whether a note still occupies a time-section. Active (inbox) notes always
  * do. A note marked done stays in its section — sunk to the bottom — only for the
  * day it was completed; once the day rolls over it is swept out of the active
  * schedule (next-day archival), so finished work never piles up indefinitely.
  */
 export function isSectionVisibleNote(note: SectionVisibleNoteLike, todayYmd: string): boolean {
-  if (note.status !== "inbox" && note.status !== "queued") return false;
+  if (note.status !== "inbox") return false;
   return note.doneOn == null || note.doneOn === todayYmd;
 }
 

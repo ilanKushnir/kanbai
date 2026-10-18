@@ -37,7 +37,6 @@ const excerpt = (body: string) => htmlToPlainText(body).slice(0, 120);
 
 const noteInclude = {
   attachments: true,
-  assignedAgent: { select: { id: true, name: true, color: true, kind: true } },
   ticket: { select: { id: true, title: true, boardId: true } },
 } as const;
 
@@ -65,10 +64,6 @@ export function serializeNote(n: NoteWithRelations) {
     priority: n.priority,
     subtasks: parseSubtasks(n.subtasks),
     suggestedDueDate: dueFromDay(n.scheduledDay),
-    sortContext: n.sortContext,
-    assignedAgent: n.assignedAgent
-      ? { id: n.assignedAgent.id, name: n.assignedAgent.name, color: n.assignedAgent.color, kind: n.assignedAgent.kind }
-      : null,
     attachments: n.attachments.map((a) => ({
       id: a.id,
       kind: a.kind,
@@ -78,7 +73,6 @@ export function serializeNote(n: NoteWithRelations) {
       durationMs: a.durationMs,
     })),
     ticket: n.ticket ? { id: n.ticket.id, title: n.ticket.title, boardId: n.ticket.boardId } : null,
-    queuedAt: n.queuedAt?.toISOString() ?? null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -111,16 +105,6 @@ export async function listNotesForUser(userId: string) {
   return notes.map(serializeNote);
 }
 
-/** Notes queued to this agent (with bucket/priority/suggestedDueDate to file faithfully). */
-export async function listInboxForAgent(agentId: string) {
-  const notes = await db.note.findMany({
-    where: { assignedAgentId: agentId, status: "queued", deletedAt: null },
-    orderBy: { queuedAt: "asc" },
-    include: noteInclude,
-  });
-  return notes.map(serializeNote);
-}
-
 /**
  * Load a note and assert it belongs to the agent's workspace — i.e. its owner
  * is a member of that workspace. 404s otherwise so we never leak existence of
@@ -147,7 +131,7 @@ export async function getWorkspaceNote(noteId: string, workspaceId: string, rest
 /** List notes owned by members of this workspace, with optional filters. */
 export async function listNotesForWorkspace(
   workspaceId: string,
-  filters: { status?: string; bucket?: string; assignedAgentId?: string; userId?: string } = {},
+  filters: { status?: string; bucket?: string; userId?: string } = {},
 ) {
   const where: Prisma.NoteWhereInput = {
     user: { workspaces: { some: { workspaceId } } },
@@ -157,7 +141,6 @@ export async function listNotesForWorkspace(
   if (filters.userId) where.userId = filters.userId;
   if (filters.status) where.status = filters.status;
   if (filters.bucket) where.bucket = filters.bucket;
-  if (filters.assignedAgentId) where.assignedAgentId = filters.assignedAgentId;
   await liftLegacyChecklists(where);
   const notes = await db.note.findMany({
     where,
@@ -207,14 +190,6 @@ export async function resolveWorkspaceUserId(
   });
   if (!first) throw new HttpError(422, "Workspace has no members to own the note");
   return first.userId;
-}
-
-export async function getNoteForAgent(noteId: string, agentId: string) {
-  const note = await db.note.findUnique({ where: { id: noteId }, include: noteInclude });
-  if (!note || note.deletedAt || note.assignedAgentId !== agentId) {
-    throw new HttpError(404, "Note not found in this agent's inbox");
-  }
-  return note;
 }
 
 export async function createNote(
@@ -371,59 +346,11 @@ export async function addAttachment(
   return serializeNote(await loadNote(noteId));
 }
 
-/** Mark / unmark a note for agent ingestion. */
-export async function ingestNote(
-  noteId: string,
-  ingest: boolean,
-  agentId: string | null,
-  actor: Actor,
-) {
-  if (!ingest) {
-    const note = await db.note.update({
-      where: { id: noteId },
-      data: { status: "inbox", assignedAgentId: null, queuedAt: null },
-      include: noteInclude,
-    });
-    return serializeNote(note);
-  }
-
-  if (agentId) {
-    const agent = await db.agent.findUnique({ where: { id: agentId } });
-    if (!agent || agent.status !== "active") agentId = null;
-  }
-  const note = await db.note.update({
-    where: { id: noteId },
-    data: { status: "queued", assignedAgentId: agentId, queuedAt: new Date() },
-    include: noteInclude,
-  });
-  const serialized = serializeNote(note);
-  await logActivity({ actor, action: "note.queued", meta: { noteId, excerpt: excerpt(note.body), agentId } });
-  return serialized;
-}
-
-/** Send a captured note to a specific agent with optional context (rich flow). */
-export async function queueNoteToAgent(
-  noteId: string,
-  agentId: string,
-  sortContext: string | undefined,
-  actor: Actor,
-) {
-  const agent = await db.agent.findUnique({ where: { id: agentId } });
-  if (!agent) throw new HttpError(404, "Agent not found");
-  if (agent.status !== "active") throw new HttpError(422, "Agent is disabled");
-
-  const note = await db.note.update({
-    where: { id: noteId },
-    data: { status: "queued", assignedAgentId: agentId, sortContext: sortContext ?? null, queuedAt: new Date() },
-    include: noteInclude,
-  });
-  const serialized = serializeNote(note);
-  await logActivity({ actor, action: "note.queued", meta: { noteId, excerpt: excerpt(note.body), agent: agent.name, agentId } });
-  return serialized;
-}
-
-/** An agent turns a queued note into a real ticket and marks the note sorted. */
-export async function fulfillNote(
+/**
+ * Promote a task (note) into a ticket on a board — "Move to board" in the UI,
+ * POST /notes/{id}/promote for agents — and mark the note sorted.
+ */
+export async function promoteNote(
   noteId: string,
   input: ColumnRef & {
     boardId: string;

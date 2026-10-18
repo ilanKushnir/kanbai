@@ -39,7 +39,7 @@ export function toTicketRow(t: TicketRowSource, usersById: Map<string, UserLite>
 
 /** Only live captures are tasks: sorted (promoted) and archived notes are not. */
 export function isTaskNote(n: { status: string }) {
-  return n.status === "inbox" || n.status === "queued";
+  return n.status === "inbox";
 }
 
 export function toNoteRow(n: ReturnType<typeof serializeNote>): TodayNote {
@@ -53,7 +53,6 @@ export function toNoteRow(n: ReturnType<typeof serializeNote>): TodayNote {
     position: n.position,
     createdAt: n.createdAt,
     updatedAt: n.updatedAt,
-    assignedAgent: n.assignedAgent ? { id: n.assignedAgent.id, name: n.assignedAgent.name } : null,
     ticket: n.ticket,
     subtasks: n.subtasks,
   };

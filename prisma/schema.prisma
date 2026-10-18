@@ -54,7 +54,6 @@ model Workspace {
   createdAt DateTime @default(now())
 
   // Settings
-  defaultAgentId String? // preferred agent for note ingestion
   snapshotLimit  Int     @default(20) // how many board snapshots to retain
 
   // Snapshot session state: true once a pre-agent snapshot has been taken for the
@@ -284,7 +283,7 @@ model Note {
   id        String   @id @default(cuid())
   userId    String
   body      String
-  status    String   @default("inbox") // inbox | queued | sorting | sorted | archived
+  status    String   @default("inbox") // inbox | sorted (promoted to a ticket) | archived
   pinned    Boolean  @default(false)
   bucket    String   @default("today") // coarse, derived cache: today | tomorrow | next_week | next_month | general
   scheduledDay String? // local "YYYY-MM-DD" the note is slated for; null = General/someday
@@ -295,16 +294,10 @@ model Note {
   /// A simple task's checklist: JSON [{ id, title, completed }] (see lib/subtask-list).
   subtasks  String   @default("[]")
 
-  // Context the user attaches when sending to an agent to sort
-  sortContext     String? // free-text instruction
-  assignedAgentId String?
-  queuedAt        DateTime?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignedAgent Agent?    @relation(fields: [assignedAgentId], references: [id])
   attachments Attachment[]
   ticket      Ticket?     @relation("NoteToTicket")
 
@@ -352,14 +345,13 @@ model Agent {
   connectCodeExpiresAt DateTime?
   connectRedeemedAt    DateTime?
 
-  scopes    String   @default("boards:read,boards:write,tickets:read,tickets:write,inbox:read,inbox:write,notes:read,notes:write")
+  scopes    String   @default("boards:read,boards:write,tickets:read,tickets:write,notes:read,notes:write")
   lastSeenAt DateTime?
   createdAt DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   ownerUser User?     @relation("AgentOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   tickets   Ticket[]
-  notes     Note[]
 }
 
 model ActivityLog {

@@ -69,7 +69,7 @@ key keeps working until a code is redeemed. `baseUrl` may be a direct/LAN origin
 `User-Agent` there, CDN bot filters answer bare clients with 403 "error 1010".
 This document is also served as an installable skill at `GET /skill.md`.
 
-Scopes: `boards:read|write`, `tickets:read|write`, `inbox:read|write`,
+Scopes: `boards:read|write`, `tickets:read|write`,
 `notes:read|write` (also covers `/tasks`), `comments:write`,
 `members:read|write`. New agents get all.
 
@@ -232,24 +232,22 @@ description (sanitized HTML), priority, subState, dueDate, completedAt, isDone,
 assignee, assignees[], labels[], subtasks[], comments[], commentCount,
 sourceNoteId, createdAt, updatedAt`.
 
-## 6. Notes and the inbox
+## 6. Notes (the storage behind simple tasks)
 
 Notes are the owner's quick captures (one line each). They live on a local
 calendar day (`scheduledDay: "YYYY-MM-DD"`, `null` = unscheduled "General") and
 carry `doneOn` (day completed, `null` = open), `priority`, `pinned`, `status`
-(`inbox | queued | sorted | archived`) and `suggestedDueDate`.
+(`inbox` = an open task, `sorted` = promoted to a ticket, `archived`),
+`subtasks` and `suggestedDueDate`. Prefer `/tasks` (§3) for everyday work.
 
 ```
-GET    /notes?status=&bucket=&userId=&assigned=me     notes:read   (never shows deleted notes)
+GET    /notes?status=&bucket=&userId=     notes:read   (never shows deleted notes)
 POST   /notes            { body, scheduledDay? | bucket?, priority?, userId?|userEmail? }   notes:write
 GET    /notes/{id}
 PATCH  /notes/{id}       { body?, scheduledDay?, doneOn?, priority?, pinned?, status?:"inbox"|"archived" }
 DELETE /notes/{id}       soft-delete → trash
 POST   /notes/{id}/move  { scheduledDay, position }
-POST   /notes/{id}/queue { agentId?, sortContext? }   hand a note to an agent to sort
 POST   /notes/{id}/promote   note → ticket in ONE atomic action (any note)   notes:write + tickets:write
-GET    /inbox            notes queued to YOU (status "queued")             inbox:read
-POST   /inbox/{id}/sort  same body as promote, for a note queued to you     inbox:write
 ```
 
 Mark a note done: `PATCH /notes/{id} {"doneOn":"2026-07-14"}` (logs
@@ -257,8 +255,24 @@ Mark a note done: `PATCH /notes/{id} {"doneOn":"2026-07-14"}` (logs
 fields of §5 (`boardId` required; `title` defaults to the note's first line;
 `column`/`columnName`/`stage`, `labelNames`, `dueDate`, `priority` all work) and
 returns `{ ticket, note:{id,status:"sorted"} }`. The note is linked to the
-ticket and hidden from the inbox but never deleted.
+ticket and leaves Today, but is never deleted; its subtasks come along.
+This is how to "turn a task into a ticket" when the owner asks.
 Never emulate this with create-ticket + delete-note.
+
+## 6b. Calendar (read-only)
+
+```
+GET /calendar[?day=today|tomorrow|YYYY-MM-DD | ?from=&to=]     notes:read
+→ { connected, timezone, from, to, events:[{ title, allDay, start, end, day, endDay,
+    location, calendar, startsAt }], errors:[{ calendar, message }] }
+```
+
+The owner's own calendars — the private iCal links they added in Kanbai →
+Settings → Calendars (Google Calendar works). `start`/`end` are local
+`"HH:MM"` in `timezone` (null for all-day); `startsAt` is the UTC instant.
+Sorted all-day first, then by start. `connected: false` means no calendar is
+linked yet. Read-only: never promise to create or move events. Used by the
+daily brief (§11).
 
 ## 7. Trash (30-day restore)
 
@@ -295,10 +309,8 @@ purge is human-only.
 
 ## 9. Daily agent playbook
 
-**Morning.** `GET /today`. Read `overdue` first, then `today`, `notesToday`
-and `inbox`. Summarize for the owner in that order: what slipped, what is due, what
-is captured but unplanned. Do not reschedule anything unasked. If the agenda
-is empty, say so and offer `upcoming`.
+**Morning.** Send the daily brief (§11) if the owner opted in; on "what's on
+today?" send the same format. Do not reschedule anything unasked.
 
 **The owner dictates a task.** Decide simple task vs ticket (§0) first.
 
@@ -385,3 +397,92 @@ the dentist":
 📋 Rack project › Backlog · #42 LED add-on
 ✅ Call the dentist
 ```
+
+## 11. The daily brief
+
+A short morning message with what the owner has to do today — and, if they
+want, what's on their calendar. Kanbai never sends anything itself: **you**
+schedule it (your own cron / reminders / scheduler) and you send it.
+
+### Offer it once, right after connecting
+
+As soon as the connection works (and once more if the owner later asks about
+it), ask **one** short message with all three questions, in the owner's
+language. Check `GET /calendar` first: if `connected` is false, say the
+calendar part needs an iCal link in Kanbai → Settings → Calendars.
+
+```
+☀️ Want a daily brief from me?
+Every morning: your tasks for the day, short and sorted.
+1. Send it daily? (yes / no)
+2. Add today's calendar events too? (yes / no)
+3. What time? (e.g. 07:30)
+```
+
+Save the answers in **your own** memory/config (Kanbai doesn't store them),
+set up the daily job at that time in the workspace timezone (`GET /me` →
+`conventions.timezone`), and confirm in one line:
+`✅ Daily brief set · every day at 07:30 · tasks + calendar`. The owner can
+change or stop it any time by telling you ("brief at 8", "drop the calendar",
+"stop the brief"). "Brief me" / "what's on today?" gets the same message on demand.
+
+### Build it
+
+1. `GET /today` — `overdue`, `today` (tickets), `notesToday` (simple tasks due
+   today or earlier), `done` (finished today).
+2. If they want the calendar: `GET /calendar` (today) →
+   `events: [{ title, allDay, start, end, location, calendar }]`, times
+   already local ("09:30"), all-day first, then by start.
+
+### Format
+
+```
+☀️ Sunday, 18 Oct — 6 to do
+
+⚠️ Overdue
+• 📞 Call the bank · since Thu
+• 🔧 #12 Fix the rack fan · KWS Rack
+
+📋 Today
+• 🛒 Order meat
+• ❗ 💰 Pay the electricity bill
+• 💻 #45 Rack utility site · KWS Rack · 1/3
+• 🎂 Gift for Dana
+
+🗓️ Calendar
+• All day · Mom's birthday
+• 09:30–10:00 · Standup
+• 13:00–14:00 · Lunch with Yuval · Café Noir
+
+🎯 Start with: Pay the electricity bill
+```
+
+Rules:
+
+- **Order:** header → ⚠️ Overdue (only if any) → 📋 Today → 🗓️ Calendar (only
+  if they opted in) → 🎯 one suggested first step. Leave out empty sections.
+- **Header:** a weather-of-the-day emoji + weekday and date in their language +
+  how many open items. ☀️ a normal day · 🔥 a heavy one (10+ items or 3+
+  overdue) · 🌿 a light one (1–2) · 🌴 nothing to do · 🎉 Friday/weekend tone
+  if that's the owner's weekend.
+- **One line per item**, title exactly as saved (Hebrew stays Hebrew), then
+  only what helps: a ticket's `#number` and board, `· done/total` when it has
+  subtasks, `· since <day>` when overdue. No ids, no priorities spelled out —
+  put ❗ in front of high/urgent items, and list those first.
+- **A topical emoji per task**, picked from its title — that's what makes the
+  brief scannable: 🛒 shopping · 📞 calls · 💰 bills/money · 📧 email/replies ·
+  🏥 health · 💊 meds · 🚗 car · 🏠 home/chores · 🔧 fixing/hardware ·
+  💻 code/computer · 📦 orders/deliveries · ✈️ travel · 🎂 birthdays ·
+  👶 kids · 🐶 pets · 📚 reading/study · 🏋️ sport · 🍽️ food/cooking ·
+  🗂️ paperwork · 🎨 design · 📝 anything else. Don't reuse the section emoji.
+- **Calendar lines:** `All day · Title` first, then `HH:MM–HH:MM · Title`,
+  `· place` only if there is one. Skip events that already ended when sending
+  late. Don't invent events; if `errors` is not empty, add one line
+  `⚠️ Couldn't read <calendar>`.
+- **🎯 Start with:** the single most useful first item — overdue high priority,
+  then today's high priority, then the first timed event that needs prep.
+- **Long days:** at most 8 lines per section, then `…and 5 more`.
+- **Empty day:** `🌴 Sunday, 18 Oct — nothing on your list today.` (plus the
+  calendar if opted in). Never pad it with advice.
+- Plain text with line breaks; **bold** only if the chat renders Markdown. No
+  tables, no headings, no sign-off.
