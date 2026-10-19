@@ -35,6 +35,7 @@ function Shell({
   children,
   boards,
   syncScope,
+  userId,
   userName,
   userEmail,
   userAvatarUrl,
@@ -48,6 +49,8 @@ function Shell({
   boards: NavBoard[];
   /** Offline-sync partition: one per user and workspace. */
   syncScope: string;
+  /** The viewer: their badge counts only work that's theirs or unclaimed. */
+  userId: string;
   userName: string;
   userEmail: string;
   userAvatarUrl?: string | null;
@@ -81,9 +84,9 @@ function Shell({
   const syncData = useSyncSnapshot().data;
   const localTodayCount = React.useMemo(() => {
     if (!syncData) return null;
-    const { counts } = buildToday({ tickets: syncData.tickets, notes: syncData.notes });
+    const { counts } = buildToday({ tickets: syncData.tickets, notes: syncData.notes, meId: userId });
     return counts.overdue + counts.today;
-  }, [syncData]);
+  }, [syncData, userId]);
   const badgeCount = localTodayCount ?? todayCount;
 
   const NAV = React.useMemo(

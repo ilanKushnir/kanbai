@@ -21,7 +21,11 @@ import {
   MessageSquare,
   ListChecks,
   Pencil,
+  UserRound,
+  UserRoundCheck,
+  UsersRound,
 } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
 import { Menu, MenuItem } from "@/components/ui/menu";
 import { tone } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -32,7 +36,19 @@ import { PRIORITIES, PRIORITY_META, type Priority } from "@/lib/constants";
 import { priorityMeta } from "@/lib/display";
 import { ymd, addDays, startOfDay, parseYmd, dueFromDay } from "@/lib/notes-schedule";
 import { parseQuickAdd } from "@/lib/quick-add";
-import { buildToday, dayLabel, LOCALE, type TaskItem, type TodayNote, type TodayTicket, type TodaySection, type SectionKey } from "@/lib/today-model";
+import {
+  buildToday,
+  dayLabel,
+  itemOwnership,
+  LOCALE,
+  type OthersGroup,
+  type TaskItem,
+  type TodayAssignee,
+  type TodayNote,
+  type TodayTicket,
+  type TodaySection,
+  type SectionKey,
+} from "@/lib/today-model";
 import type { SerializedTicket } from "@/lib/serialize";
 import * as sync from "@/lib/offline/sync-store";
 import { clientId, toTodayTicket, type TodayData } from "@/lib/offline/today-sync";
@@ -52,6 +68,7 @@ export type TodayBoard = {
   slug: string;
   color: string;
   columns: { id: string; name: string; isDone: boolean; stage?: string | null }[];
+  people?: { id: string; name: string; avatarUrl: string | null; avatarColor: string | null }[];
 };
 
 export type ActivityRow = {
@@ -78,6 +95,8 @@ type Props = {
   initialNow: string;
   /** For the focus greeting. */
   userName?: string | null;
+  /** The viewer: Today is their work plus the unclaimed; the rest waits on a shelf. */
+  meId?: string | null;
 };
 
 const SECTION_DEFAULT_OPEN: Record<SectionKey, boolean> = {
@@ -90,10 +109,11 @@ const SECTION_DEFAULT_OPEN: Record<SectionKey, boolean> = {
   done: false,
 };
 
-export function TodayView({ syncScope, tickets: initialTickets, notes: initialNotes, boards: initialBoards, dictationLanguage, focusId, compose, initialNow, userName }: Props) {
+export function TodayView({ syncScope, tickets: initialTickets, notes: initialNotes, boards: initialBoards, dictationLanguage, focusId, compose, initialNow, userName, meId }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = React.useState<Record<SectionKey, boolean>>(SECTION_DEFAULT_OPEN);
+  const [othersOpen, setOthersOpen] = React.useState(false);
   const [now, setNow] = React.useState(() => new Date(initialNow));
   React.useEffect(() => setNow(new Date()), []);
 
@@ -147,7 +167,7 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     };
   }, [now]);
 
-  const model = React.useMemo(() => buildToday({ tickets, notes, now }), [tickets, notes, now]);
+  const model = React.useMemo(() => buildToday({ tickets, notes, now, meId }), [tickets, notes, now, meId]);
   const todayYmd = model.todayYmd;
 
   // ── mutations: every edit is a queued op (see lib/offline) ───────────────
@@ -242,6 +262,35 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     return patchTicket(item.id, { priority }, { priority });
   }
 
+  /** Hand a ticket to people (by id), or to nobody with []. Undo restores whoever had it. */
+  function assign(item: TaskItem, userIds: string[]) {
+    if (item.kind !== "ticket") return;
+    const t = item.ticket;
+    const board = boards.find((b) => b.id === t.board.id);
+    const person = (id: string): TodayAssignee => {
+      const u = board?.people?.find((x) => x.id === id);
+      return { type: "user", id, name: u?.name ?? (id === meId ? userName ?? "You" : "Someone"), avatarUrl: u?.avatarUrl ?? null, color: u?.avatarColor ?? undefined };
+    };
+    const before = t.assignees ?? [];
+    const next = userIds.map(person);
+    patchTicket(t.id, { assigneeType: userIds.length ? "user" : null, assigneeUserIds: userIds }, { assignees: next });
+    const who = !userIds.length ? "Unassigned" : userIds[0] === meId ? "It's yours" : `Handed to ${next[0].name.split(/\s+/)[0]}`;
+    toast({
+      title: who,
+      description: t.title.slice(0, 80),
+      variant: "success",
+      actionLabel: "Undo",
+      duration: 6000,
+      onAction: () => {
+        const agent = before.find((a) => a.type === "agent");
+        const body = agent
+          ? { assigneeType: "agent", assigneeAgentId: agent.id }
+          : { assigneeType: before.length ? "user" : null, assigneeUserIds: before.map((a) => a.id) };
+        patchTicket(t.id, body, { assignees: before });
+      },
+    });
+  }
+
   function remove(item: TaskItem) {
     sync.enqueue(item.kind === "note" ? { kind: "note.delete", id: item.id } : { kind: "ticket.delete", id: item.id });
     toast({ title: "Deleted", description: "Restorable from Settings → Recently deleted for 30 days." });
@@ -314,6 +363,8 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
           board: { id: board.id, name: board.name, slug: board.slug, color: board.color, doneColumnId: board.columns.find((c) => c.isDone)?.id ?? null },
           labels: [],
           subtasks: [],
+          // A person adding a ticket takes it (the server does the same).
+          assignees: meId ? [{ type: "user", id: meId, name: userName ?? "You" }] : [],
           commentCount: 0,
           createdByType: "user",
           createdAt: nowIso,
@@ -329,7 +380,14 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     });
   }
 
-  // Deep link: scroll + highlight a row.
+  // Deep link: scroll + highlight a row (opening the others shelf first when it's there).
+  const linkedToOthers = !!focusId && model.others.items.some((it) => it.id === focusId);
+  const shelfReady = linkedToOthers && othersOpen;
+  const [seenLink, setSeenLink] = React.useState<string | null>(null);
+  if (linkedToOthers && seenLink !== focusId) {
+    setSeenLink(focusId);
+    setOthersOpen(true);
+  }
   React.useEffect(() => {
     if (!focusId) return;
     const el = document.getElementById(`task-${focusId}`);
@@ -339,7 +397,8 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     el.classList.add("kb-today-flash");
     const t = setTimeout(() => el.classList.remove("kb-today-flash"), 1200);
     return () => clearTimeout(t);
-  }, [focusId]);
+    // Re-runs once the shelf has opened, so a row inside it can be found.
+  }, [focusId, shelfReady]);
 
   const visibleSections = model.sections.filter((s) => s.items.length > 0 || s.key === "today");
   const { focus } = useFocus();
@@ -395,10 +454,33 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
           onMoveToBoard={moveNoteToBoard}
           onEditNote={editNote}
           onSubtask={editSubtasks}
+          onAssign={assign}
+          meId={meId}
           confirmComplete={guard.confirm}
           focusId={focusId}
         />
       ))}
+      {model.others.items.length > 0 && (
+        <OthersShelf
+          groups={model.others.groups}
+          count={model.others.items.length}
+          open={othersOpen}
+          onToggle={() => setOthersOpen((v) => !v)}
+          todayYmd={todayYmd}
+          boards={boards}
+          meId={meId}
+          focusId={focusId}
+          onToggleDone={toggleDone}
+          onReschedule={reschedule}
+          onPriority={setPriority}
+          onDelete={remove}
+          onMoveToBoard={moveNoteToBoard}
+          onEditNote={editNote}
+          onSubtask={editSubtasks}
+          onAssign={assign}
+          confirmComplete={guard.confirm}
+        />
+      )}
       {guard.dialog}
     </div>
   );
@@ -638,6 +720,8 @@ function Section({
   onMoveToBoard: (n: TodayNote, b: TodayBoard) => void;
   onEditNote: (n: TodayNote, body: string) => void;
   onSubtask: (i: TaskItem, e: SubtaskEdit) => void;
+  onAssign?: (i: TaskItem, userIds: string[]) => void;
+  meId?: string | null;
   confirmComplete: (title: string, subtasks: SubtaskItem[] | undefined) => Promise<CompleteChoice>;
 }) {
   const count = section.items.length;
@@ -725,6 +809,8 @@ function Row({
   onMoveToBoard,
   onEditNote,
   onSubtask,
+  onAssign,
+  meId,
   confirmComplete,
 }: {
   item: TaskItem;
@@ -741,6 +827,8 @@ function Row({
   onMoveToBoard: (n: TodayNote, b: TodayBoard) => void;
   onEditNote: (n: TodayNote, body: string) => void;
   onSubtask: (i: TaskItem, e: SubtaskEdit) => void;
+  onAssign?: (i: TaskItem, userIds: string[]) => void;
+  meId?: string | null;
   confirmComplete: (title: string, subtasks: SubtaskItem[] | undefined) => Promise<CompleteChoice>;
 }) {
   const [editing, setEditing] = React.useState(false);
@@ -760,6 +848,9 @@ function Row({
   // Title and meta line follow the title's language, tickets and plain tasks alike:
   // a Hebrew task reads from the right, an English one from the left.
   const dir = textDirection(firstLine);
+  const ownership = itemOwnership(item, meId);
+  const board = ticket ? boards.find((b) => b.id === ticket.board.id) : undefined;
+  const canAssign = !!ticket && !!onAssign && !!meId && !item.done;
 
   // A server echo or undo that flips the item back resets the choreography.
   const [seenDone, setSeenDone] = React.useState(item.done);
@@ -871,6 +962,13 @@ function Row({
             </Link>
           )}
           {!quiet && ticket && !ticket.isDone && ticket.columnName && <span className="text-fg-subtle/80">{ticket.columnName}</span>}
+          {!quiet && canAssign && ownership === "open" && (
+            <AssignMenu ticket={ticket!} people={board?.people} meId={meId!} onAssign={(ids) => onAssign!(item, ids)}>
+              <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-border-strong px-1.5 py-px text-fg-subtle hover:border-fg-subtle hover:text-fg cursor-pointer" title="Take it, or hand it to someone">
+                <UserRound className="h-3 w-3" /> {ticket!.assignees?.[0]?.name ?? "Unassigned"}
+              </span>
+            </AssignMenu>
+          )}
           {subtasks.length > 0 && <SubtaskToggle items={subtasks} open={expanded} onClick={() => setExpanded((v) => !v)} />}
           {!quiet && ticket && ticket.commentCount > 0 && (
             <span className="inline-flex items-center gap-1">
@@ -950,6 +1048,24 @@ function Row({
                   </Link>
                 </MenuItem>
               )}
+              {canAssign && ownership !== "mine" && (
+                <MenuItem
+                  onClick={() => {
+                    onAssign!(item, [meId!]);
+                    close();
+                  }}
+                >
+                  <UserRoundCheck className="h-4 w-4 text-fg-subtle" /> Take it
+                </MenuItem>
+              )}
+              {canAssign && (board?.people?.length ?? 0) > 1 && (
+                <>
+                  <div className="px-2.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Assign to</div>
+                  <div className="max-h-44 overflow-y-auto">
+                    <PeopleOptions ticket={ticket!} people={board?.people} meId={meId!} onAssign={(ids) => onAssign!(item, ids)} close={close} skipMe />
+                  </div>
+                </>
+              )}
               <div className="px-2.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Priority</div>
               <div className="flex items-center gap-1 px-2 pb-1">
                 {PRIORITIES.map((p) => (
@@ -1006,5 +1122,164 @@ function Row({
       </div>
     </div>
     </div>
+  );
+}
+
+// ── Assigning ────────────────────────────────────────────────────────────────
+
+type Person = NonNullable<TodayBoard["people"]>[number];
+
+/** "Take it" first, then everyone the board can be handed to, then "Unassign". */
+function PeopleOptions({
+  ticket,
+  people,
+  meId,
+  onAssign,
+  close,
+  skipMe,
+}: {
+  ticket: TodayTicket;
+  people: Person[] | undefined;
+  meId: string;
+  onAssign: (userIds: string[]) => void;
+  close: () => void;
+  /** The row menu has its own "Take it" — list only the others. */
+  skipMe?: boolean;
+}) {
+  const current = ticket.assignees ?? [];
+  const has = (id: string) => current.some((a) => a.type === "user" && a.id === id);
+  const pick = (ids: string[]) => {
+    onAssign(ids);
+    close();
+  };
+  const others = (people ?? []).filter((p) => p.id !== meId);
+  return (
+    <>
+      {!skipMe && !has(meId) && (
+        <MenuItem onClick={() => pick([meId])}>
+          <UserRoundCheck className="h-4 w-4 text-fg-subtle" /> <span className="flex-1">Take it</span>
+        </MenuItem>
+      )}
+      {others.map((p) => (
+        <MenuItem key={p.id} active={has(p.id)} onClick={() => pick([p.id])}>
+          <Avatar name={p.name} src={p.avatarUrl} color={p.avatarColor ?? undefined} size={18} />
+          <span className="flex-1 truncate" dir="auto">{p.name}</span>
+          {has(p.id) && <Check className="h-3.5 w-3.5" />}
+        </MenuItem>
+      ))}
+      {!skipMe && current.length > 0 && (
+        <MenuItem onClick={() => pick([])}>
+          <UserRound className="h-4 w-4 text-fg-subtle" /> <span className="flex-1">Unassign</span>
+        </MenuItem>
+      )}
+    </>
+  );
+}
+
+function AssignMenu({
+  children,
+  align = "start",
+  ...props
+}: {
+  children: React.ReactNode;
+  align?: "start" | "end";
+  ticket: TodayTicket;
+  people: Person[] | undefined;
+  meId: string;
+  onAssign: (userIds: string[]) => void;
+}) {
+  return (
+    <Menu trigger={children} align={align} contentClassName="w-56">
+      {(close) => (
+        <>
+          {(props.people?.length ?? 0) > 1 && (
+            <div className="px-2.5 pt-1.5 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Who&apos;s on it?</div>
+          )}
+          <PeopleOptions {...props} close={close} />
+        </>
+      )}
+    </Menu>
+  );
+}
+
+// ── Assigned to others ───────────────────────────────────────────────────────
+
+/**
+ * Open work that's someone else's: kept off the day, one tap away. Closed by
+ * default; grouped by person, soonest first, each row still takeable.
+ */
+function OthersShelf({
+  groups,
+  count,
+  open,
+  onToggle,
+  todayYmd,
+  boards,
+  meId,
+  focusId,
+  ...actions
+}: {
+  groups: OthersGroup[];
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  todayYmd: string;
+  boards: TodayBoard[];
+  meId?: string | null;
+  focusId?: string | null;
+  onToggleDone: (i: TaskItem) => void;
+  onReschedule: (i: TaskItem, day: string | null) => void;
+  onPriority: (i: TaskItem, p: Priority) => void;
+  onDelete: (i: TaskItem) => void;
+  onMoveToBoard: (n: TodayNote, b: TodayBoard) => void;
+  onEditNote: (n: TodayNote, body: string) => void;
+  onSubtask: (i: TaskItem, e: SubtaskEdit) => void;
+  onAssign: (i: TaskItem, userIds: string[]) => void;
+  confirmComplete: (title: string, subtasks: SubtaskItem[] | undefined) => Promise<CompleteChoice>;
+}) {
+  return (
+    <section className={cn("rounded-2xl border border-dashed border-border transition-colors", open && "border-solid bg-surface")}>
+      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-2 px-4 py-3 text-left cursor-pointer">
+        <span className={cn("grid h-5 w-5 place-items-center text-fg-subtle transition-transform", open && "rotate-90")}>
+          <ChevronRight className="h-4 w-4" />
+        </span>
+        <UsersRound className="h-4 w-4 text-fg-muted" />
+        <span className="font-display text-[1.05rem] font-medium leading-none text-fg-muted">Assigned to others</span>
+        {!open && (
+          <span className="flex -space-x-1.5 ps-1">
+            {groups.slice(0, 4).map((g) => (
+              <Avatar
+                key={`${g.assignee.type}:${g.assignee.id}`}
+                name={g.assignee.name}
+                src={g.assignee.avatarUrl}
+                color={g.assignee.color}
+                isAgent={g.assignee.type === "agent"}
+                size={18}
+                className="ring-2 ring-bg"
+              />
+            ))}
+          </span>
+        )}
+        <span className="ml-auto text-xs text-fg-subtle">{open ? "Not on your list" : ""}</span>
+        <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums text-fg-muted">{count}</span>
+      </button>
+
+      {open && (
+        <div className="animate-fade-in px-2 pb-2">
+          {groups.map((g) => (
+            <div key={`${g.assignee.type}:${g.assignee.id}`} className="mb-1">
+              <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+                <Avatar name={g.assignee.name} src={g.assignee.avatarUrl} color={g.assignee.color} isAgent={g.assignee.type === "agent"} size={18} />
+                <span className="text-xs font-semibold text-fg-muted" dir="auto">{g.assignee.name}</span>
+                <span className="text-[0.6875rem] tabular-nums text-fg-subtle">{g.items.length}</span>
+              </div>
+              {g.items.map((it) => (
+                <Row key={it.id} item={it} todayYmd={todayYmd} boards={boards} meId={meId} showDay highlight={focusId === it.id} {...actions} />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildToday, greetingFor, summaryLine, type TodayNote, type TodayTicket } from "./today-model";
+import { buildToday, greetingFor, summaryLine, ticketOwnership, type TodayAssignee, type TodayNote, type TodayTicket } from "./today-model";
 
 const now = new Date(2026, 9, 13, 9, 0, 0); // Tue Oct 13 2026, local
 const board = { id: "b", name: "Personal", slug: "personal", color: "amber", doneColumnId: "done" };
@@ -100,4 +100,53 @@ test("greeting and summary", () => {
   assert.equal(greetingFor(new Date(2026, 9, 13, 20), null).period, "evening");
   assert.equal(summaryLine({ overdue: 1, today: 2, doneToday: 3, inbox: 0 }), "3 to do · 1 overdue · 3 done");
   assert.equal(summaryLine({ overdue: 0, today: 0, doneToday: 2, inbox: 0 }), "All clear — 2 done today.");
+});
+
+const me = "u-me";
+const user = (id: string, name = id): TodayAssignee => ({ type: "user", id, name });
+const agent = (id: string, ownerUserId: string | null): TodayAssignee => ({ type: "agent", id, name: id, ownerUserId });
+
+test("ownership: mine, open, or someone else's", () => {
+  assert.equal(ticketOwnership(undefined, me), "open");
+  assert.equal(ticketOwnership([], me), "open");
+  assert.equal(ticketOwnership([user(me)], me), "mine");
+  assert.equal(ticketOwnership([user("u-dana"), user(me)], me), "mine");
+  assert.equal(ticketOwnership([user("u-dana")], me), "others");
+  assert.equal(ticketOwnership([agent("a-mine", me)], me), "mine");
+  assert.equal(ticketOwnership([agent("a-shared", null)], me), "open");
+  assert.equal(ticketOwnership([agent("a-danas", "u-dana")], me), "others");
+});
+
+test("someone else's tickets leave the day for the others shelf", () => {
+  const today = local(2026, 10, 13);
+  const m = buildToday({
+    now,
+    meId: me,
+    tickets: [
+      ticket({ id: "t-mine", dueDate: today, assignees: [user(me)] }),
+      ticket({ id: "t-open", dueDate: today, priority: "urgent" }),
+      ticket({ id: "t-dana", dueDate: today, assignees: [user("u-dana", "Dana")] }),
+      ticket({ id: "t-dana-later", dueDate: local(2026, 10, 20), assignees: [user("u-dana", "Dana")] }),
+      ticket({ id: "t-yoni", dueDate: local(2026, 10, 12), assignees: [user("u-yoni", "Yoni")] }),
+      ticket({ id: "t-dana-done", isDone: true, completedAt: today, dueDate: today, assignees: [user("u-dana", "Dana")] }),
+    ],
+    notes: [note({ id: "n-today", scheduledDay: "2026-10-13" })],
+  });
+  const ids = (k: string) => m.sections.find((s) => s.key === k)!.items.map((i) => i.id);
+  // Yours (notes are always yours) before the unclaimed, even an urgent one.
+  assert.deepEqual(ids("today").slice(0, 2).sort(), ["n-today", "t-mine"]);
+  assert.equal(ids("today")[2], "t-open");
+  assert.deepEqual(ids("overdue"), []);
+  assert.deepEqual(ids("done"), []);
+  assert.equal(m.counts.today, 3);
+  assert.equal(m.counts.overdue, 0);
+  // Soonest first; grouped by person, busiest first.
+  assert.deepEqual(m.others.items.map((i) => i.id), ["t-yoni", "t-dana", "t-dana-later"]);
+  assert.deepEqual(m.others.groups.map((g) => [g.assignee.name, g.items.length]), [["Dana", 2], ["Yoni", 1]]);
+});
+
+test("without a viewer every ticket stays on the day", () => {
+  const m = buildToday({ now, tickets: [ticket({ id: "t-dana", dueDate: local(2026, 10, 13), assignees: [user("u-dana")] })], notes: [] });
+  assert.equal(m.counts.today, 1);
+  assert.equal(m.others.items.length, 0);
 });

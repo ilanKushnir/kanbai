@@ -10,7 +10,7 @@
 // the server but lost its response can simply be retried — no losses, no
 // duplicates.
 
-import type { TodayNote, TodayTicket } from "@/lib/today-model";
+import { toTodayAssignee, type TodayNote, type TodayTicket } from "@/lib/today-model";
 import type { SerializedTicket } from "@/lib/serialize";
 import type { SubtaskItem } from "@/lib/subtask-list";
 
@@ -20,6 +20,8 @@ export type TodayBoardData = {
   slug: string;
   color: string;
   columns: { id: string; name: string; isDone: boolean; stage?: string | null }[];
+  /** Who its tickets can be assigned to (absent on Plan and in older copies). */
+  people?: { id: string; name: string; avatarUrl: string | null; avatarColor: string | null }[];
 };
 
 export type TodayData = { tickets: TodayTicket[]; notes: TodayNote[]; boards: TodayBoardData[] };
@@ -210,6 +212,7 @@ export function toTodayTicket(t: SerializedTicket, boards: TodayBoardData[], pre
     board,
     labels: t.labels,
     subtasks: t.subtasks.map((s) => ({ id: s.id, title: s.title, completed: s.completed })),
+    assignees: t.assignees.map(toTodayAssignee),
     commentCount: t.commentCount,
     createdByType: t.createdBy?.type ?? "user",
     createdAt: t.createdAt,

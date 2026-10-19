@@ -4,7 +4,7 @@ import { ticketInclude, serializeTicket, type UserLite } from "@/lib/serialize";
 import { parseSubStates } from "@/lib/substates";
 import { boardAssigneeUsers } from "./board-members";
 import type { serializeNote } from "./notes";
-import type { TodayNote, TodayTicket } from "@/lib/today-model";
+import { toTodayAssignee, type TodayNote, type TodayTicket } from "@/lib/today-model";
 
 /** The rows Today and Plan render: tickets with their board, notes as tasks. */
 
@@ -31,6 +31,7 @@ export function toTicketRow(t: TicketRowSource, usersById: Map<string, UserLite>
     board: { id: t.board.id, name: t.board.name, slug: t.board.slug, color: t.board.color, doneColumnId: doneColumnByBoard.get(t.board.id) ?? null },
     labels: s.labels,
     subtasks: s.subtasks.map((x) => ({ id: x.id, title: x.title, completed: x.completed })),
+    assignees: s.assignees.map(toTodayAssignee),
     commentCount: s.commentCount,
     createdByType: s.createdBy.type,
     createdAt: s.createdAt,

@@ -19,9 +19,12 @@ export function TodayHero({
   dateLabel: serverDateLabel,
   summary: serverSummary,
   name,
+  meId,
   compact = false,
 }: {
   name?: string | null;
+  /** The viewer: someone else's tickets stay out of the summary. */
+  meId?: string | null;
   period: "morning" | "afternoon" | "evening" | "night";
   greeting: string;
   dateLabel: string;
@@ -45,8 +48,8 @@ export function TodayHero({
   const greeting = local?.greeting ?? serverGreeting;
   const dateLabel = now ? now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) : serverDateLabel;
   const summary = React.useMemo(
-    () => (now && data ? summaryLine(buildToday({ tickets: data.tickets, notes: data.notes, now }).counts) : serverSummary),
-    [now, data, serverSummary],
+    () => (now && data ? summaryLine(buildToday({ tickets: data.tickets, notes: data.notes, now, meId }).counts) : serverSummary),
+    [now, data, serverSummary, meId],
   );
   return (
     <div data-period={period} className={cn("kb-hero -mx-4 -mt-4 md:-mx-8 md:-mt-8 md:rounded-b-[2rem]", compact ? "h-44 md:h-52" : "h-56 md:h-72")}>

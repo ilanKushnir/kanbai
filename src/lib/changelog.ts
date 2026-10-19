@@ -10,6 +10,15 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.21.0",
+    date: "2026-10-19",
+    items: [
+      { emoji: "🎯", title: "Today is your list", body: "Today now shows only what's yours — tickets assigned to you and your own tasks — followed by unassigned tickets anyone can pick up. Tickets assigned to other people no longer appear on your day or count toward its total." },
+      { emoji: "🙋", title: "Take it, or hand it off", body: "An unassigned ticket shows an Unassigned tag. Tap it to take the ticket yourself or give it to someone on that board. Every row's ⋯ menu has the same options, with Undo." },
+      { emoji: "👥", title: "Assigned to others", body: "Work assigned to other people stays one tap away, under Assigned to others at the bottom of Today. It's grouped by person, with the soonest due first, and you can still take any of it." },
+    ],
+  },
+  {
     version: "0.20.0",
     date: "2026-10-18",
     items: [

@@ -5,6 +5,7 @@ import { getContext } from "@/lib/auth";
 import { boardWhereForContext } from "@/lib/authz";
 import { addDays, startOfDay } from "@/lib/notes-schedule";
 import { countNotesAttention } from "@/lib/notes-badge";
+import { ticketOwnership, type TodayAssignee } from "@/lib/today-model";
 import { parseUserSettings } from "@/lib/user-settings";
 import { WhatsNew } from "@/components/whats-new";
 import { cookies } from "next/headers";
@@ -40,13 +41,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         board: boardWhereForContext(ctx),
         column: { isDone: false },
       },
-      select: { dueDate: true },
+      select: {
+        dueDate: true,
+        assigneeType: true,
+        assigneeUserId: true,
+        assignees: { select: { userId: true } },
+        agent: { select: { id: true, ownerUserId: true } },
+      },
     }),
   ]);
 
   const todayCount = countNotesAttention({
     notes: badgeNotes,
-    reflections: dueTickets.map((t) => ({ dueDate: t.dueDate!, done: false })),
+    // Same rule as the Today list: someone else's tickets don't count.
+    reflections: dueTickets
+      .filter((t) => ticketOwnership(badgeAssignees(t), ctx.user.id) !== "others")
+      .map((t) => ({ dueDate: t.dueDate!, done: false })),
   });
 
   return (
@@ -54,6 +64,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <AppShell
         boards={boards}
         syncScope={`${ctx.user.id}:${ctx.workspace.id}`}
+        userId={ctx.user.id}
         userName={ctx.user.name}
         userEmail={ctx.user.email}
         userAvatarUrl={ctx.user.avatarUrl}
@@ -74,4 +85,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <WhatsNew seenVersion={parseUserSettings(ctx.user.settings).whatsNewSeen} />
     </ToastProvider>
   );
+}
+
+/** Just enough of a ticket's assignees to tell whose it is. */
+function badgeAssignees(t: {
+  assigneeType: string | null;
+  assigneeUserId: string | null;
+  assignees: { userId: string }[];
+  agent: { id: string; ownerUserId: string | null } | null;
+}): TodayAssignee[] {
+  if (t.assigneeType === "agent") return t.agent ? [{ type: "agent", id: t.agent.id, name: "", ownerUserId: t.agent.ownerUserId }] : [];
+  if (t.assigneeType !== "user") return [];
+  const ids = t.assignees.length ? t.assignees.map((a) => a.userId) : t.assigneeUserId ? [t.assigneeUserId] : [];
+  return ids.map((id) => ({ type: "user", id, name: "" }));
 }

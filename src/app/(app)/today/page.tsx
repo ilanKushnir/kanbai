@@ -33,7 +33,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   // Board-scoped feed rows are capped to the boards this user can see.
   const visibleBoardIds = ctx.isManager ? null : (await db.board.findMany({ where: boardWhere, select: { id: true } })).map((b) => b.id);
 
-  const [members, boardRows, openTickets, doneTodayTickets, notes, agents, changes] = await Promise.all([
+  const [members, boardRows, grants, openTickets, doneTodayTickets, notes, agents, changes] = await Promise.all([
     db.workspaceMember.findMany({ where: { workspaceId: ctx.workspace.id }, include: { user: true } }),
     db.board.findMany({
       where: boardWhere,
@@ -46,6 +46,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         columns: { orderBy: { position: "asc" }, select: { id: true, name: true, isDone: true, stage: true } },
       },
     }),
+    // Who each board's tickets can be handed to (managers + members it's shared with).
+    db.boardAccess.findMany({ where: { board: boardWhere }, select: { boardId: true, userId: true } }),
     // Every open, dated ticket the user can see — Today decides which day it belongs to.
     db.ticket.findMany({
       where: { board: boardWhere, column: { isDone: false }, deletedAt: null, dueDate: { not: null } },
@@ -71,12 +73,19 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const usersById = new Map<string, UserLite>(
     members.map((m) => [m.user.id, { id: m.user.id, name: m.user.name, avatarUrl: m.user.avatarUrl, avatarColor: m.user.avatarColor }]),
   );
+  const managers = members.filter((m) => m.role === "owner" || m.role === "admin").map((m) => m.user.id);
+  const assignableIds = (boardId: string) => new Set([...managers, ...grants.filter((g) => g.boardId === boardId).map((g) => g.userId)]);
   const boards: TodayBoard[] = boardRows.map((b) => ({
     id: b.id,
     name: b.name,
     slug: b.slug,
     color: b.color,
     columns: b.columns.map((c) => ({ id: c.id, name: c.name, isDone: c.isDone, stage: c.stage })),
+    people: [...assignableIds(b.id)]
+      .map((id) => usersById.get(id))
+      .filter((u): u is UserLite => !!u)
+      .sort((x, y) => x.name.localeCompare(y.name))
+      .map((u) => ({ id: u.id, name: u.name, avatarUrl: u.avatarUrl ?? null, avatarColor: u.avatarColor ?? null })),
   }));
   const doneColumnByBoard = new Map(boardRows.map((b) => [b.id, b.columns.find((c) => c.isDone)?.id ?? null]));
 
@@ -85,7 +94,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const todayNotes = notes.filter(isTaskNote).map(toNoteRow);
 
   const now = new Date();
-  const model = buildToday({ tickets, notes: todayNotes, now });
+  const model = buildToday({ tickets, notes: todayNotes, now, meId: ctx.user.id });
   const { greeting, period } = greetingFor(now, ctx.user.name);
   const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
@@ -138,8 +147,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <TodayFrame hero={<TodayHero name={ctx.user.name} period={period} greeting={greeting} dateLabel={dateLabel} summary={summaryLine(model.counts)} />} aside={aside}>
-        <TodayView syncScope={`${ctx.user.id}:${ctx.workspace.id}`} tickets={tickets} notes={todayNotes} boards={boards} dictationLanguage={dictationLanguage} focusId={sp.focus ?? null} compose={sp.compose === "1"} initialNow={now.toISOString()} userName={ctx.user.name} />
+      <TodayFrame hero={<TodayHero name={ctx.user.name} meId={ctx.user.id} period={period} greeting={greeting} dateLabel={dateLabel} summary={summaryLine(model.counts)} />} aside={aside}>
+        <TodayView syncScope={`${ctx.user.id}:${ctx.workspace.id}`} tickets={tickets} notes={todayNotes} boards={boards} dictationLanguage={dictationLanguage} focusId={sp.focus ?? null} compose={sp.compose === "1"} initialNow={now.toISOString()} userName={ctx.user.name} meId={ctx.user.id} />
       </TodayFrame>
 
       {modal && (
