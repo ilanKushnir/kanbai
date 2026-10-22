@@ -114,7 +114,7 @@ export function AgentsView({
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-[2rem] font-medium leading-tight">Agents</h1>
           <p className="mt-1 text-sm text-fg-muted">
-            An agent gets a key and talks to Kanbai over plain REST — it reads your day, adds tasks, moves them,
+            An agent gets a key and talks to KanbAi over plain REST — it reads your day, adds tasks, moves them,
             marks them done. Nothing is pushed to it; everything it does shows up below.
           </p>
         </div>
@@ -132,7 +132,7 @@ export function AgentsView({
           One message to your agent. It holds a one-time code, not a key — safe in any chat.
         </Step>
         <Step n={3} icon={PlugZap} title="It connects itself">
-          It trades the code for its key, installs the Kanbai skill and checks in. You’ll see it here.
+          It trades the code for its key, installs the KanbAi skill and checks in. You’ll see it here.
         </Step>
       </div>
 
@@ -185,7 +185,7 @@ export function AgentsView({
         <BookOpen className="h-4 w-4" />
         Full protocol:{" "}
         <a href="/api/v1/skill.md" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-fg">
-          the Kanbai skill (SKILL.md)
+          the KanbAi skill (SKILL.md)
         </a>
       </div>
 
@@ -635,7 +635,7 @@ function ConnectModal({
           </span>
           <div className="animate-slide-up-fade [animation-delay:200ms]">
             <div className="font-display text-xl">{agent.name} is connected</div>
-            <p className="mt-1 text-sm text-fg-muted">It has its key and the Kanbai skill. Its actions show up on this page.</p>
+            <p className="mt-1 text-sm text-fg-muted">It has its key and the KanbAi skill. Its actions show up on this page.</p>
           </div>
           <Button variant="primary" className="mt-2 animate-slide-up-fade [animation-delay:320ms]" onClick={onClose}>
             Done

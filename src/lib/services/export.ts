@@ -243,7 +243,7 @@ export function buildChecklistHtml(data: ExportData): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0a0b10">
-<title>Kanbai checklist · ${esc(today)}</title>
+<title>KanbAi checklist · ${esc(today)}</title>
 <style>
   :root{color-scheme:dark light;
     --bg:#0a0b10;--panel:#12151c;--panel-2:#171a22;--line:#20242e;--line-2:#2c3140;
@@ -311,7 +311,7 @@ export function buildChecklistHtml(data: ExportData): string {
 </head>
 <body>
 <header>
-  <h1>Kanbai checklist <span class="ws">${esc(data.workspace)}</span></h1>
+  <h1>KanbAi checklist <span class="ws">${esc(data.workspace)}</span></h1>
   <div class="sub">exported ${esc(niceDate)} · <span id="done-count">0</span>/<span id="total-count">${total}</span> done</div>
   <div class="meter" role="progressbar" aria-label="Progress"><i id="meter-fill"></i></div>
   <div class="bar">
@@ -321,7 +321,7 @@ export function buildChecklistHtml(data: ExportData): string {
   <details class="help">
     <summary>How this works</summary>
     <p>Work through this list anywhere — no server needed. Ticks and any tasks you add under <b>My extra tasks</b>
-    are saved in this browser automatically, for as long as you need. When Kanbai is back up, download the progress
+    are saved in this browser automatically, for as long as you need. When KanbAi is back up, download the progress
     file (or copy it) and import it in <b>Settings → Backup</b>: finished tickets move to Done, finished notes get
     marked complete, and your extra tasks come in as fresh notes.</p>
   </details>
@@ -329,7 +329,7 @@ export function buildChecklistHtml(data: ExportData): string {
 ${noteSections ? `<section><div class="sec-title">Notes <em>${openNotes.length}</em></div>${noteSections}</section>` : ""}
 <section>
   <div class="sec-title">My extra tasks <em id="x-count">0</em></div>
-  <div id="extras-empty">Anything new that comes up while you're offline — add it here, it survives reopening this file and imports back into Kanbai as notes.</div>
+  <div id="extras-empty">Anything new that comes up while you're offline — add it here, it survives reopening this file and imports back into KanbAi as notes.</div>
   <ul id="extras"></ul>
   <div class="adder">
     <input id="x-input" dir="auto" type="text" maxlength="10000" placeholder="Add a task…" enterkeyhint="done" autocomplete="off">
@@ -337,7 +337,7 @@ ${noteSections ? `<section><div class="sec-title">Notes <em>${openNotes.length}<
   </div>
 </section>
 ${boardSections}
-<footer>Kanbai offline checklist · keep this file somewhere safe</footer>
+<footer>KanbAi offline checklist · keep this file somewhere safe</footer>
 <script>
 (function(){
   var KEY = "kanbai-checklist-${exportId}";

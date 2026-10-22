@@ -10,9 +10,9 @@ const INVITE_DAYS = 14;
 /**
  * Two strictly separate invite flows share the Invite table, split by `kind`:
  *   - "account"   → system-level invite. Only a system admin can issue one; the
- *                   recipient registers a brand-new Kanbai account (with their
+ *                   recipient registers a brand-new KanbAi account (with their
  *                   own personal workspace). Never tied to a workspace.
- *   - "workspace" → a workspace owner/admin invites an EXISTING Kanbai account
+ *   - "workspace" → a workspace owner/admin invites an EXISTING KanbAi account
  *                   into their workspace. It never creates a new account.
  */
 
@@ -73,7 +73,7 @@ export async function createWorkspaceInvite(opts: {
   if (!user) {
     throw new HttpError(
       422,
-      "No Kanbai account uses that email. Workspace invites are for existing accounts — a system admin must create the account first.",
+      "No KanbAi account uses that email. Workspace invites are for existing accounts — a system admin must create the account first.",
       "unknown_email",
     );
   }

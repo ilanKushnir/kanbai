@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronDown } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Wordmark } from "@/components/brand/Logo";
 import { CHANGELOG, LATEST_RELEASE_VERSION, type ChangelogRelease } from "@/lib/changelog";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +31,7 @@ export function WhatsNew({ seenVersion }: { seenVersion: string | null }) {
   const [current, ...older] = CHANGELOG;
 
   return (
-    <Modal open={open} onClose={dismiss} size="md" title={<span className="font-display">What&apos;s new in Kanbai</span>} description={`Version ${current.version} · ${formatDate(current.date)}`}>
+    <Modal open={open} onClose={dismiss} size="md" title={<span className="font-display">What&apos;s new in <Wordmark /></span>} description={`Version ${current.version} · ${formatDate(current.date)}`}>
       <ReleaseItems release={current} />
 
       {older.length > 0 && (

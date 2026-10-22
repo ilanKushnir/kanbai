@@ -22,7 +22,7 @@ export const AGENT_META: Record<
   openclaw: { label: "Open Claw", color: "#f59e0b", blurb: "Autonomous task runner" },
   claudecode: { label: "Claude Code", color: "#d97757", blurb: "Coding & repo agent" },
   codex: { label: "Codex", color: "#10a37f", blurb: "Code generation agent" },
-  custom: { label: "Custom", color: "#64748b", blurb: "Any agent speaking the Kanbai protocol" },
+  custom: { label: "Custom", color: "#64748b", blurb: "Any agent speaking the KanbAi protocol" },
 };
 
 export const ALL_SCOPES = [
@@ -39,15 +39,15 @@ export const ALL_SCOPES = [
 export type Scope = (typeof ALL_SCOPES)[number];
 
 /** Service identity advertised to agents via GET /api/v1/me. */
-export const SERVICE_NAME = "Kanbai";
+export const SERVICE_NAME = "KanbAi";
 export const API_VERSION = "v1";
 
 /**
- * Capabilities the Kanbai agent API exposes, independent of any one agent's
+ * Capabilities the KanbAi agent API exposes, independent of any one agent's
  * granted scopes. Reported by GET /api/v1/me so an agent can discover what the
  * service supports without scraping the docs. Per-agent permissions are
  * conveyed by `scopes`. Everything is pull-based: the agent calls the REST API;
- * Kanbai never calls the agent back.
+ * KanbAi never calls the agent back.
  */
 export const AGENT_CAPABILITIES = {
   resources: ["tasks", "boards", "columns", "tickets", "subtasks", "notes", "calendar", "comments", "members", "trash", "activity"],

@@ -53,7 +53,7 @@ export function normalizeFeedUrl(raw: string): string {
     throw new HttpError(422, "That doesn't look like a calendar link.", "invalid_feed_url");
   }
   if (url.protocol !== "https:") throw new HttpError(422, "Calendar links must start with https:// (or webcal://).", "invalid_feed_url");
-  if (isPrivateHost(url.hostname)) throw new HttpError(422, "That address isn't reachable from Kanbai.", "invalid_feed_url");
+  if (isPrivateHost(url.hostname)) throw new HttpError(422, "That address isn't reachable from KanbAi.", "invalid_feed_url");
   return url.toString();
 }
 
@@ -73,7 +73,7 @@ async function fetchFeedText(url: string): Promise<string> {
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.text;
   const res = await fetch(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    headers: { Accept: "text/calendar, */*", "User-Agent": "Kanbai calendar sync" },
+    headers: { Accept: "text/calendar, */*", "User-Agent": "KanbAi calendar sync" },
     redirect: "follow",
   }).catch(() => {
     throw new HttpError(502, "Couldn't reach the calendar.", "feed_unreachable");

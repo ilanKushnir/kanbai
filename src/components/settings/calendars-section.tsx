@@ -117,7 +117,7 @@ export function CalendarsSection({ initial }: { initial: PublicFeed[] }) {
             {adding ? "Checking…" : "Add"}
           </Button>
         </form>
-        <p className="text-xs text-fg-subtle">The link is a secret: Kanbai keeps it on the server and never shows it again.</p>
+        <p className="text-xs text-fg-subtle">The link is a secret: KanbAi keeps it on the server and never shows it again.</p>
       </div>
     </section>
   );

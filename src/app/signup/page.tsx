@@ -17,7 +17,7 @@ export default async function SignupPage() {
     return (
       <AuthShell
         title="Sign-ups are invite-only"
-        subtitle="This Kanbai instance is already set up. Ask an admin to send you an invite."
+        subtitle="This KanbAi instance is already set up. Ask an admin to send you an invite."
         footer={
           <Link href="/login" className="font-medium text-primary hover:underline">
             Back to sign in
@@ -36,7 +36,7 @@ export default async function SignupPage() {
 
   return (
     <AuthShell
-      title="Set up Kanbai"
+      title="Set up KanbAi"
       subtitle="Create the first account — it becomes the instance admin and owns the global control panel."
     >
       <AuthForm mode="signup" submitLabel="Create admin account" />

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getPublicBoard } from "@/lib/services/boards";
-import { Logo } from "@/components/brand/Logo";
+import { Logo, Wordmark } from "@/components/brand/Logo";
 import { PublicBoardView } from "@/components/board/public-board-view";
 import { tone } from "@/components/ui/badge";
 import { POWERED_BY } from "@/lib/version";
@@ -59,7 +59,7 @@ export default async function PublicBoardPage({ params }: { params: Promise<{ pu
       <footer className="shrink-0 border-t border-border px-4 py-2 text-center text-xs text-fg-subtle">
         A public board on{" "}
         <Link href="/" className="font-medium text-fg-muted hover:text-fg">
-          Kanbai
+          <Wordmark />
         </Link>{" "}
         · {board.workspaceName} · powered by {POWERED_BY}
       </footer>

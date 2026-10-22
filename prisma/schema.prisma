@@ -1,4 +1,4 @@
-// Kanbai data model
+// KanbAi data model
 // SQLite for zero-config local dev; swap `provider`/url for Postgres in prod.
 // Enums are modeled as String + app-level (Zod) validation since SQLite has no enums.
 
@@ -332,8 +332,8 @@ model Agent {
   // Null = legacy workspace-wide agent.
   ownerUserId String?
 
-  // API key (for the agent → Kanbai). Only the hash is stored. Agents talk to
-  // Kanbai over the REST API only — there are no outbound callbacks.
+  // API key (for the agent → KanbAi). Only the hash is stored. Agents talk to
+  // KanbAi over the REST API only — there are no outbound callbacks.
   apiKeyHash   String?  @unique
   apiKeyPrefix String?  // e.g. "kbai_live_a1b2" for display
   apiKeyLast4  String?

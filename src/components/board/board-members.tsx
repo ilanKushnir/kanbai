@@ -54,7 +54,7 @@ function SegAccess({
 
 /**
  * Board-level sharing: who can see this board, at what level, and sharing by
- * email with an existing Kanbai account — they join the workspace and see the
+ * email with an existing KanbAi account — they join the workspace and see the
  * board right away. Board sharing never creates accounts.
  */
 export function BoardMembers({ boardId, boardName }: { boardId: string; boardName: string }) {
@@ -193,7 +193,7 @@ export function BoardMembers({ boardId, boardName }: { boardId: string; boardNam
                     type="email"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="Their Kanbai email"
+                    placeholder="Their KanbAi email"
                   />
                   <div className="flex items-center justify-between gap-3">
                     <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs">
@@ -216,7 +216,7 @@ export function BoardMembers({ boardId, boardName }: { boardId: string; boardNam
                     </Button>
                   </div>
                   <p className="text-xs text-fg-subtle">
-                    For an existing Kanbai account. They get this board right away — nothing to accept.
+                    For an existing KanbAi account. They get this board right away — nothing to accept.
                   </p>
                 </form>
               </div>

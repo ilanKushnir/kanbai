@@ -10,6 +10,13 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.21.2",
+    date: "2026-10-22",
+    items: [
+      { emoji: "✨", title: "It's KanbAi now", body: "Kanban plus AI — the name is now spelled KanbAi, with the Ai picked out in the accent colour." },
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-10-22",
     items: [
@@ -29,8 +36,8 @@ export const CHANGELOG: ChangelogRelease[] = [
     version: "0.20.0",
     date: "2026-10-18",
     items: [
-      { emoji: "🤝", title: "Sharing a board just works", body: "In a board's Members, type someone's Kanbai email and tap Share — they see the board right away, nothing to accept. Invites that were already sent apply the next time that person opens Kanbai." },
-      { emoji: "🧭", title: "Shared boards are easy to find", body: "If you belong to more than one workspace, Kanbai opens in the one that has your boards, and the Boards page lists boards from your other workspaces — tap one to jump straight in." },
+      { emoji: "🤝", title: "Sharing a board just works", body: "In a board's Members, type someone's KanbAi email and tap Share — they see the board right away, nothing to accept. Invites that were already sent apply the next time that person opens KanbAi." },
+      { emoji: "🧭", title: "Shared boards are easy to find", body: "If you belong to more than one workspace, KanbAi opens in the one that has your boards, and the Boards page lists boards from your other workspaces — tap one to jump straight in." },
       { emoji: "🗄️", title: "Archive from the Boards page", body: "Each board card has a ⋯ menu with Pin and Archive. Archived boards wait under Archived at the bottom of the page, ready to restore." },
     ],
   },
@@ -121,7 +128,7 @@ export const CHANGELOG: ChangelogRelease[] = [
     date: "2026-10-15",
     items: [
       { emoji: "🔗", title: "Connect an agent with one message", body: "Paste a single brief into your agent's chat. It connects itself with a one-time code, and no key is ever shown in chat." },
-      { emoji: "📱", title: "Feels native on your phone", body: "Install Kanbai to your home screen for a full-screen app with instant tab switches." },
+      { emoji: "📱", title: "Feels native on your phone", body: "Install KanbAi to your home screen for a full-screen app with instant tab switches." },
       { emoji: "✨", title: "Completing a task feels good", body: "The check draws itself, the title strikes through and the row folds away into Done." },
     ],
   },

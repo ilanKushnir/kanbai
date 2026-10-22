@@ -1,6 +1,6 @@
-# Kanbai Agent Protocol
+# KanbAi Agent Protocol
 
-Kanbai is the single source of truth for tasks. An AI agent (Hermes, Claude Code,
+KanbAi is the single source of truth for tasks. An AI agent (Hermes, Claude Code,
 Codex, …) drives it **only** through the REST API under `/api/v1` with a
 Bearer key. There are no callbacks: when the agent wants to know the state of
 the day, it asks. Every write is logged to the activity feed under the agent's
@@ -13,7 +13,7 @@ usual statuses (400 bad JSON · 401 bad key · 403 disabled/missing scope ·
 
 ## 0. Simple task or ticket? Decide before every write
 
-Kanbai has exactly two kinds of work item. Pick one every time the owner says
+KanbAi has exactly two kinds of work item. Pick one every time the owner says
 "add a task", "remind me to…", "I need to…", "put … on my list":
 
 | | **Simple task** (`POST /tasks`) | **Ticket** (`POST /tickets`) |
@@ -267,12 +267,12 @@ GET /calendar[?day=today|tomorrow|YYYY-MM-DD | ?from=&to=]     notes:read
     location, calendar, startsAt }], errors:[{ calendar, message }] }
 ```
 
-The owner's own calendars — the private iCal links they added in Kanbai →
+The owner's own calendars — the private iCal links they added in KanbAi →
 Settings → Calendars (Google Calendar works). `start`/`end` are local
 `"HH:MM"` in `timezone` (null for all-day); `startsAt` is the UTC instant.
 Sorted all-day first, then by start. `connected: false` means no calendar is
-linked **in Kanbai** — the owner may still have given you your own access to
-their calendar (a calendar tool, MCP server or API of yours). Kanbai is one
+linked **in KanbAi** — the owner may still have given you your own access to
+their calendar (a calendar tool, MCP server or API of yours). KanbAi is one
 source, not the only one. Read-only: never promise to create or move events.
 Used by the daily brief (§11).
 
@@ -403,7 +403,7 @@ the dentist":
 ## 11. The daily brief
 
 A short morning message with what the owner has to do today — and, if they
-want, what's on their calendar. Kanbai never sends anything itself: **you**
+want, what's on their calendar. KanbAi never sends anything itself: **you**
 schedule it (your own cron / reminders / scheduler) and you send it.
 
 ### Offer it once, right after connecting
@@ -417,14 +417,14 @@ two ways, and either one is enough:
 
 - **Your own access** — a calendar tool, integration, MCP server or API the
   owner set up for you directly (Google Calendar, Outlook, CalDAV, …).
-- **Through Kanbai** — `GET /calendar` returns `connected: true` (they added a
-  calendar's iCal link in Kanbai → Settings → Calendars).
+- **Through KanbAi** — `GET /calendar` returns `connected: true` (they added a
+  calendar's iCal link in KanbAi → Settings → Calendars).
 
 If you have either, offer the calendar question normally. Only if you have
 **neither**, say so plainly, e.g. "I can't see your calendar yet — either give
-me access to it directly, or add its iCal link in Kanbai → Settings →
+me access to it directly, or add its iCal link in KanbAi → Settings →
 Calendars", and still offer the tasks-only brief. Never say there's no
-calendar access just because Kanbai's `connected` is false.
+calendar access just because KanbAi's `connected` is false.
 
 ```
 ☀️ Want a daily brief from me?
@@ -434,7 +434,7 @@ Every morning: your tasks for the day, short and sorted.
 3. What time? (e.g. 07:30)
 ```
 
-Save the answers in **your own** memory/config (Kanbai doesn't store them),
+Save the answers in **your own** memory/config (KanbAi doesn't store them),
 set up the daily job at that time in the workspace timezone (`GET /me` →
 `conventions.timezone`), and confirm in one line:
 `✅ Daily brief set · every day at 07:30 · tasks + calendar`. The owner can

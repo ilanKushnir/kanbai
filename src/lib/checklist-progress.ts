@@ -7,7 +7,7 @@ import { z } from "zod";
  * v2 files additionally carry `extras`: local-only tasks the user added inside
  * the checklist while offline (stored in the file's localStorage). On import,
  * extras become fresh notes — done ones arrive already completed — so a week
- * of offline task management round-trips back into Kanbai.
+ * of offline task management round-trips back into KanbAi.
  *
  * Unknown top-level keys (kanbai, version, exportedAt, savedAt…) are ignored,
  * so both file versions parse with this one schema.

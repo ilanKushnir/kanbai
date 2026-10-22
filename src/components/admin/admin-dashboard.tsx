@@ -65,7 +65,7 @@ export function AdminDashboard({
     <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 md:py-8">
       <header className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Control panel</h1>
-        <p className="mt-1 text-sm text-fg-muted">Everything across this Kanbai instance.</p>
+        <p className="mt-1 text-sm text-fg-muted">Everything across this KanbAi instance.</p>
       </header>
 
       <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -130,7 +130,7 @@ function SystemInvites({ invites }: { invites: SystemInviteRow[] }) {
     <section className="mb-8">
       <h2 className="mb-1 text-sm font-semibold">System account invites</h2>
       <p className="mb-2 text-xs text-fg-subtle">
-        Let a new person open a Kanbai account (with their own workspace). Only system admins can issue these —
+        Let a new person open a KanbAi account (with their own workspace). Only system admins can issue these —
         workspace invites are managed per-workspace and only work for existing accounts.
       </p>
       <div className="rounded-2xl border border-border bg-surface p-4">

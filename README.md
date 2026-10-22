@@ -1,19 +1,19 @@
 <div align="center">
-  <img src="./public/icon-512.png" width="84" height="84" alt="Kanbai logo" />
-  <h1>Kanbai</h1>
+  <img src="./public/icon-512.png" width="84" height="84" alt="KanbAi logo" />
+  <h1>KanbAi</h1>
   <p><strong>Your day, one list. Projects on boards. An agent that keeps it current.</strong></p>
   <p><sub><strong>Self-hosted</strong> · open source (MIT) · Docker-ready · Next.js + Prisma</sub></p>
 </div>
 
 ---
 
-Kanbai is a calm place for one person's work. You open **Today** and see what
+KanbAi is a calm place for one person's work. You open **Today** and see what
 is overdue, what is due, what is coming, and what you captured but haven't
 placed yet — notes and board tickets in one list, one checkbox each. Projects
 live on **Boards** (real Kanban). An **AI agent** (Hermes, Claude Code, Codex,
-…) talks to Kanbai over a plain REST API: it reads your day, adds what you
+…) talks to KanbAi over a plain REST API: it reads your day, adds what you
 dictate, moves things along and marks them done — and everything it does is
-listed under its name. Kanbai is the source of truth; agents pull, Kanbai never
+listed under its name. KanbAi is the source of truth; agents pull, KanbAi never
 calls them back.
 
 ## The three surfaces
@@ -91,7 +91,7 @@ You land on **Today** on every device.
 
 ## Self-host with Docker
 
-Kanbai is **self-hosted and open source (MIT)** — perfect for a homelab. The
+KanbAi is **self-hosted and open source (MIT)** — perfect for a homelab. The
 image bundles everything and stores SQLite on a named volume, so your data
 survives restarts and rebuilds. No external database required.
 
@@ -130,7 +130,7 @@ Postgres service, add it to `docker-compose.yml`, and re-run migrations.
 
 ## Accounts, roles & access
 
-Kanbai has real authentication (DB-backed sessions, scrypt-hashed passwords — no
+KanbAi has real authentication (DB-backed sessions, scrypt-hashed passwords — no
 external auth service).
 
 - **First run is open:** the very first account created at `/signup` becomes the
@@ -157,7 +157,7 @@ just open the app; you'll be sent to `/signup` to create your admin account.
    it is safe in any chat: the agent trades it at `POST /api/v1/connect` for its
    own key, stores it, and installs the skill from `/api/v1/skill.md`
    (Hermes: `hermes skills install <url>`).
-3. The Agents page flips to **Connected**. Done. Running Kanbai behind a CDN?
+3. The Agents page flips to **Connected**. Done. Running KanbAi behind a CDN?
    Set `KANBAI_AGENT_URL` to a LAN origin so agents skip its bot filters.
 
 Full spec and a daily playbook: **[docs/AGENT_PROTOCOL.md](./docs/AGENT_PROTOCOL.md)**.

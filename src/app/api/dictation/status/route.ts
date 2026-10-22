@@ -8,6 +8,6 @@ export const GET = handler(async () => {
     configured: Boolean(process.env.KANBAI_WHISPER_ENDPOINT),
     languages: DICTATION_LANGUAGES,
     limitation:
-      "Kanbai uses foreground recording/upload. iOS Safari/home-screen apps do not support reliable background sync or practical on-device Whisper model execution.",
+      "KanbAi uses foreground recording/upload. iOS Safari/home-screen apps do not support reliable background sync or practical on-device Whisper model execution.",
   });
 });

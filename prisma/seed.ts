@@ -10,7 +10,7 @@ const DEMO_EMAIL = "you@kanbai.app";
 const DEMO_PASSWORD = "kanbai1234";
 
 async function main() {
-  console.log("🌱 Seeding Kanbai…");
+  console.log("🌱 Seeding KanbAi…");
   const ticketCounters: Record<string, number> = {};
 
   // Clean slate (dev only)
@@ -221,7 +221,7 @@ async function main() {
     { body: "Follow up with the design contractor about the icon set", when: "today", priority: "medium" },
     { body: "Bug — dragging a card to an empty column sometimes snaps back", when: "tomorrow", priority: "high" },
     { body: "Prep the standup notes", when: "tomorrow" },
-    { body: "Blog post: how my agent runs my day through the Kanbai API", when: "next_week", priority: "low" },
+    { body: "Blog post: how my agent runs my day through the KanbAi API", when: "next_week", priority: "low" },
     { body: "Book the offsite venue", when: "next_month", priority: "medium" },
     { body: "Idea: let agents propose due dates based on the note text", when: "general", pinned: true },
     { body: "Grocery: oat milk, coffee, eggs", when: "general" },

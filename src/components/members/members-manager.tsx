@@ -290,12 +290,12 @@ function InviteModal({ boards, onClose }: { boards: BoardLite[]; onClose: () => 
       ) : (
         <div className="space-y-4">
           <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs text-fg-muted">
-            Workspace invites are for people who <span className="font-medium">already have a Kanbai account</span>.
+            Workspace invites are for people who <span className="font-medium">already have a KanbAi account</span>.
             New accounts can only be invited by a system admin (system account invite).
           </p>
 
           <div>
-            <Label htmlFor="invite-email">Email of an existing Kanbai user</Label>
+            <Label htmlFor="invite-email">Email of an existing KanbAi user</Label>
             <Input
               id="invite-email"
               type="email"

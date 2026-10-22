@@ -44,10 +44,10 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
     getSessionUser(),
   ]);
 
-  const title = isWorkspace ? `Join ${workspace?.name ?? "a workspace"}` : "Create your Kanbai account";
+  const title = isWorkspace ? `Join ${workspace?.name ?? "a workspace"}` : "Create your KanbAi account";
   const subtitle = isWorkspace
     ? `${inviter?.name ?? "Someone"} invited you to join as ${invite.role === "admin" ? "an admin" : "a member"}.`
-    : `${inviter?.name ?? "A system admin"} invited you to open a new Kanbai account.`;
+    : `${inviter?.name ?? "A system admin"} invited you to open a new KanbAi account.`;
 
   if (user) {
     if (isWorkspace) {
@@ -63,7 +63,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           href="/"
           className="block w-full rounded-xl bg-primary px-4 py-2.5 text-center text-sm font-medium text-primary-fg hover:bg-primary-hover"
         >
-          Go to Kanbai
+          Go to KanbAi
         </Link>
       </AuthShell>
     );
@@ -74,7 +74,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
     return (
       <AuthShell
         title={title}
-        subtitle={`${subtitle} This invite is for an existing Kanbai account — sign in to accept it.`}
+        subtitle={`${subtitle} This invite is for an existing KanbAi account — sign in to accept it.`}
       >
         <AuthForm mode="login" submitLabel="Sign in to join" redirectTo={`/invite/${token}`} />
       </AuthShell>

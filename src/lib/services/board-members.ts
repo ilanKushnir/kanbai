@@ -109,7 +109,7 @@ export async function shareBoardByEmail(boardId: string, email: string, level: "
   if (!board) throw new HttpError(404, "Board not found");
   const user = await db.user.findUnique({ where: { email: email.trim().toLowerCase() }, select: { id: true, name: true, status: true } });
   if (!user || user.status !== "active") {
-    throw new HttpError(422, "No Kanbai account uses that email. A system admin can create one from Admin → Invites.", "unknown_email");
+    throw new HttpError(422, "No KanbAi account uses that email. A system admin can create one from Admin → Invites.", "unknown_email");
   }
   const membership = await db.workspaceMember.findUnique({
     where: { workspaceId_userId: { workspaceId: board.workspaceId, userId: user.id } },

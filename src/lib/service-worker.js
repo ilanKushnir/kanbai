@@ -1,4 +1,4 @@
-/* Kanbai service worker — offline app-shell.
+/* KanbAi service worker — offline app-shell.
  *
  * Served by the /service-worker route (not from /public): Cloudflare
  * force-caches *.js paths like /sw.js for hours regardless of origin headers,
@@ -76,7 +76,7 @@ function offlinePage(url) {
   const home = url.pathname.startsWith("/today") ? "" : '<a class="btn" href="/today">Open Today</a>';
   return new Response(
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">` +
-      `<meta name="color-scheme" content="light dark"><title>Offline · Kanbai</title><style>` +
+      `<meta name="color-scheme" content="light dark"><title>Offline · KanbAi</title><style>` +
       `:root{--bg:#f2f2f2;--fg:#111;--muted:#666;--line:#ddd}` +
       `@media (prefers-color-scheme:dark){:root{--bg:#000;--fg:#f2f2f2;--muted:#999;--line:#262626}}` +
       `html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,system-ui,sans-serif}` +

@@ -114,7 +114,7 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
                 </option>
               ))}
             </select>
-            <p className="mt-1.5 text-xs text-fg-subtle">Where Kanbai opens when you sign in.</p>
+            <p className="mt-1.5 text-xs text-fg-subtle">Where KanbAi opens when you sign in.</p>
           </div>
           <div>
             <Label htmlFor="weekstart">Week starts on</Label>
@@ -165,7 +165,7 @@ export function SettingsView({ isManager, isOwner, defaultLanding, weekStartsOn,
       )}
 
       <footer className="mt-8 border-t border-border pt-4 text-center text-xs text-fg-subtle">
-        Kanbai v{APP_VERSION} · powered by {POWERED_BY}
+        KanbAi v{APP_VERSION} · powered by {POWERED_BY}
       </footer>
     </div>
   );

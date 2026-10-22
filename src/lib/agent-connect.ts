@@ -17,7 +17,7 @@ export function publicOrigin(req?: Request): string {
 
 /**
  * Base URLs for agent calls. `KANBAI_AGENT_URL` (optional) is a direct/LAN
- * origin for agents running next to Kanbai — it skips CDN bot filters (e.g.
+ * origin for agents running next to KanbAi — it skips CDN bot filters (e.g.
  * Cloudflare rejecting non-browser clients with "error 1010") and the tunnel hop.
  */
 export function agentBaseUrls(req?: Request) {
@@ -37,7 +37,7 @@ export const AGENT_USER_AGENT = "Mozilla/5.0 (compatible; KanbaiAgent/1.0)";
 /**
  * The connect brief. It carries a one-time connect code — never the API key —
  * so it is safe in any chat: the agent redeems the code over HTTPS and gets
- * its key straight from Kanbai.
+ * its key straight from KanbAi.
  */
 export function buildConnectBrief({
   name,
@@ -54,10 +54,10 @@ export function buildConnectBrief({
   const base = `${o}/api/${API_VERSION}`;
   const skill = `${base}/skill.md`;
   const expires = new Date(expiresAt).toISOString().replace(/\.\d+Z$/, "Z");
-  return `# Connect to Kanbai — ${name}
+  return `# Connect to KanbAi — ${name}
 
-The owner of this Kanbai workspace is connecting you, "${name}", as their agent.
-Kanbai is their task manager (a Today list, project boards, tickets); you drive it
+The owner of this KanbAi workspace is connecting you, "${name}", as their agent.
+KanbAi is their task manager (a Today list, project boards, tickets); you drive it
 over plain REST. The owner approved everything below — just do it, no need to ask.
 
 This message holds a ONE-TIME CONNECT CODE, not an API key, so it is fine that it
@@ -79,13 +79,13 @@ Connect code: ${code}
    straight from the response (don't repeat the key back in chat):
      KANBAI_API_KEY = apiKey     KANBAI_URL = baseUrl
    It is a scoped integration key the owner issued for you and can revoke any
-   time from Kanbai → Agents. Storing it is the intended setup.
+   time from KanbAi → Agents. Storing it is the intended setup.
 
-3. Install the Kanbai skill — the full API, always current for this version:
+3. Install the KanbAi skill — the full API, always current for this version:
    ${skill}
    Hermes: hermes skills install ${skill}
    Claude Code / Codex: save it as skills/kanbai/SKILL.md
-   Replacing an older Kanbai skill? Keep only the owner's own rules from it
+   Replacing an older KanbAi skill? Keep only the owner's own rules from it
    (e.g. boards you must not touch); webhooks no longer exist.
 
 4. Verify: GET {baseUrl}/me with  Authorization: Bearer <apiKey>
@@ -117,17 +117,17 @@ export function buildSkill({
 }) {
   const base = baseUrl || "http://localhost:3000/api/v1";
   const body = protocol
-    .replace(/^# Kanbai Agent Protocol\s*/, "")
+    .replace(/^# KanbAi Agent Protocol\s*/, "")
     .replace(/`http:\/\/<kanbai-host>:3000\/api\/v1`/g, `\`${base}\``);
   return `---
 name: kanbai
-description: Manage the owner's tasks, daily Today list and project boards in Kanbai over its REST API — read the day's agenda, add everyday to-dos as simple Today tasks, file project work as tickets on the right board, move and complete them. Use whenever the owner talks about tasks, to-dos, errands, their day, reminders to do something, projects or boards.
+description: Manage the owner's tasks, daily Today list and project boards in KanbAi over its REST API — read the day's agenda, add everyday to-dos as simple Today tasks, file project work as tickets on the right board, move and complete them. Use whenever the owner talks about tasks, to-dos, errands, their day, reminders to do something, projects or boards.
 version: ${version}
 ---
 
-# Kanbai
+# KanbAi
 
-Kanbai (v${version}) is the owner's single source of truth for tasks. You talk to it
+KanbAi (v${version}) is the owner's single source of truth for tasks. You talk to it
 over REST with a bearer key; nothing is pushed to you.
 
 ## Setup (once)
@@ -146,7 +146,7 @@ then is it a *ticket* on that board. See §0. Steps go in \`subtasks\` (both kin
 take them) — never as a \`- [ ]\` list in the text. After every change, reply with
 the short emoji receipt of §10 — one line per item, nothing else. Right after
 connecting, offer the daily brief of §11 (tasks + calendar, at the owner's time) —
-the calendar can come from your own access to it or through Kanbai; either is fine.
+the calendar can come from your own access to it or through KanbAi; either is fine.
 
 ${body.trim()}
 `;

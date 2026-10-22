@@ -1,6 +1,6 @@
 {
-  "name": "Kanbai",
-  "short_name": "Kanbai",
+  "name": "KanbAi",
+  "short_name": "KanbAi",
   "description": "Your day, one list. Projects on boards. An agent that keeps it current.",
   "start_url": "/today",
   "scope": "/",

@@ -12,10 +12,10 @@ export const CANVAS_LIGHT = "#f2f2f2";
 export const CANVAS_DARK = "#000000";
 
 export const metadata: Metadata = {
-  title: { default: "Kanbai — your day, one list", template: "%s · Kanbai" },
+  title: { default: "KanbAi — your day, one list", template: "%s · KanbAi" },
   description:
     "A calm place for your tasks and projects. Capture in one line, work from one list, and let your AI agent keep it current.",
-  applicationName: "Kanbai",
+  applicationName: "KanbAi",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-touch-icon.png",
   },
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Kanbai" },
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "KanbAi" },
 };
 
 export const viewport: Viewport = {

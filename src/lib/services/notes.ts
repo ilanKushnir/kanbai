@@ -32,7 +32,7 @@ export function dayToInstant(day: string): Date {
   return zonedTime(day, 12, 0, workspaceTz());
 }
 
-const noteActor = (actor?: Actor | null): Actor => actor ?? { type: "system", name: "Kanbai" };
+const noteActor = (actor?: Actor | null): Actor => actor ?? { type: "system", name: "KanbAi" };
 const excerpt = (body: string) => htmlToPlainText(body).slice(0, 120);
 
 const noteInclude = {

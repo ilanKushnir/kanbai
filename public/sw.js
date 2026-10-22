@@ -1,4 +1,4 @@
-/* Kanbai recovery worker — /sw.js is retired.
+/* KanbAi recovery worker — /sw.js is retired.
  *
  * Cloudflare force-caches this path with a multi-hour edge TTL regardless of
  * origin headers, so the real worker now lives at /service-worker (an

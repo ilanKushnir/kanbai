@@ -4,7 +4,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
-  Kanbai design tokens — "Monolith"
+  KanbAi design tokens — "Monolith"
   ─────────────────────────────────
   Built from the mark: a folded white paper K on pure black. The system is
   monochrome — light is white paper with ink, dark is black with paper —

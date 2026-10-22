@@ -2,7 +2,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 /**
- * The Kanbai mark: a folded white paper K on a black tile. The source is a
+ * The KanbAi mark: a folded white paper K on a black tile. The source is a
  * single raster (public/brand/mark.png) and the tile inverts in dark mode —
  * the artwork is pure greyscale, so the flip stays faithful.
  */
@@ -17,7 +17,7 @@ export function KanbaiMark({
   return (
     <Image
       src="/brand/mark.png"
-      alt="Kanbai"
+      alt="KanbAi"
       width={64}
       height={64}
       priority
@@ -26,7 +26,19 @@ export function KanbaiMark({
   );
 }
 
-/** Full lockup: mark + "Kanbai" wordmark. */
+/**
+ * The name as a wordmark: Kanban + AI, so the "Ai" carries the one signal
+ * colour — the same lone vermilion accent every illustration gets.
+ */
+export function Wordmark({ className }: { className?: string }) {
+  return (
+    <span className={className}>
+      Kanb<span className="text-accent">Ai</span>
+    </span>
+  );
+}
+
+/** Full lockup: mark + "KanbAi" wordmark. */
 export function Logo({
   className,
   markClassName,
@@ -42,9 +54,7 @@ export function Logo({
     <span className={cn("inline-flex items-center gap-2.5", className)}>
       <KanbaiMark variant={variant} className={cn("h-8 w-8", markClassName)} />
       {showWordmark && (
-        <span className="font-display text-[1.4rem] leading-none tracking-[-0.04em]">
-          Kanbai
-        </span>
+        <Wordmark className="font-display text-[1.4rem] leading-none tracking-[-0.04em]" />
       )}
     </span>
   );

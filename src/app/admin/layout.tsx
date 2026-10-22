@@ -19,7 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </span>
         </div>
         <Link href="/today" className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg">
-          <ArrowLeft className="h-4 w-4" /> Back to Kanbai
+          <ArrowLeft className="h-4 w-4" /> Back to KanbAi
         </Link>
       </header>
       <main>{children}</main>

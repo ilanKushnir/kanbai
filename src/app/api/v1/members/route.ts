@@ -43,7 +43,7 @@ export const POST = handler(async (req: Request) => {
   if (!user) {
     throw new HttpError(
       422,
-      "No Kanbai account uses that email. Only a system admin can invite new accounts (system invite).",
+      "No KanbAi account uses that email. Only a system admin can invite new accounts (system invite).",
       "unknown_email",
     );
   }

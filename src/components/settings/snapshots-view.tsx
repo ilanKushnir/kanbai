@@ -85,7 +85,7 @@ export function SnapshotsView({ snapshots: initial }: { snapshots: Snap[] }) {
             <History className="h-4.5 w-4.5" />
           </span>
           <div className="text-sm text-fg-muted">
-            Kanbai automatically captures your boards <strong className="text-fg">before an agent starts working</strong>,
+            KanbAi automatically captures your boards <strong className="text-fg">before an agent starts working</strong>,
             once per agent session. Manual edits start a fresh session. Restore any point below — the current state is
             saved first, so a restore is always undoable.
           </div>
