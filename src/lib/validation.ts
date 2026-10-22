@@ -3,6 +3,7 @@ import { PRIORITIES, AGENT_KINDS, ALL_SCOPES, BOARD_COLORS, NOTE_BUCKETS } from 
 import { COLUMN_STAGES } from "./column-stage";
 import { isAvatarColor } from "./avatar-colors";
 import { zonedTime, workspaceTz } from "./tz";
+import { DAY_PARTS } from "./day-plan";
 
 // ── Subtasks (shared by tasks and tickets) ──
 const subtaskTitle = z.string().trim().min(1).max(200);
@@ -317,7 +318,14 @@ export const reorderColumnsSchema = z.object({
 });
 
 /** Local calendar day "YYYY-MM-DD" (timezone-proof note scheduling). */
-const dayString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+export const dayString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** A day's arrangement on Today (see lib/day-plan). */
+export const dayPlanSchema = z.object({
+  items: z
+    .array(z.object({ id: z.string().min(1).max(64), part: z.enum(DAY_PARTS).nullable() }))
+    .max(1000),
+});
 
 export const createNoteSchema = z.object({
   id: clientIdInput.optional(),

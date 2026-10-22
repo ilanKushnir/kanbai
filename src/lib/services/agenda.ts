@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { ticketInclude, serializeTicket, type SerializedTicket, type UserLite } from "@/lib/serialize";
 import { resolveColumnStage } from "@/lib/column-stage";
 import { PRIORITY_META, type Priority } from "@/lib/constants";
+import { getDayPlans } from "@/lib/services/day-plans";
+import type { PlanEntry } from "@/lib/day-plan";
 import { addDaysYmd, endOfDayInTz, startOfDayInTz, todayYmd, workspaceTz, ymdInTz } from "@/lib/tz";
 import { serializeNote } from "./notes";
 
@@ -45,6 +47,12 @@ export type Agenda = {
   tomorrow: AgendaTicket[];
   /** Due in the next 7 days, excluding today and tomorrow. */
   upcoming: AgendaTicket[];
+  /**
+   * How the person arranged today and tomorrow in the app: ticket and task ids
+   * in the order they mean to do them, each with a part of the day (morning |
+   * afternoon | evening, or null). Missing ids haven't been placed yet.
+   */
+  plan: { today: PlanEntry[]; tomorrow: PlanEntry[] };
   /** Open, unscheduled notes (status inbox, no scheduledDay, not done, not deleted). */
   inbox: AgendaNote[];
   /** Notes scheduled for today or earlier, not done, not deleted. */
@@ -173,6 +181,7 @@ export async function getAgenda(input: {
     .map((t) => toAgendaTicket(t, usersById))
     .sort((a, b) => Date.parse(b.completedAt ?? b.updatedAt) - Date.parse(a.completedAt ?? a.updatedAt));
 
+  const plans = await getDayPlans(input.userId, input.workspaceId, [date, tomorrow]);
   const notes = noteRows.map(serializeNote);
   const inbox = notes.filter((n) => n.scheduledDay == null && n.doneOn == null);
   const notesToday = notes.filter((n) => n.scheduledDay != null && n.scheduledDay <= date && n.doneOn == null);
@@ -185,6 +194,7 @@ export async function getAgenda(input: {
     today,
     tomorrow: tomorrowList,
     upcoming,
+    plan: { today: plans[date] ?? [], tomorrow: plans[tomorrow] ?? [] },
     inbox,
     notesToday,
     doneToday: { tickets: doneTickets, notes: doneNotes },

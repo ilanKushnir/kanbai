@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { hashApiKey } from "@/lib/crypto";
 import { getAgenda } from "@/lib/services/agenda";
 import { GET } from "./route";
+import { setDayPlan } from "@/lib/services/day-plans";
 
 // GET /api/v1/today + getAgenda: shape, bucketing, and the timezone day
 // boundary (a ticket due 01:30 Jerusalem time on the 14th is "today" at 00:30
@@ -133,11 +134,27 @@ test("GET /today answers for the workspace owner with the documented shape", asy
   const res = await GET(new Request("http://test.local/api/v1/today", { headers: { authorization: `Bearer ${KEY}` } }));
   assert.equal(res.status, 200);
   const body = await res.json();
-  assert.deepEqual(Object.keys(body).sort(), ["date", "doneToday", "inbox", "notesToday", "overdue", "timezone", "today", "tomorrow", "upcoming"]);
+  assert.deepEqual(Object.keys(body).sort(), ["date", "doneToday", "inbox", "notesToday", "overdue", "plan", "timezone", "today", "tomorrow", "upcoming"]);
+  assert.deepEqual(body.plan, { today: [], tomorrow: [] });
   assert.match(body.date, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(typeof body.timezone, "string");
   assert.deepEqual(Object.keys(body.doneToday).sort(), ["notes", "tickets"]);
   assert.deepEqual(bodies(body.inbox), ["Unsorted idea"]);
   const noKey = await GET(new Request("http://test.local/api/v1/today"));
   assert.equal(noKey.status, 401);
+});
+
+test("GET /today carries the owner's arrangement of the day", async () => {
+  const first = await (await GET(new Request("http://test.local/api/v1/today", { headers: { authorization: `Bearer ${KEY}` } }))).json();
+  await setDayPlan(ownerId, wsId, first.date, [
+    { id: "t-late", part: "evening" },
+    { id: "t-early", part: "morning" },
+    { id: "t-early", part: "afternoon" },
+  ]);
+  const body = await (await GET(new Request("http://test.local/api/v1/today", { headers: { authorization: `Bearer ${KEY}` } }))).json();
+  assert.deepEqual(body.plan.today, [
+    { id: "t-late", part: "evening" },
+    { id: "t-early", part: "morning" },
+  ]);
+  assert.deepEqual(body.plan.tomorrow, []);
 });

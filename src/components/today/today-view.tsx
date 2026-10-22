@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Check,
+  Clock3,
   ChevronDown,
   ChevronRight,
   CalendarDays,
@@ -58,6 +59,8 @@ import { FocusList } from "./focus-list";
 import { SubtaskList, SubtaskToggle, useCompleteGuard, type CompleteChoice, type SubtaskEdit } from "./subtasks";
 import type { SubtaskItem } from "@/lib/subtask-list";
 import { enqueueSubtaskEdit } from "@/lib/offline/subtask-edits";
+import { DAY_PARTS, DAY_PART_LABEL, moveToPart, nextPlan, partOfDay, type DayPart, type DayPlans, type PlanEntry } from "@/lib/day-plan";
+import { ArrangeList, PART_ICON, SplitToggle, useDaySplit, type ArrangeKey } from "./day-arrange";
 
 const SERVER_SYNC_SNAPSHOT: sync.SyncSnapshot = { status: { online: true, syncing: false, pending: 0, authNeeded: false, baseAt: null, stale: false, syncedAt: 0 }, data: null };
 const getServerSyncSnapshot = () => SERVER_SYNC_SNAPSHOT;
@@ -88,6 +91,8 @@ type Props = {
   tickets: TodayTicket[];
   notes: TodayNote[];
   boards: TodayBoard[];
+  /** How the viewer arranged today and tomorrow. */
+  plans: DayPlans;
   dictationLanguage: string;
   focusId?: string | null;
   compose?: boolean;
@@ -109,7 +114,7 @@ const SECTION_DEFAULT_OPEN: Record<SectionKey, boolean> = {
   done: false,
 };
 
-export function TodayView({ syncScope, tickets: initialTickets, notes: initialNotes, boards: initialBoards, dictationLanguage, focusId, compose, initialNow, userName, meId }: Props) {
+export function TodayView({ syncScope, tickets: initialTickets, notes: initialNotes, boards: initialBoards, plans: initialPlans, dictationLanguage, focusId, compose, initialNow, userName, meId }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = React.useState<Record<SectionKey, boolean>>(SECTION_DEFAULT_OPEN);
@@ -121,15 +126,15 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
   // edits, persisted on this device). The server render seeds it; a render
   // older than what the device holds (served from the offline cache) loses.
   const server = React.useMemo<TodayData>(
-    () => ({ tickets: initialTickets, notes: initialNotes, boards: initialBoards }),
-    [initialTickets, initialNotes, initialBoards],
+    () => ({ tickets: initialTickets, notes: initialNotes, boards: initialBoards, plans: initialPlans }),
+    [initialTickets, initialNotes, initialBoards, initialPlans],
   );
   React.useLayoutEffect(() => {
     sync.ingestServer(syncScope, server, Date.parse(initialNow));
   }, [syncScope, server, initialNow]);
   const snap = React.useSyncExternalStore(sync.subscribe, sync.getSnapshot, getServerSyncSnapshot);
   const data = snap.data ?? server;
-  const { tickets, notes, boards } = data;
+  const { tickets, notes, boards, plans } = data;
 
   // Pull fresh server state once the outbox drains, when the network returns
   // to a stale page, and after a rejected edit. Never while offline: a failed
@@ -167,7 +172,7 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     };
   }, [now]);
 
-  const model = React.useMemo(() => buildToday({ tickets, notes, now, meId }), [tickets, notes, now, meId]);
+  const model = React.useMemo(() => buildToday({ tickets, notes, now, meId, plans }), [tickets, notes, now, meId, plans]);
   const todayYmd = model.todayYmd;
 
   // ── mutations: every edit is a queued op (see lib/offline) ───────────────
@@ -187,6 +192,21 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     });
 
   const editSubtasks = enqueueSubtaskEdit;
+
+  // ── arranging Today and Tomorrow ─────────────────────────────────────────
+  const split = useDaySplit();
+  const nowPart = partOfDay(now);
+
+  /** Store a section's new order (keeping the places of rows not on screen). */
+  function arrange(section: TodaySection, entries: PlanEntry[]) {
+    if (!section.day) return;
+    sync.enqueue({ kind: "dayplan.set", day: section.day, items: nextPlan(entries, plans?.[section.day]) });
+  }
+
+  function setPart(section: TodaySection, item: TaskItem, part: DayPart | null) {
+    const entries = section.items.map((it) => ({ id: it.id, part: it.part ?? null }));
+    arrange(section, moveToPart(entries, item.id, part));
+  }
 
   const guard = useCompleteGuard();
 
@@ -428,6 +448,19 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
             confirmComplete={guard.confirm}
           />
         )}
+        renderDay={(key, renderRow) => {
+          const section = model.sections.find((s) => s.key === key)!;
+          return (
+            <ArrangeList
+              items={section.items}
+              split={split.isSplit(key)}
+              nowPart={key === "today" ? nowPart : null}
+              renderRow={(it) => renderRow(it, false)}
+              onArrange={(entries) => arrange(section, entries)}
+            />
+          );
+        }}
+        splitToggle={(key) => <SplitToggle on={split.isSplit(key)} onClick={() => split.toggle(key)} />}
         composer={(onAdded) => (
           <QuickAdd boards={boards} todayYmd={todayYmd} defaultDay={null} onAdd={quickAdd} onAdded={onAdded} dictationLanguage={dictationLanguage} autoFocus />
         )}
@@ -459,6 +492,17 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
           meId={meId}
           confirmComplete={guard.confirm}
           focusId={focusId}
+          arrange={
+            section.key === "today" || section.key === "tomorrow"
+              ? {
+                  split: split.isSplit(section.key),
+                  onToggleSplit: () => split.toggle(section.key as ArrangeKey),
+                  nowPart: section.key === "today" ? nowPart : null,
+                  onArrange: (entries) => arrange(section, entries),
+                  onPart: (item, part) => setPart(section, item, part),
+                }
+              : undefined
+          }
         />
       ))}
       {model.others.items.length > 0 && (
@@ -699,6 +743,14 @@ const SECTION_TONE: Record<SectionKey, string> = {
   done: "text-success",
 };
 
+type SectionArrange = {
+  split: boolean;
+  onToggleSplit: () => void;
+  nowPart: DayPart | null;
+  onArrange: (entries: PlanEntry[]) => void;
+  onPart: (item: TaskItem, part: DayPart | null) => void;
+};
+
 function Section({
   section,
   open,
@@ -706,6 +758,7 @@ function Section({
   todayYmd,
   boards,
   focusId,
+  arrange,
   ...actions
 }: {
   section: TodaySection;
@@ -714,6 +767,8 @@ function Section({
   todayYmd: string;
   boards: TodayBoard[];
   focusId?: string | null;
+  /** Today and Tomorrow: drag to order, and the optional morning / afternoon / evening split. */
+  arrange?: SectionArrange;
   onToggleDone: (i: TaskItem) => void;
   onReschedule: (i: TaskItem, day: string | null) => void;
   onPriority: (i: TaskItem, p: Priority) => void;
@@ -731,11 +786,12 @@ function Section({
 
   return (
     <section className={cn("rounded-2xl border border-border bg-surface", section.key === "today" && "kb-today")}>
+      <div className="flex items-center gap-1 pe-2">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left cursor-pointer"
+        className="flex min-w-0 flex-1 items-center gap-2 py-3 ps-4 pe-2 text-left cursor-pointer"
       >
         <span className={cn("grid h-5 w-5 place-items-center text-fg-subtle transition-transform", open && "rotate-90")}>
           <ChevronRight className="h-4 w-4" />
@@ -753,13 +809,33 @@ function Section({
           {count}
         </span>
       </button>
+      {arrange && open && count > 0 && <SplitToggle on={arrange.split} onClick={arrange.onToggleSplit} />}
+      </div>
 
       {open && (
         <div className="animate-fade-in px-2 pb-2">
           {isEmptyToday && (
             <p className="px-3 pb-3 text-sm text-fg-subtle">Nothing on today&apos;s list. Add something above, or pull from Inbox.</p>
           )}
-          {section.groups ? (
+          {arrange && count > 0 ? (
+            <ArrangeList
+              items={section.items}
+              split={arrange.split}
+              nowPart={arrange.nowPart}
+              onArrange={arrange.onArrange}
+              renderRow={(it) => (
+                <Row
+                  item={it}
+                  todayYmd={todayYmd}
+                  boards={boards}
+                  showDay={false}
+                  highlight={focusId === it.id}
+                  onPart={arrange.split ? (part) => arrange.onPart(it, part) : undefined}
+                  {...actions}
+                />
+              )}
+            />
+          ) : section.groups ? (
             section.groups.map((g) => (
               <div key={g.day} className="mb-1">
                 <div className="flex items-baseline gap-2 px-3 pt-2 pb-1">
@@ -811,6 +887,7 @@ function Row({
   onEditNote,
   onSubtask,
   onAssign,
+  onPart,
   meId,
   confirmComplete,
 }: {
@@ -818,6 +895,8 @@ function Row({
   todayYmd: string;
   boards: TodayBoard[];
   showDay: boolean;
+  /** Today and Tomorrow, split: move it to a part of the day without dragging. */
+  onPart?: (part: DayPart | null) => void;
   /** Focus: just the task, its board and priority — no columns, labels or counts; a plain task's menu is just Edit and Delete. */
   quiet?: boolean;
   highlight?: boolean;
@@ -947,6 +1026,7 @@ function Row({
         onClick={check}
         aria-label={item.done ? "Mark not done" : "Mark done"}
         data-checked={item.done || phase !== "idle"}
+        data-no-drag
         className="kb-check mt-1 cursor-pointer disabled:opacity-40"
       >
         <Check className="h-3.5 w-3.5" strokeWidth={3} />
@@ -999,11 +1079,13 @@ function Row({
           )}
         </div>
         {(subtasks.length > 0 || addingSub > 0) && (
+          <div data-no-drag>
           <SubtaskList items={subtasks} open={expanded} autoAdd={addingSub} onEdit={(e) => onSubtask(item, e)} readOnly={item.done} />
+          </div>
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-md:opacity-100">
+      <div data-no-drag className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-md:opacity-100">
         <DayPicker value={item.day} todayYmd={todayYmd} onChange={(d) => onReschedule(item, d)} align="end">
           <span className="grid h-7 w-7 place-items-center rounded-md text-fg-subtle hover:bg-surface-3 hover:text-fg cursor-pointer" aria-label="Schedule">
             <CalendarDays className="h-4 w-4" />
@@ -1041,6 +1123,33 @@ function Row({
                 >
                   <ListChecks className="h-4 w-4 text-fg-subtle" /> {subtasks.length ? "Add a subtask" : "Break into subtasks"}
                 </MenuItem>
+              )}
+              {onPart && !item.done && (
+                <>
+                  <div className="px-2.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Time of day</div>
+                  <div className="grid grid-cols-2 gap-1 px-2 pb-1">
+                    {([null, ...DAY_PARTS] as (DayPart | null)[]).map((p) => {
+                      const Icon = p ? PART_ICON[p] : Clock3;
+                      return (
+                        <button
+                          key={p ?? "anytime"}
+                          type="button"
+                          onClick={() => {
+                            onPart(p);
+                            close();
+                          }}
+                          className={cn(
+                            "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[0.8125rem] text-fg-muted hover:bg-surface-2 hover:text-fg cursor-pointer",
+                            (item.part ?? null) === p && "bg-surface-2 text-fg ring-1 ring-border-strong",
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5 shrink-0" />
+                          {p ? DAY_PART_LABEL[p] : "Anytime"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               )}
               {!quiet && (
                 <>

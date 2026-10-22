@@ -13,6 +13,7 @@
 import { toTodayAssignee, type TodayNote, type TodayTicket } from "@/lib/today-model";
 import type { SerializedTicket } from "@/lib/serialize";
 import type { SubtaskItem } from "@/lib/subtask-list";
+import type { DayPlans, PlanEntry } from "@/lib/day-plan";
 
 export type TodayBoardData = {
   id: string;
@@ -24,7 +25,13 @@ export type TodayBoardData = {
   people?: { id: string; name: string; avatarUrl: string | null; avatarColor: string | null }[];
 };
 
-export type TodayData = { tickets: TodayTicket[]; notes: TodayNote[]; boards: TodayBoardData[] };
+export type TodayData = {
+  tickets: TodayTicket[];
+  notes: TodayNote[];
+  boards: TodayBoardData[];
+  /** How the viewer arranged today and tomorrow (absent in copies saved before 0.22). */
+  plans?: DayPlans;
+};
 
 type OpBase = { opId: string; at: string };
 export type TodayOp = OpBase &
@@ -40,6 +47,8 @@ export type TodayOp = OpBase &
     | { kind: "ticket.subtask.create"; ticketId: string; subtask: SubtaskItem }
     | { kind: "ticket.subtask.patch"; ticketId: string; id: string; body: { title?: string; completed?: boolean } }
     | { kind: "ticket.subtask.delete"; ticketId: string; id: string }
+    // A day's order on Today: the whole day each time, so the last write wins.
+    | { kind: "dayplan.set"; day: string; items: PlanEntry[] }
   );
 
 /** Distributes Omit over the op union (plain Omit collapses it). */
@@ -68,6 +77,8 @@ export function opRequest(op: TodayOp): { method: string; path: string; body?: R
       return { method: "PATCH", path: `/api/tickets/${op.ticketId}/subtasks/${op.id}`, body: op.body };
     case "ticket.subtask.delete":
       return { method: "DELETE", path: `/api/tickets/${op.ticketId}/subtasks/${op.id}` };
+    case "dayplan.set":
+      return { method: "PUT", path: `/api/day-plans/${op.day}`, body: { items: op.items } };
   }
 }
 
@@ -97,6 +108,8 @@ export function applyOp(data: TodayData, op: TodayOp): TodayData {
         ...data,
         tickets: data.tickets.map((t) => (t.id === op.ticketId ? { ...t, subtasks: applySubtaskOp(t.subtasks ?? [], op) } : t)),
       };
+    case "dayplan.set":
+      return { ...data, plans: { ...data.plans, [op.day]: op.items } };
   }
 }
 
@@ -132,6 +145,7 @@ export function confirmOp(base: TodayData, op: TodayOp, response: unknown): Toda
     }
     case "note.delete":
     case "ticket.delete":
+    case "dayplan.set":
       return applyOp(base, op);
   }
 }

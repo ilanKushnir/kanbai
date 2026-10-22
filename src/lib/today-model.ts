@@ -16,6 +16,7 @@ import { ymd, addDays, startOfDay, parseYmd } from "./notes-schedule";
 import { PRIORITY_META, type Priority } from "./constants";
 import type { SubtaskItem } from "./subtask-list";
 import type { SerializedAssignee } from "./serialize";
+import { arrangeDay, type DayPart, type DayPlans } from "./day-plan";
 
 export type TodayBoardRef = { id: string; name: string; slug: string; color: string; doneColumnId: string | null };
 
@@ -66,9 +67,10 @@ export type TodayNote = {
   subtasks?: SubtaskItem[];
 };
 
+/** `part`: Today and Tomorrow only — the part of the day it was arranged into. */
 export type TaskItem =
-  | { kind: "ticket"; id: string; title: string; day: string | null; priority: string; done: boolean; ticket: TodayTicket }
-  | { kind: "note"; id: string; title: string; day: string | null; priority: string; done: boolean; note: TodayNote };
+  | { kind: "ticket"; id: string; title: string; day: string | null; priority: string; done: boolean; part?: DayPart | null; ticket: TodayTicket }
+  | { kind: "note"; id: string; title: string; day: string | null; priority: string; done: boolean; part?: DayPart | null; note: TodayNote };
 
 export type SectionKey = "overdue" | "today" | "tomorrow" | "week" | "later" | "inbox" | "done";
 
@@ -81,6 +83,8 @@ export type TodaySection = {
   items: TaskItem[];
   /** "week" only: the same items grouped per day, in order. */
   groups?: DayGroup[];
+  /** Today and Tomorrow: the day they show, which can be arranged by hand (see lib/day-plan). */
+  day?: string;
 };
 
 /** Open tickets that are someone else's, per (primary) assignee. */
@@ -182,7 +186,7 @@ export function dayLabel(day: string, todayYmd: string): { label: string; sublab
   return { label: d.toLocaleDateString(LOCALE, { weekday: "short", month: "short", day: "numeric" }), sublabel: "" };
 }
 
-export function buildToday(input: { tickets: TodayTicket[]; notes: TodayNote[]; now?: Date; meId?: string | null }): TodayModel {
+export function buildToday(input: { tickets: TodayTicket[]; notes: TodayNote[]; now?: Date; meId?: string | null; plans?: DayPlans }): TodayModel {
   const now = input.now ?? new Date();
   const today = ymd(startOfDay(now));
   const tomorrow = ymd(addDays(startOfDay(now), 1));
@@ -225,6 +229,10 @@ export function buildToday(input: { tickets: TodayTicket[]; notes: TodayNote[]; 
   const byOwner = (a: TaskItem, b: TaskItem) => (a.done === b.done ? own(a) - own(b) : 0) || compareItems(a, b);
   for (const list of [done, overdue, todayItems, tomorrowItems, week, later, inbox]) list.sort(byOwner);
   others.sort(compareOthers);
+  // Today and Tomorrow follow the order the person gave them, if any.
+  const arranged = (list: TaskItem[], day: string) => arrangeDay(list, input.plans?.[day]).map(({ item, part }) => ({ ...item, part }));
+  const todayList = arranged(todayItems, today);
+  const tomorrowList = arranged(tomorrowItems, tomorrow);
 
   const groups: DayGroup[] = [];
   for (const it of week) {
@@ -241,8 +249,8 @@ export function buildToday(input: { tickets: TodayTicket[]; notes: TodayNote[]; 
 
   const sections: TodaySection[] = [
     { key: "overdue", label: "Overdue", items: overdue },
-    { key: "today", label: "Today", sublabel: parseYmd(today).toLocaleDateString(LOCALE, { weekday: "long", month: "long", day: "numeric" }), items: todayItems },
-    { key: "tomorrow", label: "Tomorrow", sublabel: parseYmd(tomorrow).toLocaleDateString(LOCALE, { weekday: "long", month: "short", day: "numeric" }), items: tomorrowItems },
+    { key: "today", label: "Today", sublabel: parseYmd(today).toLocaleDateString(LOCALE, { weekday: "long", month: "long", day: "numeric" }), items: todayList, day: today },
+    { key: "tomorrow", label: "Tomorrow", sublabel: parseYmd(tomorrow).toLocaleDateString(LOCALE, { weekday: "long", month: "short", day: "numeric" }), items: tomorrowList, day: tomorrow },
     { key: "week", label: "This week", items: week, groups },
     { key: "later", label: "Later", items: later },
     { key: "inbox", label: "Inbox", sublabel: "No day yet", items: inbox },

@@ -95,7 +95,8 @@ GET /today[?scope=all|mine]       scope: tickets:read
   "upcoming": [Ticket],                    // due in the next 7 days, after tomorrow
   "inbox":    [Note],                      // open, unscheduled notes
   "notesToday": [Note],                    // scheduledDay <= today, not done
-  "doneToday": { "tickets": [Ticket], "notes": [Note] }
+  "doneToday": { "tickets": [Ticket], "notes": [Note] },
+  "plan": { "today": [{ "id", "part" }], "tomorrow": [{ "id", "part" }] }
 }
 ```
 
@@ -105,6 +106,12 @@ Tickets here (and in `GET /tickets`) are the normal ticket object **plus**
 priority. `scope=mine` keeps only tickets assigned to the owner; the default
 `all` is every ticket on the boards you can see. Day boundaries follow the
 workspace timezone, so a ticket due `23:30` Jerusalem time is still "today".
+
+`plan` is how the owner arranged today and tomorrow in the app: ticket and
+task ids in the order they mean to do them, each with a `part` of the day —
+`"morning"`, `"afternoon"`, `"evening"`, or `null` (any time). It is read-only
+and personal; ids it doesn't list haven't been placed yet (show those first),
+and an empty list means they haven't arranged that day.
 
 ## 3. Simple tasks (`/tasks`)
 
@@ -479,6 +486,10 @@ Rules:
 
 - **Order:** header → ⚠️ Overdue (only if any) → 📋 Today → 🗓️ Calendar (only
   if they opted in) → 🎯 one suggested first step. Leave out empty sections.
+- **Their own order wins:** if `plan.today` lists items, keep 📋 Today in that
+  order (unplaced items first). If any have a `part`, put a short label line
+  before each part that has items — `🌅 Morning`, `☀️ Afternoon`, `🌙 Evening` —
+  and let 🎯 point at the first open item of the part that's now.
 - **Header:** a weather-of-the-day emoji + weekday and date in their language +
   how many open items. ☀️ a normal day · 🔥 a heavy one (10+ items or 3+
   overdue) · 🌿 a light one (1–2) · 🌴 nothing to do · 🎉 Friday/weekend tone

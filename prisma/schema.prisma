@@ -17,22 +17,23 @@ model User {
   email        String   @unique
   name         String
   avatarUrl    String?
-  avatarColor  String?  // curated hex for the initials avatar (see lib/avatar-colors); null = brand default
+  avatarColor  String? // curated hex for the initials avatar (see lib/avatar-colors); null = brand default
   passwordHash String?
   systemRole   String   @default("user") // "user" | "admin" (instance-wide super admin)
   status       String   @default("active") // "active" | "disabled"
-  settings     String?  // JSON blob of personal preferences (defaultLanding, etc.)
+  settings     String? // JSON blob of personal preferences (defaultLanding, etc.)
   createdAt    DateTime @default(now())
 
-  workspaces     WorkspaceMember[]
-  notes          Note[]
-  createdTickets Ticket[]          @relation("TicketCreator")
+  workspaces        WorkspaceMember[]
+  notes             Note[]
+  createdTickets    Ticket[]          @relation("TicketCreator")
   ticketAssignments TicketAssignee[]
-  sessions       Session[]
-  boardAccess    BoardAccess[]
-  sentInvites    Invite[]          @relation("InviteSender")
-  ownedWorkspaces Workspace[]      @relation("WorkspaceOwner")
-  ownedAgents    Agent[]           @relation("AgentOwner")
+  sessions          Session[]
+  boardAccess       BoardAccess[]
+  sentInvites       Invite[]          @relation("InviteSender")
+  ownedWorkspaces   Workspace[]       @relation("WorkspaceOwner")
+  ownedAgents       Agent[]           @relation("AgentOwner")
+  dayPlans          DayPlan[]
 }
 
 model Session {
@@ -54,18 +55,19 @@ model Workspace {
   createdAt DateTime @default(now())
 
   // Settings
-  snapshotLimit  Int     @default(20) // how many board snapshots to retain
+  snapshotLimit Int @default(20) // how many board snapshots to retain
 
   // Snapshot session state: true once a pre-agent snapshot has been taken for the
   // current run of agentic changes; reset to false by the next manual user action.
   agentSessionActive Boolean @default(false)
 
-  owner   User? @relation("WorkspaceOwner", fields: [ownerId], references: [id])
-  members WorkspaceMember[]
-  boards  Board[]
-  agents  Agent[]
-  invites Invite[]
+  owner     User?             @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members   WorkspaceMember[]
+  boards    Board[]
+  agents    Agent[]
+  invites   Invite[]
   snapshots Snapshot[]
+  dayPlans  DayPlan[]
 }
 
 /// A point-in-time capture of all board state in a workspace, used to undo
@@ -77,7 +79,7 @@ model Snapshot {
   reason      String   @default("") // human label, e.g. "Before Hermes session"
   agentId     String?
   agentName   String?
-  payload     String   // JSON board-state capture (boards → columns/tickets/labels/comments)
+  payload     String // JSON board-state capture (boards → columns/tickets/labels/comments)
   boardCount  Int      @default(0)
   ticketCount Int      @default(0)
   createdAt   DateTime @default(now())
@@ -102,20 +104,20 @@ model BoardAccess {
 
 /// An invitation: either to join a workspace, or to create a brand-new account.
 model Invite {
-  id          String   @id @default(cuid())
-  token       String   @unique
-  email       String?
+  id           String   @id @default(cuid())
+  token        String   @unique
+  email        String?
   // "workspace" = owner/admin invites an EXISTING account into a workspace;
   // "account"   = SYSTEM-LEVEL invite (system admin only) that registers a new account.
-  kind        String   @default("workspace") // "workspace" | "account"
-  role        String   @default("member") // workspace role to grant: admin | member
-  workspaceId String?
-  boardAccess String? // JSON: [{ boardId, level }] presets for new members
-  invitedById String
-  status      String   @default("pending") // pending | accepted | revoked
+  kind         String   @default("workspace") // "workspace" | "account"
+  role         String   @default("member") // workspace role to grant: admin | member
+  workspaceId  String?
+  boardAccess  String? // JSON: [{ boardId, level }] presets for new members
+  invitedById  String
+  status       String   @default("pending") // pending | accepted | revoked
   acceptedById String?
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
 
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   invitedBy User       @relation("InviteSender", fields: [invitedById], references: [id])
@@ -124,10 +126,10 @@ model Invite {
 }
 
 model WorkspaceMember {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
   userId      String
-  role        String   @default("owner") // owner | admin | member
+  role        String    @default("owner") // owner | admin | member
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -149,7 +151,7 @@ model Board {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   columns   Column[]
   tickets   Ticket[]
   labels    Label[]
@@ -160,13 +162,13 @@ model Board {
 }
 
 model Column {
-  id       String  @id @default(cuid())
-  boardId  String
-  name     String
-  position Int     @default(0)
-  wipLimit Int?
-  isDone   Boolean @default(false) // tickets here count as completed
-  stage    String? // semantic stage: intake | backlog | active | done; null = derived from name/isDone
+  id        String  @id @default(cuid())
+  boardId   String
+  name      String
+  position  Int     @default(0)
+  wipLimit  Int?
+  isDone    Boolean @default(false) // tickets here count as completed
+  stage     String? // semantic stage: intake | backlog | active | done; null = derived from name/isDone
   subStates String? // JSON array of sub-state names, e.g. ["In progress","Blocked"]
 
   board   Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
@@ -174,21 +176,21 @@ model Column {
 }
 
 model Ticket {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   boardId     String
   columnId    String
   number      Int? // per-board sequential reference (#12)
   title       String
-  description String   @default("")
-  position    Int      @default(0)
-  priority    String   @default("medium") // none | low | medium | high | urgent
-  subState    String?  // sub-state within its column (when the column defines sub-states)
+  description String    @default("")
+  position    Int       @default(0)
+  priority    String    @default("medium") // none | low | medium | high | urgent
+  subState    String? // sub-state within its column (when the column defines sub-states)
   dueDate     DateTime?
   completedAt DateTime? // set when the ticket enters a done column; cleared on the way out
   deletedAt   DateTime? // soft-delete; restorable for 30 days, then purged
 
   // Assignee can be a human user or an AI agent (or unassigned)
-  assigneeType String? // "user" | "agent"
+  assigneeType    String? // "user" | "agent"
   assigneeUserId  String?
   assigneeAgentId String?
 
@@ -201,14 +203,14 @@ model Ticket {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  board    Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  column   Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  agent    Agent?       @relation(fields: [assigneeAgentId], references: [id])
-  assignees TicketAssignee[]
-  labels   TicketLabel[]
-  comments Comment[]
-  subtasks Subtask[]
-  sourceNote Note?      @relation("NoteToTicket", fields: [sourceNoteId], references: [id])
+  board      Board            @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  column     Column           @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  agent      Agent?           @relation(fields: [assigneeAgentId], references: [id])
+  assignees  TicketAssignee[]
+  labels     TicketLabel[]
+  comments   Comment[]
+  subtasks   Subtask[]
+  sourceNote Note?            @relation("NoteToTicket", fields: [sourceNoteId], references: [id])
 
   @@unique([boardId, number])
   @@index([boardId])
@@ -232,11 +234,11 @@ model TicketAssignee {
 }
 
 model Label {
-  id      String @id @default(cuid())
+  id      String        @id @default(cuid())
   boardId String
   name    String
-  color   String @default("slate")
-  board   Board       @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  color   String        @default("slate")
+  board   Board         @relation(fields: [boardId], references: [id], onDelete: Cascade)
   tickets TicketLabel[]
 }
 
@@ -257,7 +259,7 @@ model Subtask {
   completed     Boolean  @default(false)
   position      Int      @default(0)
   createdByType String   @default("user") // "user" | "agent"
-  createdById   String?  // user/agent id (no FK — mirrors Comment.authorId)
+  createdById   String? // user/agent id (no FK — mirrors Comment.authorId)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -280,52 +282,70 @@ model Comment {
 
 /// A fast-capture "scrap" from the mobile notes surface.
 model Note {
-  id        String   @id @default(cuid())
-  userId    String
-  body      String
-  status    String   @default("inbox") // inbox | sorted (promoted to a ticket) | archived
-  pinned    Boolean  @default(false)
-  bucket    String   @default("today") // coarse, derived cache: today | tomorrow | next_week | next_month | general
+  id           String    @id @default(cuid())
+  userId       String
+  body         String
+  status       String    @default("inbox") // inbox | sorted (promoted to a ticket) | archived
+  pinned       Boolean   @default(false)
+  bucket       String    @default("today") // coarse, derived cache: today | tomorrow | next_week | next_month | general
   scheduledDay String? // local "YYYY-MM-DD" the note is slated for; null = General/someday
   doneOn       String? // local "YYYY-MM-DD" the note was completed; null = not done
   deletedAt    DateTime? // soft-delete; restorable for 30 days, then purged
-  position  Int      @default(0)
-  priority  String   @default("none") // none | low | medium | high | urgent
+  position     Int       @default(0)
+  priority     String    @default("none") // none | low | medium | high | urgent
   /// A simple task's checklist: JSON [{ id, title, completed }] (see lib/subtask-list).
-  subtasks  String   @default("[]")
+  subtasks     String    @default("[]")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   attachments Attachment[]
-  ticket      Ticket?     @relation("NoteToTicket")
+  ticket      Ticket?      @relation("NoteToTicket")
 
   @@index([userId, status])
   @@index([deletedAt])
 }
 
+/// How a person arranged one day on Today: the order of its tasks and tickets,
+/// and which part of the day each one is for. Personal — a shared ticket can
+/// sit in your morning and someone else's evening.
+model DayPlan {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  day         String // local "YYYY-MM-DD"
+  /// JSON [{ id, part }] in display order; part = morning | afternoon | evening | null (see lib/day-plan).
+  items       String   @default("[]")
+  updatedAt   DateTime @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId, day])
+}
+
 model Attachment {
-  id        String   @id @default(cuid())
-  noteId    String
-  kind      String   @default("audio") // audio | image | file
-  mimeType  String
-  filename  String?
-  dataUrl   String   // base64 data URL (small memos only); swap for object storage in prod
+  id         String   @id @default(cuid())
+  noteId     String
+  kind       String   @default("audio") // audio | image | file
+  mimeType   String
+  filename   String?
+  dataUrl    String // base64 data URL (small memos only); swap for object storage in prod
   durationMs Int?
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
 }
 
 /// A connected AI agent (Hermes, Open Claw, Claude Code, Codex, custom).
 model Agent {
-  id          String   @id @default(cuid())
+  id          String @id @default(cuid())
   workspaceId String
   name        String
-  kind        String   @default("custom") // hermes | openclaw | claudecode | codex | custom
-  color       String   @default("iris")
-  status      String   @default("active") // active | disabled
+  kind        String @default("custom") // hermes | openclaw | claudecode | codex | custom
+  color       String @default("iris")
+  status      String @default("active") // active | disabled
 
   // Optional owning user. When set, the agent's board/ticket access is capped
   // to what this user can see (managers see all; members need BoardAccess).
@@ -334,8 +354,8 @@ model Agent {
 
   // API key (for the agent → KanbAi). Only the hash is stored. Agents talk to
   // KanbAi over the REST API only — there are no outbound callbacks.
-  apiKeyHash   String?  @unique
-  apiKeyPrefix String?  // e.g. "kbai_live_a1b2" for display
+  apiKeyHash   String? @unique
+  apiKeyPrefix String? // e.g. "kbai_live_a1b2" for display
   apiKeyLast4  String?
 
   // One-time connect code (the agent brief carries it instead of the key).
@@ -345,9 +365,9 @@ model Agent {
   connectCodeExpiresAt DateTime?
   connectRedeemedAt    DateTime?
 
-  scopes    String   @default("boards:read,boards:write,tickets:read,tickets:write,notes:read,notes:write")
+  scopes     String    @default("boards:read,boards:write,tickets:read,tickets:write,notes:read,notes:write")
   lastSeenAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   ownerUser User?     @relation("AgentOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
@@ -358,11 +378,11 @@ model ActivityLog {
   id        String   @id @default(cuid())
   boardId   String?
   ticketId  String?
-  actorType String   // "user" | "agent" | "system"
+  actorType String // "user" | "agent" | "system"
   actorId   String?
   actorName String
-  action    String   // "ticket.created", "ticket.moved", ...
-  meta      String?  // JSON
+  action    String // "ticket.created", "ticket.moved", ...
+  meta      String? // JSON
   createdAt DateTime @default(now())
 
   board Board? @relation(fields: [boardId], references: [id], onDelete: Cascade)

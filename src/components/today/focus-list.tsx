@@ -20,6 +20,8 @@ export function FocusList({
   now,
   name,
   renderRow,
+  renderDay,
+  splitToggle,
   composer,
   after,
 }: {
@@ -27,6 +29,10 @@ export function FocusList({
   now: Date;
   name?: string | null;
   renderRow: (item: TaskItem, showDay: boolean) => React.ReactNode;
+  /** Today and Tomorrow, arrangeable by hand (see day-arrange). Falls back to plain rows. */
+  renderDay?: (key: "today" | "tomorrow", renderRow: (item: TaskItem, showDay: boolean) => React.ReactNode) => React.ReactNode;
+  /** The morning / afternoon / evening switch for a day's header. */
+  splitToggle?: (key: "today" | "tomorrow") => React.ReactNode;
   /** The add box; `onAdded` reports each task it adds. */
   composer: (onAdded: (title: string, day: string | null) => void) => React.ReactNode;
   /** Dialogs the rows need (e.g. the open-subtasks question). */
@@ -111,7 +117,7 @@ export function FocusList({
 
         {/* Today — the one card. */}
         <section className="kb-focus-today rounded-[1.5rem] border border-border bg-surface px-2 pt-3 pb-2">
-          <BlockHead label="Today" count={today.length} />
+          <BlockHead label="Today" count={today.length} action={today.length > 0 && splitToggle?.("today")} />
           {today.length === 0 ? (
             <div className="flex items-center gap-3 px-3 pt-1 pb-4 text-sm text-fg-muted">
               <span className="grid h-8 w-8 place-items-center rounded-full bg-success-soft text-success">
@@ -120,17 +126,17 @@ export function FocusList({
               {doneCount ? "That's everything for today." : "A free day. Tomorrow is below."}
             </div>
           ) : (
-            today.map((it) => <React.Fragment key={it.id}>{renderRow(it, false)}</React.Fragment>)
+            renderDay ? renderDay("today", renderRow) : today.map((it) => <React.Fragment key={it.id}>{renderRow(it, false)}</React.Fragment>)
           )}
         </section>
 
         {/* Tomorrow — quieter, outside the card. */}
         <section className="mt-6 px-2">
-          <BlockHead label="Tomorrow" sub={tomorrowDate.toLocaleDateString(LOCALE, { weekday: "long" })} count={tomorrow.items.length} />
+          <BlockHead label="Tomorrow" sub={tomorrowDate.toLocaleDateString(LOCALE, { weekday: "long" })} count={tomorrow.items.length} action={tomorrow.items.length > 0 && splitToggle?.("tomorrow")} />
           {tomorrow.items.length === 0 ? (
             <p className="px-3 pb-2 text-sm text-fg-subtle">Nothing yet.</p>
           ) : (
-            tomorrow.items.map((it) => <React.Fragment key={it.id}>{renderRow(it, false)}</React.Fragment>)
+            renderDay ? renderDay("tomorrow", renderRow) : tomorrow.items.map((it) => <React.Fragment key={it.id}>{renderRow(it, false)}</React.Fragment>)
           )}
         </section>
 
@@ -269,12 +275,13 @@ function whereLabel(day: string | null, todayYmd: string) {
   return parseYmd(day).toLocaleDateString(LOCALE, { weekday: "short", month: "short", day: "numeric" });
 }
 
-function BlockHead({ label, sub, count, onCollapse }: { label: string; sub?: string; count: number; onCollapse?: () => void }) {
+function BlockHead({ label, sub, count, onCollapse, action }: { label: string; sub?: string; count: number; onCollapse?: () => void; action?: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-2 px-3 pb-1.5">
       <h2 className="font-display text-[1.3rem] font-medium leading-none">{label}</h2>
       {sub && <span className="text-xs text-fg-subtle">{sub}</span>}
       <span className="ml-auto text-xs tabular-nums text-fg-subtle">{count || ""}</span>
+      {action && <span className="self-center">{action}</span>}
       {onCollapse && (
         <button type="button" onClick={onCollapse} aria-label={`Hide ${label.toLowerCase()}`} className="grid h-6 w-6 place-items-center self-center rounded-md text-fg-subtle hover:bg-surface-2 hover:text-fg cursor-pointer">
           <ChevronDown className="h-4 w-4 rotate-180" />

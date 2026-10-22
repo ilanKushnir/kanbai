@@ -10,6 +10,14 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.22.0",
+    date: "2026-10-23",
+    items: [
+      { emoji: "↕️", title: "Put your day in order", body: "Drag tasks in Today and Tomorrow into the order you'll do them — on a phone, hold a task for a moment, then drag. Your order is saved and syncs across your devices." },
+      { emoji: "🌗", title: "Morning, afternoon, evening", body: "The sun-and-moon button on Today and Tomorrow splits the day into Morning, Afternoon and Evening. Drag a task under the part you'll do it in, or pick one from its ⋯ menu. Turn the split off and the order stays." },
+    ],
+  },
+  {
     version: "0.21.2",
     date: "2026-10-22",
     items: [

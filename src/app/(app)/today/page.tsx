@@ -8,9 +8,10 @@ import { boardWhereForContext } from "@/lib/authz";
 import { type UserLite } from "@/lib/serialize";
 import { isTaskNote, loadTicketModal, ticketRowInclude, toNoteRow, toTicketRow } from "@/lib/services/task-rows";
 import { listNotesForUser } from "@/lib/services/notes";
+import { getDayPlans } from "@/lib/services/day-plans";
 import { listActivity, TASK_ACTIONS } from "@/lib/services/activity-feed";
 import { parseUserSettings } from "@/lib/user-settings";
-import { startOfDay } from "@/lib/notes-schedule";
+import { addDays, startOfDay, ymd } from "@/lib/notes-schedule";
 import { greetingFor, summaryLine, buildToday } from "@/lib/today-model";
 import { TodayHero } from "@/components/today/today-hero";
 import { TodayView, type TodayBoard } from "@/components/today/today-view";
@@ -33,7 +34,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   // Board-scoped feed rows are capped to the boards this user can see.
   const visibleBoardIds = ctx.isManager ? null : (await db.board.findMany({ where: boardWhere, select: { id: true } })).map((b) => b.id);
 
-  const [members, boardRows, grants, openTickets, doneTodayTickets, notes, agents, changes] = await Promise.all([
+  const [members, boardRows, grants, openTickets, doneTodayTickets, notes, agents, changes, plans] = await Promise.all([
     db.workspaceMember.findMany({ where: { workspaceId: ctx.workspace.id }, include: { user: true } }),
     db.board.findMany({
       where: boardWhere,
@@ -68,6 +69,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
       orderBy: { createdAt: "asc" },
     }),
     listActivity({ workspaceId: ctx.workspace.id, limit: 60, actions: TASK_ACTIONS, boardIds: visibleBoardIds, noteUserId: ctx.user.id }).catch(() => []),
+    // How the viewer arranged today and tomorrow.
+    getDayPlans(ctx.user.id, ctx.workspace.id, [ymd(startToday), ymd(addDays(startToday, 1))]),
   ]);
 
   const usersById = new Map<string, UserLite>(
@@ -94,7 +97,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const todayNotes = notes.filter(isTaskNote).map(toNoteRow);
 
   const now = new Date();
-  const model = buildToday({ tickets, notes: todayNotes, now, meId: ctx.user.id });
+  const model = buildToday({ tickets, notes: todayNotes, now, meId: ctx.user.id, plans });
   const { greeting, period } = greetingFor(now, ctx.user.name);
   const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
@@ -148,7 +151,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <TodayFrame hero={<TodayHero name={ctx.user.name} meId={ctx.user.id} period={period} greeting={greeting} dateLabel={dateLabel} summary={summaryLine(model.counts)} />} aside={aside}>
-        <TodayView syncScope={`${ctx.user.id}:${ctx.workspace.id}`} tickets={tickets} notes={todayNotes} boards={boards} dictationLanguage={dictationLanguage} focusId={sp.focus ?? null} compose={sp.compose === "1"} initialNow={now.toISOString()} userName={ctx.user.name} meId={ctx.user.id} />
+        <TodayView syncScope={`${ctx.user.id}:${ctx.workspace.id}`} tickets={tickets} notes={todayNotes} boards={boards} plans={plans} dictationLanguage={dictationLanguage} focusId={sp.focus ?? null} compose={sp.compose === "1"} initialNow={now.toISOString()} userName={ctx.user.name} meId={ctx.user.id} />
       </TodayFrame>
 
       {modal && (
