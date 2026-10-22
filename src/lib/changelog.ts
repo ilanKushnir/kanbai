@@ -10,6 +10,13 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.21.1",
+    date: "2026-10-22",
+    items: [
+      { emoji: "🗑️", title: "Delete tasks in Focus", body: "Your own tasks now have a ⋯ menu in Focus with Edit and Delete. Board tickets are deleted from inside the ticket, so their row menu no longer has Delete." },
+    ],
+  },
+  {
     version: "0.21.0",
     date: "2026-10-19",
     items: [

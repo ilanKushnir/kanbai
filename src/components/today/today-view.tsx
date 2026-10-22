@@ -291,8 +291,9 @@ export function TodayView({ syncScope, tickets: initialTickets, notes: initialNo
     });
   }
 
-  function remove(item: TaskItem) {
-    sync.enqueue(item.kind === "note" ? { kind: "note.delete", id: item.id } : { kind: "ticket.delete", id: item.id });
+  // Only plain tasks are deleted from a row; a ticket is deleted from inside it.
+  function remove(n: TodayNote) {
+    sync.enqueue({ kind: "note.delete", id: n.id });
     toast({ title: "Deleted", description: "Restorable from Settings → Recently deleted for 30 days." });
   }
 
@@ -716,7 +717,7 @@ function Section({
   onToggleDone: (i: TaskItem) => void;
   onReschedule: (i: TaskItem, day: string | null) => void;
   onPriority: (i: TaskItem, p: Priority) => void;
-  onDelete: (i: TaskItem) => void;
+  onDelete: (n: TodayNote) => void;
   onMoveToBoard: (n: TodayNote, b: TodayBoard) => void;
   onEditNote: (n: TodayNote, body: string) => void;
   onSubtask: (i: TaskItem, e: SubtaskEdit) => void;
@@ -817,13 +818,13 @@ function Row({
   todayYmd: string;
   boards: TodayBoard[];
   showDay: boolean;
-  /** Focus: just the task, its board and priority — no columns, labels, counts or menu. */
+  /** Focus: just the task, its board and priority — no columns, labels or counts; a plain task's menu is just Edit and Delete. */
   quiet?: boolean;
   highlight?: boolean;
   onToggleDone: (i: TaskItem, opts?: { completeSubtasks?: boolean }) => void;
   onReschedule: (i: TaskItem, day: string | null) => void;
   onPriority: (i: TaskItem, p: Priority) => void;
-  onDelete: (i: TaskItem) => void;
+  onDelete: (n: TodayNote) => void;
   onMoveToBoard: (n: TodayNote, b: TodayBoard) => void;
   onEditNote: (n: TodayNote, body: string) => void;
   onSubtask: (i: TaskItem, e: SubtaskEdit) => void;
@@ -1008,7 +1009,7 @@ function Row({
             <CalendarDays className="h-4 w-4" />
           </span>
         </DayPicker>
-        {!quiet && <Menu
+        {(!quiet || note) && <Menu
           align="end"
           contentClassName="w-52"
           trigger={
@@ -1030,7 +1031,7 @@ function Row({
                   <Pencil className="h-4 w-4 text-fg-subtle" /> Edit
                 </MenuItem>
               )}
-              {!item.done && (
+              {!quiet && !item.done && (
                 <MenuItem
                   onClick={() => {
                     setExpanded(true);
@@ -1041,81 +1042,89 @@ function Row({
                   <ListChecks className="h-4 w-4 text-fg-subtle" /> {subtasks.length ? "Add a subtask" : "Break into subtasks"}
                 </MenuItem>
               )}
-              {ticket && (
-                <MenuItem onClick={close}>
-                  <Link href={`/boards/${ticket.board.slug}?ticket=${ticket.id}`} className="flex flex-1 items-center gap-2">
-                    <ArrowUpRight className="h-4 w-4 text-fg-subtle" /> Open on board
-                  </Link>
-                </MenuItem>
-              )}
-              {canAssign && ownership !== "mine" && (
-                <MenuItem
-                  onClick={() => {
-                    onAssign!(item, [meId!]);
-                    close();
-                  }}
-                >
-                  <UserRoundCheck className="h-4 w-4 text-fg-subtle" /> Take it
-                </MenuItem>
-              )}
-              {canAssign && (board?.people?.length ?? 0) > 1 && (
+              {!quiet && (
                 <>
-                  <div className="px-2.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Assign to</div>
-                  <div className="max-h-44 overflow-y-auto">
-                    <PeopleOptions ticket={ticket!} people={board?.people} meId={meId!} onAssign={(ids) => onAssign!(item, ids)} close={close} skipMe />
-                  </div>
-                </>
-              )}
-              <div className="px-2.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Priority</div>
-              <div className="flex items-center gap-1 px-2 pb-1">
-                {PRIORITIES.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    title={PRIORITY_META[p].label}
-                    onClick={() => {
-                      onPriority(item, p);
-                      close();
-                    }}
-                    className={cn(
-                      "grid h-7 w-7 place-items-center rounded-md hover:bg-surface-2 cursor-pointer",
-                      item.priority === p && "bg-surface-2 ring-1 ring-border-strong",
-                    )}
-                  >
-                    <Flag className="h-3.5 w-3.5" style={{ color: PRIORITY_META[p].color }} />
-                  </button>
-                ))}
-              </div>
-              {note && boards.length > 0 && (
-                <>
-                  <div className="px-2.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Move to board</div>
-                  <div className="max-h-44 overflow-y-auto">
-                    {boards.map((b) => (
-                      <MenuItem
-                        key={b.id}
+                  {ticket && (
+                    <MenuItem onClick={close}>
+                      <Link href={`/boards/${ticket.board.slug}?ticket=${ticket.id}`} className="flex flex-1 items-center gap-2">
+                        <ArrowUpRight className="h-4 w-4 text-fg-subtle" /> Open on board
+                      </Link>
+                    </MenuItem>
+                  )}
+                  {canAssign && ownership !== "mine" && (
+                    <MenuItem
+                      onClick={() => {
+                        onAssign!(item, [meId!]);
+                        close();
+                      }}
+                    >
+                      <UserRoundCheck className="h-4 w-4 text-fg-subtle" /> Take it
+                    </MenuItem>
+                  )}
+                  {canAssign && (board?.people?.length ?? 0) > 1 && (
+                    <>
+                      <div className="px-2.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Assign to</div>
+                      <div className="max-h-44 overflow-y-auto">
+                        <PeopleOptions ticket={ticket!} people={board?.people} meId={meId!} onAssign={(ids) => onAssign!(item, ids)} close={close} skipMe />
+                      </div>
+                    </>
+                  )}
+                  <div className="px-2.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Priority</div>
+                  <div className="flex items-center gap-1 px-2 pb-1">
+                    {PRIORITIES.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        title={PRIORITY_META[p].label}
                         onClick={() => {
-                          onMoveToBoard(note, b);
+                          onPriority(item, p);
                           close();
                         }}
+                        className={cn(
+                          "grid h-7 w-7 place-items-center rounded-md hover:bg-surface-2 cursor-pointer",
+                          item.priority === p && "bg-surface-2 ring-1 ring-border-strong",
+                        )}
                       >
-                        <FolderInput className="h-4 w-4 text-fg-subtle" />
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(b.color).dot }} />
-                        <span className="truncate" dir="auto">{b.name}</span>
-                      </MenuItem>
+                        <Flag className="h-3.5 w-3.5" style={{ color: PRIORITY_META[p].color }} />
+                      </button>
                     ))}
                   </div>
+                  {note && boards.length > 0 && (
+                    <>
+                      <div className="px-2.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-subtle">Move to board</div>
+                      <div className="max-h-44 overflow-y-auto">
+                        {boards.map((b) => (
+                          <MenuItem
+                            key={b.id}
+                            onClick={() => {
+                              onMoveToBoard(note, b);
+                              close();
+                            }}
+                          >
+                            <FolderInput className="h-4 w-4 text-fg-subtle" />
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone(b.color).dot }} />
+                            <span className="truncate" dir="auto">{b.name}</span>
+                          </MenuItem>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
-              <div className="my-1 h-px bg-border" />
-              <MenuItem
-                className="text-danger hover:bg-danger-soft"
-                onClick={() => {
-                  onDelete(item);
-                  close();
-                }}
-              >
-                <Trash2 className="h-4 w-4" /> Delete
-              </MenuItem>
+              {note && (
+                <>
+                  <div className="my-1 h-px bg-border" />
+                  <MenuItem
+                    className="text-danger hover:bg-danger-soft"
+                    onClick={() => {
+                      onDelete(note);
+                      close();
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" /> Delete
+                  </MenuItem>
+                </>
+              )}
             </>
           )}
         </Menu>}
@@ -1230,7 +1239,7 @@ function OthersShelf({
   onToggleDone: (i: TaskItem) => void;
   onReschedule: (i: TaskItem, day: string | null) => void;
   onPriority: (i: TaskItem, p: Priority) => void;
-  onDelete: (i: TaskItem) => void;
+  onDelete: (n: TodayNote) => void;
   onMoveToBoard: (n: TodayNote, b: TodayBoard) => void;
   onEditNote: (n: TodayNote, body: string) => void;
   onSubtask: (i: TaskItem, e: SubtaskEdit) => void;
