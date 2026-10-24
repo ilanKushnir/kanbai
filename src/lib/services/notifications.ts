@@ -26,15 +26,18 @@ const RECENT_LIMIT = 30;
  * person who did it — and except the owner of the agent that did it, since
  * their own agent filing work for them isn't news from outside.
  */
-export async function assignmentRecipients(added: string[], actor: Actor): Promise<string[]> {
-  if (!added.length || actor.type === "system") return [];
+export async function assignmentRecipients(added: string[], actor: Actor): Promise<{ recipients: string[]; actorName: string }> {
+  if (!added.length || actor.type === "system") return { recipients: [], actorName: actor.name };
   let skip: string | null = null;
+  let actorName = actor.name;
   if (actor.type === "user") skip = actor.id ?? null;
   else if (actor.id) {
-    const agent = await db.agent.findUnique({ where: { id: actor.id }, select: { ownerUserId: true } });
+    const agent = await db.agent.findUnique({ where: { id: actor.id }, select: { ownerUserId: true, ownerUser: { select: { name: true } } } });
     skip = agent?.ownerUserId ?? null;
+    // Name whose agent it is: "Mika · Yuval".
+    if (agent?.ownerUser) actorName = `${actor.name} · ${agent.ownerUser.name}`;
   }
-  return [...new Set(added)].filter((id) => id !== skip);
+  return { recipients: [...new Set(added)].filter((id) => id !== skip), actorName };
 }
 
 /**
@@ -48,7 +51,7 @@ export async function notifyAssigned(input: {
   actor: Actor;
 }): Promise<void> {
   try {
-    const recipients = await assignmentRecipients(input.added, input.actor);
+    const { recipients, actorName } = await assignmentRecipients(input.added, input.actor);
     if (!recipients.length) return;
     // Re-assigning someone who hasn't seen the first one yet: keep a single entry.
     await db.notification.deleteMany({
@@ -61,7 +64,7 @@ export async function notifyAssigned(input: {
         kind: "assigned",
         ticketId: input.ticketId,
         actorType: input.actor.type === "agent" ? "agent" : "user",
-        actorName: input.actor.name,
+        actorName,
       })),
     });
   } catch (e) {

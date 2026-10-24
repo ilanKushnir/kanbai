@@ -1,7 +1,7 @@
 import { Prisma } from "@/generated/prisma";
 import { handler, ok, created, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { agentBoardWhere, assertAgentBoardAccess } from "@/lib/access";
+import { agentBoardWhere, agentWorkspaceIds, assertAgentBoardAccess, boardWorkspaceId } from "@/lib/access";
 import { parse, readJson } from "@/lib/parse";
 import { createTicketV1Schema, listTicketsQuerySchema } from "@/lib/validation";
 import { createTicket } from "@/lib/services/tickets";
@@ -88,7 +88,7 @@ export const GET = handler(async (req: Request) => {
     orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
     take: needle ? Math.max(q.limit * 5, 1000) : q.limit,
   });
-  const usersById = await workspaceUsersById(agent.workspaceId);
+  const usersById = await workspaceUsersById(await agentWorkspaceIds(agent));
   const tickets = rows
     .filter((t) => !needle || t.title.toLowerCase().includes(needle))
     .map((t) => toAgendaTicket(t, usersById))
@@ -102,25 +102,31 @@ export const POST = handler(async (req: Request) => {
   requireScope(agent, "tickets:write");
   const input = parse(createTicketV1Schema, await readJson(req));
   await assertAgentBoardAccess(agent, input.boardId);
+  // The board may be one shared with the agent's owner from another workspace.
+  const workspaceId = await boardWorkspaceId(input.boardId);
   // Snapshot before ANY write this session — including the label find-or-create
   // inside createTicket — so a restore can fully undo agent-created labels too.
-  await guardAgentSnapshot(agent.workspaceId, { id: agent.id, name: agent.name });
+  await guardAgentSnapshot(workspaceId, { id: agent.id, name: agent.name });
 
   // Assignee: agent, or a human by user id / workspace email (migration).
   // A human assignee must be an assignable board member — createTicket's
   // resolveAssignee rejects outsiders and members the board isn't shared with.
   let assigneeType: "user" | "agent" | null = null;
   let assigneeUserId: string | null = null;
+  let assigneeUserIds: string[] | null = null;
   let assigneeAgentId: string | null = null;
   if (input.assigneeAgentId) {
     assigneeType = "agent";
     assigneeAgentId = input.assigneeAgentId;
+  } else if (input.assigneeUserIds?.length) {
+    assigneeType = "user";
+    assigneeUserIds = input.assigneeUserIds;
   } else if (input.assigneeUserId) {
     assigneeType = "user";
     assigneeUserId = input.assigneeUserId;
   } else if (input.assigneeEmail) {
     const member = await db.workspaceMember.findFirst({
-      where: { workspaceId: agent.workspaceId, user: { email: input.assigneeEmail.toLowerCase() } },
+      where: { workspaceId, user: { email: input.assigneeEmail.toLowerCase() } },
       select: { userId: true },
     });
     if (!member) {
@@ -149,6 +155,7 @@ export const POST = handler(async (req: Request) => {
       subtasks: [...lifted.items, ...(input.subtasks ?? [])],
       assigneeType,
       assigneeUserId,
+      assigneeUserIds,
       assigneeAgentId,
       number: input.number,
       createdAt: input.createdAt ?? null,

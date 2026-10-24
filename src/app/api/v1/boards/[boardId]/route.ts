@@ -1,6 +1,7 @@
-import { handler, ok } from "@/lib/api";
+import { handler, ok, HttpError } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { assertAgentBoardAccess } from "@/lib/access";
+import { assertAgentBoardAccess, boardWorkspaceId } from "@/lib/access";
+import { boardAssigneeUsers } from "@/lib/services/board-members";
 import { parse, readJson } from "@/lib/parse";
 import { updateBoardV1Schema } from "@/lib/validation";
 import { getBoardWithData, updateBoard } from "@/lib/services/boards";
@@ -14,8 +15,9 @@ export const GET = handler(
     requireScope(agent, "boards:read");
     const { boardId } = await params;
     await assertAgentBoardAccess(agent, boardId);
-    const board = await getBoardWithData(agent.workspaceId, { id: boardId });
-    return ok({ board });
+    const board = await getBoardWithData(await boardWorkspaceId(boardId), { id: boardId });
+    const people = (await boardAssigneeUsers(boardId)).map((u) => ({ id: u.id, name: u.name }));
+    return ok({ board: { ...board, people } });
   },
 );
 
@@ -31,6 +33,10 @@ export const PATCH = handler(
     const { boardId } = await params;
     await assertAgentBoardAccess(agent, boardId);
     const input = parse(updateBoardV1Schema, await readJson(req));
+    // A board shared from someone else's workspace: tickets yes, the board itself no.
+    if ((await boardWorkspaceId(boardId)) !== agent.workspaceId) {
+      throw new HttpError(403, "This board is shared from another workspace; only its tickets can be changed.", "shared_board");
+    }
     await guardAgentSnapshot(agent.workspaceId, { id: agent.id, name: agent.name });
     const board = await updateBoard(boardId, input, { type: "agent", id: agent.id, name: agent.name });
     return ok({ board });
@@ -47,6 +53,10 @@ export const DELETE = handler(
     requireScope(agent, "boards:write");
     const { boardId } = await params;
     await assertAgentBoardAccess(agent, boardId);
+    // A board shared from someone else's workspace: tickets yes, the board itself no.
+    if ((await boardWorkspaceId(boardId)) !== agent.workspaceId) {
+      throw new HttpError(403, "This board is shared from another workspace; only its tickets can be changed.", "shared_board");
+    }
     await guardAgentSnapshot(agent.workspaceId, { id: agent.id, name: agent.name });
     const board = await updateBoard(boardId, { archived: true }, { type: "agent", id: agent.id, name: agent.name });
     return ok({ ok: true, archived: true, board });

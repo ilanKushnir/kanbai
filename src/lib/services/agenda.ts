@@ -106,9 +106,9 @@ export function toAgendaTicket(t: AgendaRow, usersById?: Map<string, UserLite>):
 }
 
 /** Workspace members keyed by id, for resolving legacy single assignees to names. */
-export async function workspaceUsersById(workspaceId: string): Promise<Map<string, UserLite>> {
+export async function workspaceUsersById(workspaceId: string | string[]): Promise<Map<string, UserLite>> {
   const members = await db.workspaceMember.findMany({
-    where: { workspaceId },
+    where: { workspaceId: Array.isArray(workspaceId) ? { in: workspaceId } : workspaceId },
     select: { user: { select: { id: true, name: true, avatarUrl: true, avatarColor: true } } },
   });
   return new Map(members.map((m) => [m.user.id, m.user]));
@@ -121,8 +121,10 @@ export async function getAgenda(input: {
   workspaceId: string;
   /** Whose notes (and, with scope "mine", whose tickets) make up the day. */
   userId: string;
-  /** Prisma `where` limiting boards (access cap). Defaults to every board in the workspace. */
+  /** Prisma `where` limiting boards (access cap; may reach other workspaces' shared boards). Defaults to every board in the workspace. */
   boardWhere?: Prisma.BoardWhereInput;
+  /** Workspaces whose people the tickets can name. Defaults to the workspace. */
+  peopleWorkspaceIds?: string[];
   now?: Date;
   /** "all" (default): every ticket on the visible boards; "mine": only tickets assigned to userId. */
   scope?: "all" | "mine";
@@ -137,13 +139,13 @@ export async function getAgenda(input: {
   const endTomorrow = endOfDayInTz(tomorrow, tz);
   const endWeek = endOfDayInTz(addDaysYmd(date, 7), tz);
 
-  const board: Prisma.BoardWhereInput = { workspaceId: input.workspaceId, archived: false, ...(input.boardWhere ?? {}) };
+  const board: Prisma.BoardWhereInput = { AND: [input.boardWhere ?? { workspaceId: input.workspaceId }, { archived: false }] };
   // "mine": only tickets explicitly assigned to the user (primary or co-assignee).
   const scope: Prisma.TicketWhereInput =
     input.scope === "mine"
       ? { assigneeType: "user", OR: [{ assigneeUserId: input.userId }, { assignees: { some: { userId: input.userId } } }] }
       : {};
-  const usersById = await workspaceUsersById(input.workspaceId);
+  const usersById = await workspaceUsersById(input.peopleWorkspaceIds ?? input.workspaceId);
 
   const [openRows, doneRows, noteRows] = await Promise.all([
     db.ticket.findMany({

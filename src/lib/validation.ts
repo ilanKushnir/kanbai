@@ -155,6 +155,8 @@ export const createTicketV1Schema = z.object({
   // Human assignee, by id (preferred) or workspace email (migration). Must be
   // an assignable board member — validated in the route/service, not here.
   assigneeUserId: z.string().min(1).optional(),
+  /** Several human assignees at once (first = primary). */
+  assigneeUserIds: z.array(z.string().min(1)).max(20).optional(),
   assigneeEmail: z.email().optional(),
   labelIds: z.array(z.string()).optional(),
   labelNames: z.array(z.string().trim().min(1).max(40)).max(20).optional(),

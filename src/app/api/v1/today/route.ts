@@ -1,6 +1,6 @@
 import { handler, ok } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
-import { agentBoardWhere } from "@/lib/access";
+import { agentBoardWhere, agentWorkspaceIds } from "@/lib/access";
 import { getAgenda } from "@/lib/services/agenda";
 import { resolveWorkspaceUserId } from "@/lib/services/notes";
 
@@ -26,6 +26,7 @@ export const GET = handler(async (req: Request) => {
     workspaceId: agent.workspaceId,
     userId,
     boardWhere: await agentBoardWhere(agent),
+    peopleWorkspaceIds: await agentWorkspaceIds(agent),
     scope,
   });
   return ok(agenda);

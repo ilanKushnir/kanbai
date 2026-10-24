@@ -406,7 +406,11 @@ export async function createTicket(
     action: "ticket.created",
     boardId: board.id,
     ticketId: ticket.id,
-    meta: { title: ticket.title, column: serialized.column ?? null },
+    meta: {
+      title: ticket.title,
+      column: serialized.column ?? null,
+      ...(assignee.assigneeUserIds.length ? { assigneeIds: assignee.assigneeUserIds } : {}),
+    },
   });
   if (columnIsDone) {
     await logActivity({ actor, action: "ticket.done", boardId: board.id, ticketId: ticket.id, meta: { title: ticket.title } });
@@ -541,7 +545,13 @@ export async function updateTicket(
     action: "ticket.updated",
     boardId: board.id,
     ticketId,
-    meta: { title: updated.title, fields, ...(assigneeChanged ? { assigneeChanged: true } : {}) },
+    meta: {
+      title: updated.title,
+      fields,
+      ...(assigneeChanged ? { assigneeChanged: true } : {}),
+      // Who was newly put on it, so the feed can say "assigned you".
+      ...(assigneeDiff?.added.length ? { addedAssigneeIds: assigneeDiff.added } : {}),
+    },
   });
   if (assigneeDiff) {
     await withdrawAssigned(ticketId, assigneeDiff.removed);

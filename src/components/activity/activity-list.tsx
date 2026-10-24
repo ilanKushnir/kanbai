@@ -61,8 +61,26 @@ function dayExtra(day: unknown): string {
   return `→ ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`;
 }
 
-function describe(a: ActivityItem, showBoard: boolean): { verb: string; target: string | null; href: string | null; extra?: string; ref?: string } {
+/** Whether this change put the viewer on the ticket (by someone else). */
+function assignedMe(a: ActivityItem, meId: string | undefined): boolean {
+  if (!meId || (a.actorType === "user" && a.actorId === meId)) return false;
+  const ids = a.action === "ticket.created" ? a.meta.assigneeIds : a.action === "ticket.updated" ? a.meta.addedAssigneeIds : null;
+  return Array.isArray(ids) && ids.includes(meId);
+}
+
+function describe(a: ActivityItem, showBoard: boolean, meId?: string): { verb: string; target: string | null; href: string | null; extra?: string; ref?: string; forYou?: boolean } {
   const verb = VERBS[a.action] ?? a.action.replace(/[._]/g, " ");
+  if (a.ticket && assignedMe(a, meId)) {
+    // "Mika · Yuval added #7 Fix the gate for you · Home"
+    return {
+      verb: a.action === "ticket.created" ? "added" : "assigned you",
+      ref: a.ticket.number != null ? `#${a.ticket.number}` : undefined,
+      target: a.ticket.title,
+      href: `/boards/${a.ticket.boardSlug}?ticket=${a.ticket.id}`,
+      extra: showBoard ? `· ${a.ticket.boardName}` : undefined,
+      forYou: a.action === "ticket.created",
+    };
+  }
   if (a.ticket) {
     const extra =
       a.action === "ticket.transferred"
@@ -86,11 +104,22 @@ function describe(a: ActivityItem, showBoard: boolean): { verb: string; target: 
 }
 
 /** A quiet, actor-led feed: "Hermes · completed #12 Fix backup · 2h ago". */
-export function ActivityList({ items, compact = false, showBoard = false }: { items: ActivityItem[]; compact?: boolean; showBoard?: boolean }) {
+export function ActivityList({
+  items,
+  compact = false,
+  showBoard = false,
+  meId,
+}: {
+  items: ActivityItem[];
+  compact?: boolean;
+  showBoard?: boolean;
+  /** The viewer: changes that put them on a ticket read "for you" / "assigned you". */
+  meId?: string;
+}) {
   return (
     <ul className={cn("space-y-0.5", !compact && "divide-y divide-border")}>
       {items.map((a) => {
-        const d = describe(a, showBoard);
+        const d = describe(a, showBoard, meId);
         const Icon = a.actorType === "agent" ? Sparkles : a.actorType === "system" ? Cog : User;
         return (
           <li key={a.id} className={cn("flex items-start gap-2.5 rounded-lg px-2", compact ? "py-1.5" : "py-2.5")}>
@@ -98,7 +127,8 @@ export function ActivityList({ items, compact = false, showBoard = false }: { it
               <Icon className="h-3 w-3" />
             </span>
             <div className="min-w-0 flex-1 text-[0.8125rem] leading-5">
-              <span className="font-medium text-fg">{a.actorName}</span>{" "}
+              <span className="font-medium text-fg">{a.actorName}</span>
+              {a.actorOwnerName && <span className="text-fg-subtle"> · {a.actorOwnerName}</span>}{" "}
               <span className="text-fg-muted">{d.verb}</span>{" "}
               {d.ref && <span className="text-fg-subtle">{d.ref} </span>}
               {d.target &&
@@ -109,6 +139,7 @@ export function ActivityList({ items, compact = false, showBoard = false }: { it
                 ) : (
                   <span dir="auto">{d.target}</span>
                 ))}
+              {d.forYou && <span className="font-medium text-fg"> for you</span>}
               {d.extra && <span className="text-fg-subtle"> {d.extra}</span>}
               <span className="ml-1.5 whitespace-nowrap text-[0.6875rem] text-fg-subtle" suppressHydrationWarning>{timeAgo(a.createdAt)}</span>
             </div>

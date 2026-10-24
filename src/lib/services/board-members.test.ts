@@ -121,8 +121,9 @@ test("agentAccessibleBoardIds mirrors the owning user's access", async () => {
   const base = { workspaceId: wsId };
   // No owner → workspace-wide (null).
   assert.equal(await agentAccessibleBoardIds({ ...base, ownerUserId: null }), null);
-  // Manager owner → workspace-wide.
-  assert.equal(await agentAccessibleBoardIds({ ...base, ownerUserId: adam }), null);
+  // Manager owner → every board in the workspace (ids, since an owner's reach can span workspaces).
+  const all = (await db.board.findMany({ where: { workspaceId: wsId }, select: { id: true } })).map((b) => b.id).sort();
+  assert.deepEqual((await agentAccessibleBoardIds({ ...base, ownerUserId: adam }))?.sort(), all);
   // Member owner → exactly their grants.
   assert.deepEqual(await agentAccessibleBoardIds({ ...base, ownerUserId: bob }), [boardAId]);
   // Owner who isn't a member of the workspace → nothing.

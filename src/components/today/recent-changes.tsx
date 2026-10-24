@@ -47,7 +47,7 @@ export function RecentChanges({ items, currentUserId }: { items: ActivityItem[];
         <p className="px-2 pb-2 text-xs text-fg-subtle">Nothing changed yet. Added, completed and moved tasks show up here.</p>
       ) : (
         <div className="max-h-[22rem] overflow-y-auto overscroll-contain">
-          <ActivityList items={visible} compact showBoard />
+          <ActivityList items={visible} compact showBoard meId={currentUserId} />
         </div>
       )}
     </section>

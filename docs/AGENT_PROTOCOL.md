@@ -161,8 +161,8 @@ and `inbox` (no day).
 ## 4. Boards and columns
 
 ```
-GET    /boards[?archived=true]                 list (columns, labels, ticketCount)   boards:read
-GET    /boards/{boardId}                       board with every column + ticket      boards:read
+GET    /boards[?archived=true]                 list (columns, labels, people, ticketCount) boards:read
+GET    /boards/{boardId}                       board with every column + ticket + people   boards:read
 POST   /boards                                 { name, description?, color?,          boards:write
                                                  columns?:[{name,stage?|isDone?}], labels?:[{name,color?}] }
 PATCH  /boards/{boardId}                       { name?, description?, color?, archived? }
@@ -173,6 +173,18 @@ PATCH  /boards/{boardId}/columns/{columnId}    { name?, stage?, isDone?, wipLimi
 DELETE /boards/{boardId}/columns/{columnId}    only when EMPTY (422 column_not_empty otherwise)
 POST   /boards/{boardId}/columns/reorder       { orderedIds:[every column id once] }
 ```
+
+**Shared boards.** If your owner is a member of a board someone shared with
+them from another workspace, it is in `GET /boards` too, with `shared: true`
+and its `workspace`. Create, update, move and complete tickets there exactly
+as on your own boards; the board itself (name, columns, archive) stays with
+its workspace (`403 shared_board`).
+
+**Assigning someone.** Every board lists its `people`: `[{ id, name }]`, the
+people a ticket on it can be assigned to. To "add X for <name>" or "tag
+<name>", match the name there and send `"assigneeUserId": "<their id>"` (or
+`assigneeUserIds` for several). They are told in the app the next time they
+open it.
 
 Boards are never destroyed by agents: `DELETE` and `{ archived: true }` are the
 same reversible archive; `PATCH { archived: false }` brings everything back.

@@ -10,6 +10,14 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.24.0",
+    date: "2026-10-24",
+    items: [
+      { emoji: "🤝", title: "Agents work on shared boards", body: "Your agent can now use any board you can open, including boards shared with you from someone else's workspace. Ask it to add a ticket there and assign it to someone, and it does." },
+      { emoji: "🏷️", title: "See whose agent did it", body: "Recent changes and the bell name the agent and its owner, like \"Mika · Yuval\". When it adds a ticket for you, Recent changes says \"for you\"." },
+    ],
+  },
+  {
     version: "0.23.0",
     date: "2026-10-24",
     items: [

@@ -1,6 +1,7 @@
 import { handler, ok, created } from "@/lib/api";
 import { requireAgent, requireScope } from "@/lib/agent-auth";
 import { agentBoardWhere } from "@/lib/access";
+import { boardAssigneeUsers } from "@/lib/services/board-members";
 import { parse, readJson } from "@/lib/parse";
 import { createBoardV1Schema } from "@/lib/validation";
 import { createBoardWithStructure } from "@/lib/services/boards";
@@ -21,6 +22,7 @@ export const GET = handler(async (req: Request) => {
     where: { ...(await agentBoardWhere(agent)), ...(includeArchived ? {} : { archived: false }) },
     orderBy: { position: "asc" },
     include: {
+      workspace: { select: { id: true, name: true } },
       labels: { select: { id: true, name: true, color: true } },
       columns: {
         orderBy: { position: "asc" },
@@ -29,14 +31,21 @@ export const GET = handler(async (req: Request) => {
     },
   });
 
+  // Who a ticket on each board can be assigned to — assign by these ids.
+  const people = await Promise.all(boards.map((b) => boardAssigneeUsers(b.id)));
+
   return ok({
-    boards: boards.map((b) => ({
+    boards: boards.map((b, i) => ({
       id: b.id,
       name: b.name,
       slug: b.slug,
       description: b.description,
       color: b.color,
       archived: b.archived,
+      // A board someone shared with the agent's owner from another workspace.
+      shared: b.workspaceId !== agent.workspaceId,
+      workspace: b.workspace,
+      people: people[i].map((u) => ({ id: u.id, name: u.name })),
       labels: b.labels,
       columns: b.columns.map((c) => ({
         id: c.id,

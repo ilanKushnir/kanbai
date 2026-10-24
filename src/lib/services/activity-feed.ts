@@ -14,6 +14,8 @@ export type ActivityItem = {
   actorType: string; // "user" | "agent" | "system"
   actorId: string | null;
   actorName: string;
+  /** For an agent with an owner: whose agent it is ("Mika · Yuval"). */
+  actorOwnerName?: string | null;
   action: string; // "ticket.created", "ticket.done", "note.done", ...
   createdAt: string;
   ticket?: { id: string; title: string; number: number | null; boardSlug: string; boardName: string };
@@ -95,7 +97,8 @@ export async function listActivity(input: ListActivityInput): Promise<ActivityIt
   const ticketIds = [...new Set(rows.map((r) => r.ticketId).filter((id): id is string => !!id))];
   const noteIds = [...new Set(rows.map((r) => parseMeta(r.meta).noteId).filter((id): id is string => typeof id === "string"))];
 
-  const [tickets, notes, members] = await Promise.all([
+  const agentIds = [...new Set(rows.filter((r) => r.actorType === "agent" && r.actorId).map((r) => r.actorId!))];
+  const [tickets, notes, members, agents] = await Promise.all([
     ticketIds.length
       ? db.ticket.findMany({
           where: { id: { in: ticketIds } },
@@ -104,7 +107,11 @@ export async function listActivity(input: ListActivityInput): Promise<ActivityIt
       : [],
     noteIds.length ? db.note.findMany({ where: { id: { in: noteIds } }, select: { id: true, body: true, userId: true } }) : [],
     db.workspaceMember.findMany({ where: { workspaceId: input.workspaceId }, select: { userId: true } }),
+    agentIds.length
+      ? db.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, ownerUser: { select: { name: true } } } })
+      : [],
   ]);
+  const agentOwner = new Map(agents.map((a) => [a.id, a.ownerUser?.name ?? null]));
   const ticketById = new Map(tickets.map((t) => [t.id, t]));
   const noteById = new Map(notes.map((n) => [n.id, n]));
   const memberIds = new Set(members.map((m) => m.userId));
@@ -124,6 +131,7 @@ export async function listActivity(input: ListActivityInput): Promise<ActivityIt
       actorType: r.actorType,
       actorId: r.actorId,
       actorName: r.actorName,
+      ...(r.actorType === "agent" && r.actorId && agentOwner.get(r.actorId) ? { actorOwnerName: agentOwner.get(r.actorId) } : {}),
       action: r.action,
       createdAt: r.createdAt.toISOString(),
       meta,

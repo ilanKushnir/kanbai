@@ -1,31 +1,25 @@
+import type { Prisma } from "@/generated/prisma";
 import { db } from "./db";
 import { HttpError } from "./api";
 
-// Workspace-scoped guards — used by the AGENT API. Agents without an owning
-// user see everything in their workspace; agents with `ownerUserId` set are
-// capped to the boards that user can access (managers → all, members → their
-// BoardAccess grants).
+// Guards for the AGENT API. Agents without an owning user see everything in
+// their workspace. Agents with `ownerUserId` act for that person, so they
+// reach exactly the boards the owner can open in the app — in EVERY workspace
+// the owner belongs to: all boards where the owner is a manager, and the
+// boards shared with them (BoardAccess) elsewhere. That is what lets a
+// person's agent file work on a board someone shared with them.
 
 type AgentPrincipal = { workspaceId: string; ownerUserId?: string | null };
 
 /**
  * The board ids an agent may act on, or null meaning "every board in its
- * workspace" (legacy agent with no owner, or an owner who is a manager).
- * An owner who left the workspace yields [] — no access at all.
+ * workspace" (an agent with no owner). Kept for callers that need ids; the
+ * owner's boards may span several workspaces.
  */
 export async function agentAccessibleBoardIds(agent: AgentPrincipal): Promise<string[] | null> {
   if (!agent.ownerUserId) return null;
-  const membership = await db.workspaceMember.findFirst({
-    where: { workspaceId: agent.workspaceId, userId: agent.ownerUserId },
-    select: { role: true },
-  });
-  if (!membership) return [];
-  if (membership.role === "owner" || membership.role === "admin") return null;
-  const grants = await db.boardAccess.findMany({
-    where: { userId: agent.ownerUserId, board: { workspaceId: agent.workspaceId } },
-    select: { boardId: true },
-  });
-  return grants.map((g) => g.boardId);
+  const boards = await db.board.findMany({ where: await agentBoardWhere(agent), select: { id: true } });
+  return boards.map((b) => b.id);
 }
 
 /**
@@ -56,16 +50,39 @@ export async function agentNoteScope(agent: AgentPrincipal): Promise<string | nu
 }
 
 /** Prisma `where` fragment limiting boards to the agent's effective access. */
-export async function agentBoardWhere(agent: AgentPrincipal) {
-  const ids = await agentAccessibleBoardIds(agent);
-  return ids === null ? { workspaceId: agent.workspaceId } : { workspaceId: agent.workspaceId, id: { in: ids } };
+export async function agentBoardWhere(agent: AgentPrincipal): Promise<Prisma.BoardWhereInput> {
+  if (!agent.ownerUserId) return { workspaceId: agent.workspaceId };
+  const ownerId = agent.ownerUserId;
+  const memberships = await db.workspaceMember.findMany({ where: { userId: ownerId }, select: { workspaceId: true, role: true } });
+  // An owner who left the agent's workspace switches it off entirely.
+  if (!memberships.some((m) => m.workspaceId === agent.workspaceId)) return { id: { in: [] } };
+  return {
+    OR: memberships.map((m) =>
+      m.role === "owner" || m.role === "admin"
+        ? { workspaceId: m.workspaceId }
+        : { workspaceId: m.workspaceId, access: { some: { userId: ownerId } } },
+    ),
+  };
 }
 
-/** Board must be in the agent's workspace AND within its effective access (404 either way — don't leak existence). */
+/** Board must be within the agent's effective access (404 otherwise — don't leak existence). */
 export async function assertAgentBoardAccess(agent: AgentPrincipal, boardId: string) {
-  await assertBoardInWorkspace(boardId, agent.workspaceId);
-  const ids = await agentAccessibleBoardIds(agent);
-  if (ids !== null && !ids.includes(boardId)) throw new HttpError(404, "Board not found");
+  const hit = await db.board.findFirst({ where: { AND: [{ id: boardId }, await agentBoardWhere(agent)] }, select: { id: true } });
+  if (!hit) throw new HttpError(404, "Board not found");
+}
+
+/** The workspaces whose people an agent's boards can involve (for resolving names). */
+export async function agentWorkspaceIds(agent: AgentPrincipal): Promise<string[]> {
+  if (!agent.ownerUserId) return [agent.workspaceId];
+  const memberships = await db.workspaceMember.findMany({ where: { userId: agent.ownerUserId }, select: { workspaceId: true } });
+  return [...new Set([agent.workspaceId, ...memberships.map((m) => m.workspaceId)])];
+}
+
+/** The workspace a board lives in — an agent's shared boards can sit in someone else's. */
+export async function boardWorkspaceId(boardId: string): Promise<string> {
+  const board = await db.board.findUnique({ where: { id: boardId }, select: { workspaceId: true } });
+  if (!board) throw new HttpError(404, "Board not found");
+  return board.workspaceId;
 }
 
 export async function assertAgentTicketAccess(agent: AgentPrincipal, ticketId: string) {
