@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/brand/Logo";
 import { CHANGELOG, LATEST_RELEASE_VERSION, type ChangelogRelease } from "@/lib/changelog";
+import { WHATS_NEW_CLOSED } from "@/components/notifications";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,6 +20,7 @@ export function WhatsNew({ seenVersion }: { seenVersion: string | null }) {
 
   const dismiss = React.useCallback(() => {
     setOpen(false);
+    window.dispatchEvent(new Event(WHATS_NEW_CLOSED));
     // keepalive: the write survives an immediate navigation or reload.
     void fetch("/api/account", {
       method: "PATCH",

@@ -7,6 +7,7 @@ import { parseSubStates } from "@/lib/substates";
 import { normalizeDescription } from "@/lib/sanitize";
 import { resolveColumnStage, type ColumnStage } from "@/lib/column-stage";
 import { LABEL_COLORS } from "@/lib/constants";
+import { notifyAssigned, withdrawAssigned } from "./notifications";
 
 export type Actor = { type: "user" | "agent" | "system"; id?: string | null; name: string };
 
@@ -410,6 +411,7 @@ export async function createTicket(
   if (columnIsDone) {
     await logActivity({ actor, action: "ticket.done", boardId: board.id, ticketId: ticket.id, meta: { title: ticket.title } });
   }
+  await notifyAssigned({ ticketId: ticket.id, workspaceId: board.workspaceId, added: assignee.assigneeUserIds, actor });
   return serialized;
 }
 
@@ -493,6 +495,7 @@ export async function updateTicket(
         : subStates[0]
       : null;
   }
+  let assigneeDiff: { added: string[]; removed: string[] } | null = null;
   if (assigneeInputPresent) {
     const normalized = normalizeAssigneeInput(input);
     const a = await resolveAssignee(board, normalized.type, normalized.userIds, input.assigneeAgentId, actor);
@@ -503,6 +506,15 @@ export async function updateTicket(
     data.assignees = {
       deleteMany: {},
       create: a.assigneeUserIds.map((userId, position) => ({ userId, position })),
+    };
+    const before = existing.assignees.length
+      ? existing.assignees.map((r) => r.userId)
+      : existing.assigneeType === "user" && existing.assigneeUserId
+        ? [existing.assigneeUserId]
+        : [];
+    assigneeDiff = {
+      added: a.assigneeUserIds.filter((id) => !before.includes(id)),
+      removed: before.filter((id) => !a.assigneeUserIds.includes(id)),
     };
   }
 
@@ -531,6 +543,10 @@ export async function updateTicket(
     ticketId,
     meta: { title: updated.title, fields, ...(assigneeChanged ? { assigneeChanged: true } : {}) },
   });
+  if (assigneeDiff) {
+    await withdrawAssigned(ticketId, assigneeDiff.removed);
+    await notifyAssigned({ ticketId, workspaceId: board.workspaceId, added: assigneeDiff.added, actor });
+  }
   return serialized;
 }
 

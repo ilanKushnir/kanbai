@@ -10,6 +10,14 @@ export type ChangelogRelease = { version: string; date: string; items: Changelog
 
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: "0.23.0",
+    date: "2026-10-24",
+    items: [
+      { emoji: "🔔", title: "Know when work lands on you", body: "When someone else assigns you a ticket, KanbAi tells you the next time you open it: a pop-up lists the new tickets and who sent them. Tap one to open it." },
+      { emoji: "📬", title: "A bell for what's yours", body: "The bell at the top shows how many new tickets came your way, including on boards shared with you from other workspaces. Your own agent filing work for you doesn't count, so it stays quiet." },
+    ],
+  },
+  {
     version: "0.22.0",
     date: "2026-10-23",
     items: [

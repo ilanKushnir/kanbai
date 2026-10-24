@@ -34,6 +34,7 @@ model User {
   ownedWorkspaces   Workspace[]       @relation("WorkspaceOwner")
   ownedAgents       Agent[]           @relation("AgentOwner")
   dayPlans          DayPlan[]
+  notifications     Notification[]
 }
 
 model Session {
@@ -210,6 +211,7 @@ model Ticket {
   labels     TicketLabel[]
   comments   Comment[]
   subtasks   Subtask[]
+  notifications Notification[]
   sourceNote Note?            @relation("NoteToTicket", fields: [sourceNoteId], references: [id])
 
   @@unique([boardId, number])
@@ -323,6 +325,27 @@ model DayPlan {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([userId, workspaceId, day])
+}
+
+/// Something that happened to you from outside: today only "assigned" — someone
+/// else (a person or another person's agent) put you on a ticket. Shown once as
+/// a pop-up when you open the app, and kept in the bell until cleared.
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  workspaceId String
+  kind        String    @default("assigned") // assigned
+  ticketId    String
+  actorType   String // "user" | "agent"
+  actorName   String
+  createdAt   DateTime  @default(now())
+  readAt      DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workspaceId, readAt])
+  @@index([ticketId])
 }
 
 model Attachment {

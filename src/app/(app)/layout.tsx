@@ -8,6 +8,8 @@ import { countNotesAttention } from "@/lib/notes-badge";
 import { ticketOwnership, type TodayAssignee } from "@/lib/today-model";
 import { parseUserSettings } from "@/lib/user-settings";
 import { WhatsNew } from "@/components/whats-new";
+import { LATEST_RELEASE_VERSION } from "@/lib/changelog";
+import { listNotifications, notificationScope } from "@/lib/services/notifications";
 import { cookies } from "next/headers";
 import { FOCUS_COOKIE } from "@/lib/focus";
 
@@ -16,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const focus = (await cookies()).get(FOCUS_COOKIE)?.value === "1";
 
   const startTomorrow = addDays(startOfDay(new Date()), 1);
-  const [boards, badgeNotes, dueTickets] = await Promise.all([
+  const [boards, badgeNotes, dueTickets, notifications] = await Promise.all([
     db.board.findMany({
       where: boardWhereForContext(ctx),
       orderBy: { position: "asc" },
@@ -49,7 +51,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         agent: { select: { id: true, ownerUserId: true } },
       },
     }),
+    listNotifications(ctx.user.id, notificationScope(ctx)),
   ]);
+  const whatsNewSeen = parseUserSettings(ctx.user.settings).whatsNewSeen;
 
   const todayCount = countNotesAttention({
     notes: badgeNotes,
@@ -79,10 +83,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         }))}
         todayCount={todayCount}
         initialFocus={focus}
+        notifications={notifications}
+        activeWorkspaceId={ctx.workspace.id}
+        holdNotifications={whatsNewSeen !== LATEST_RELEASE_VERSION}
       >
         {children}
       </AppShell>
-      <WhatsNew seenVersion={parseUserSettings(ctx.user.settings).whatsNewSeen} />
+      <WhatsNew seenVersion={whatsNewSeen} />
     </ToastProvider>
   );
 }

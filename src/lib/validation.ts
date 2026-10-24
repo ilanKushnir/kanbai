@@ -279,6 +279,10 @@ export const pinBoardSchema = z.object({
   pinned: z.boolean(),
 });
 
+export const markNotificationsReadSchema = z.object({
+  ids: z.array(z.string().min(1)).max(200).optional(),
+});
+
 export const updateColumnSchema = z.object({
   name: z.string().trim().min(1).max(40).optional(),
   wipLimit: z.number().int().min(1).max(99).nullable().optional(),

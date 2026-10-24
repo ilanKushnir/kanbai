@@ -14,19 +14,35 @@ import { buildToday } from "@/lib/today-model";
 import { tone } from "@/components/ui/badge";
 import { POWERED_BY } from "@/lib/version";
 import { FocusProvider, FocusToggle, useFocus } from "@/components/focus-mode";
+import { NotificationBell, NotificationsProvider } from "@/components/notifications";
+import type { SerializedNotification } from "@/lib/services/notifications";
 import { cn } from "@/lib/utils";
 
 export type NavBoard = { id: string; name: string; slug: string; color: string };
 
 type ShellProps = React.ComponentProps<typeof Shell>;
 
-export function AppShell({ initialFocus, ...props }: ShellProps & { initialFocus: boolean }) {
+export function AppShell({
+  initialFocus,
+  notifications,
+  activeWorkspaceId,
+  holdNotifications,
+  ...props
+}: ShellProps & {
+  initialFocus: boolean;
+  notifications: SerializedNotification[];
+  activeWorkspaceId: string;
+  /** What's new shows first; the assigned pop-up waits for it. */
+  holdNotifications: boolean;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   // Focus lives on Today: turning it on from anywhere else goes there.
   return (
     <FocusProvider initial={initialFocus} onEnter={() => pathname !== "/today" && router.push("/today")}>
-      <Shell {...props} />
+      <NotificationsProvider initial={notifications} activeWorkspaceId={activeWorkspaceId} holdForWhatsNew={holdNotifications}>
+        <Shell {...props} />
+      </NotificationsProvider>
     </FocusProvider>
   );
 }
@@ -151,6 +167,7 @@ function Shell({
           </Link>
           <div className="ml-auto flex items-center gap-2">
             <SyncIndicator />
+            <NotificationBell />
             <FocusToggle />
           </div>
         </div>
@@ -239,6 +256,7 @@ function Shell({
           <Link href="/today"><Logo markClassName="h-7 w-7" /></Link>
           <div className="flex items-center gap-1.5">
             <SyncIndicator />
+            <NotificationBell />
             <FocusToggle className="mr-1" />
             <UserMenu compact placement="down" {...userMenuProps} />
           </div>
