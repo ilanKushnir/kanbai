@@ -17,14 +17,15 @@ import { listNotifications } from "@/lib/services/notifications";
 // Runs against the throwaway SQLite db set up by the `test` script.
 
 const MIKA_KEY = "kbai_live_shared_mika_key_00000000000";
+const JOE_KEY = "kbai_live_shared_joe_key_000000000000";
 
 type Seed = { ilan: string; yuval: string; ilanWs: string; homeId: string; privateId: string; mikaId: string };
 let seed: Seed;
 
-function call(url: string, method = "GET", body?: unknown) {
+function call(url: string, method = "GET", body?: unknown, key = MIKA_KEY) {
   return new Request(`http://test.local/api/v1${url}`, {
     method,
-    headers: { "content-type": "application/json", authorization: `Bearer ${MIKA_KEY}` },
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 }
@@ -51,7 +52,7 @@ before(async () => {
   const ilan = await db.user.create({ data: { email: "ilan@shared.test", name: "Ilan" } });
   const yuval = await db.user.create({ data: { email: "yuval@shared.test", name: "Yuval" } });
   const ilanWs = await db.workspace.create({ data: { name: "Ilan's", slug: "ilan-shared" } });
-  const yuvalWs = await db.workspace.create({ data: { name: "Yuval's", slug: "yuval-shared" } });
+  const yuvalWs = await db.workspace.create({ data: { name: "Yuval's", slug: "yuval-shared", ownerId: yuval.id } });
   await db.workspaceMember.create({ data: { workspaceId: ilanWs.id, userId: ilan.id, role: "owner" } });
   await db.workspaceMember.create({ data: { workspaceId: ilanWs.id, userId: yuval.id, role: "member" } });
   await db.workspaceMember.create({ data: { workspaceId: yuvalWs.id, userId: yuval.id, role: "owner" } });
@@ -70,6 +71,10 @@ before(async () => {
       apiKeyHash: hashApiKey(MIKA_KEY),
       scopes: "boards:read,boards:write,tickets:read,tickets:write",
     },
+  });
+  // Joe: Yuval's workspace-wide agent — no owner, so it acts for her as the workspace owner.
+  await db.agent.create({
+    data: { workspaceId: yuvalWs.id, name: "Joe", apiKeyHash: hashApiKey(JOE_KEY), scopes: "boards:read,tickets:read,tickets:write" },
   });
   seed = { ilan: ilan.id, yuval: yuval.id, ilanWs: ilanWs.id, homeId: home.id, privateId: priv.id, mikaId: mika.id };
 });
@@ -118,4 +123,20 @@ test("boards the owner can't open stay closed, and a shared board's settings sta
   assert.equal(res.status, 404);
   const patch = await PATCH_BOARD(call(`/boards/${seed.homeId}`, "PATCH", { name: "Renamed" }), { params: Promise.resolve({ boardId: seed.homeId }) });
   assert.equal(patch.status, 403);
+});
+
+test("a workspace-wide agent (no owner) acts for its workspace owner", async () => {
+  const res = await LIST_BOARDS(call("/boards", "GET", undefined, JOE_KEY));
+  const { boards } = (await res.json()) as { boards: { id: string; shared: boolean }[] };
+  assert.deepEqual(boards.map((b) => b.id), [seed.homeId]);
+
+  const created = await POST(call("/tickets", "POST", { boardId: seed.homeId, title: "Buy bulbs", assigneeUserId: seed.ilan }, JOE_KEY));
+  assert.equal(created.status, 201, await created.clone().text());
+  const { ticket } = (await created.json()) as { ticket: { id: string } };
+  const n = (await listNotifications(seed.ilan, [{ workspaceId: seed.ilanWs, isManager: true }])).find((x) => x.ticketId === ticket.id)!;
+  assert.equal(n.actorName, "Joe · Yuval");
+  const feed = await listActivity({ workspaceId: seed.ilanWs, limit: 10 });
+  assert.equal(feed.find((a) => a.ticket?.id === ticket.id)!.actorOwnerName, "Yuval");
+
+  assert.equal((await POST(call("/tickets", "POST", { boardId: seed.privateId, title: "Nope" }, JOE_KEY))).status, 404);
 });

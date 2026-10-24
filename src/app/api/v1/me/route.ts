@@ -8,6 +8,8 @@ import { APP_VERSION } from "@/lib/version";
 import { workspaceTz } from "@/lib/tz";
 import { buildQuickstart } from "@/lib/quickstart";
 import { agentBaseUrls } from "@/lib/agent-connect";
+import { agentPersonId } from "@/lib/access";
+import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,8 @@ export const GET = handler(async (req: Request) => {
   const agent = await requireAgent(req);
   const urls = agentBaseUrls(req);
   const baseUrl = urls.baseUrl || null;
+  const personId = await agentPersonId(agent);
+  const person = personId ? await db.user.findUnique({ where: { id: personId }, select: { id: true, name: true } }) : null;
   return ok({
     // App/service identity + API version so agents can adapt without guessing.
     service: { name: SERVICE_NAME, version: APP_VERSION },
@@ -26,8 +30,11 @@ export const GET = handler(async (req: Request) => {
     skillUrl: urls.skillUrl || null,
     agent: serializeAgentPublic(agent),
     workspaceId: agent.workspaceId,
-    // The user this agent acts for (caps board/note access); null = workspace-wide.
+    // The user this agent is assigned to (caps board/note access); null = workspace-wide.
     ownerUserId: agent.ownerUserId,
+    // Whose access it uses for boards shared from other workspaces: the owner,
+    // or the workspace's owner when it has none.
+    actsFor: person,
     // Effective per-agent permissions.
     scopes: agent.scopes.split(",").filter(Boolean),
     // What the service supports (pull-only REST; no callbacks).

@@ -108,10 +108,17 @@ export async function listActivity(input: ListActivityInput): Promise<ActivityIt
     noteIds.length ? db.note.findMany({ where: { id: { in: noteIds } }, select: { id: true, body: true, userId: true } }) : [],
     db.workspaceMember.findMany({ where: { workspaceId: input.workspaceId }, select: { userId: true } }),
     agentIds.length
-      ? db.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, ownerUser: { select: { name: true } } } })
+      ? db.agent.findMany({
+          where: { id: { in: agentIds } },
+          select: { id: true, workspaceId: true, ownerUser: { select: { name: true } }, workspace: { select: { owner: { select: { name: true } } } } },
+        })
       : [],
   ]);
-  const agentOwner = new Map(agents.map((a) => [a.id, a.ownerUser?.name ?? null]));
+  // Whose agent it is: its owner — or, for a workspace-wide agent from another
+  // workspace (acting on a board shared with its people), that workspace's owner.
+  const agentOwner = new Map(
+    agents.map((a) => [a.id, a.ownerUser?.name ?? (a.workspaceId !== input.workspaceId ? a.workspace.owner?.name ?? null : null)]),
+  );
   const ticketById = new Map(tickets.map((t) => [t.id, t]));
   const noteById = new Map(notes.map((n) => [n.id, n]));
   const memberIds = new Set(members.map((m) => m.userId));

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { agentPersonId } from "@/lib/access";
 import type { Actor } from "./tickets";
 
 /** One "you were assigned" entry as the bell and the pop-up show it. */
@@ -23,8 +24,9 @@ const RECENT_LIMIT = 30;
 
 /**
  * Who gets told about being put on a ticket: everyone newly added, except the
- * person who did it — and except the owner of the agent that did it, since
- * their own agent filing work for them isn't news from outside.
+ * person who did it — and except the person the acting agent works for (its
+ * owner, or its workspace's owner), since their own agent filing work for
+ * them isn't news from outside.
  */
 export async function assignmentRecipients(added: string[], actor: Actor): Promise<{ recipients: string[]; actorName: string }> {
   if (!added.length || actor.type === "system") return { recipients: [], actorName: actor.name };
@@ -32,10 +34,11 @@ export async function assignmentRecipients(added: string[], actor: Actor): Promi
   let actorName = actor.name;
   if (actor.type === "user") skip = actor.id ?? null;
   else if (actor.id) {
-    const agent = await db.agent.findUnique({ where: { id: actor.id }, select: { ownerUserId: true, ownerUser: { select: { name: true } } } });
-    skip = agent?.ownerUserId ?? null;
+    const agent = await db.agent.findUnique({ where: { id: actor.id }, select: { workspaceId: true, ownerUserId: true } });
+    skip = agent ? await agentPersonId(agent) : null;
     // Name whose agent it is: "Mika · Yuval".
-    if (agent?.ownerUser) actorName = `${actor.name} · ${agent.ownerUser.name}`;
+    const person = skip ? await db.user.findUnique({ where: { id: skip }, select: { name: true } }) : null;
+    if (person) actorName = `${actor.name} · ${person.name}`;
   }
   return { recipients: [...new Set(added)].filter((id) => id !== skip), actorName };
 }

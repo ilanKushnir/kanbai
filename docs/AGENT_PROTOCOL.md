@@ -174,9 +174,10 @@ DELETE /boards/{boardId}/columns/{columnId}    only when EMPTY (422 column_not_e
 POST   /boards/{boardId}/columns/reorder       { orderedIds:[every column id once] }
 ```
 
-**Shared boards.** If your owner is a member of a board someone shared with
-them from another workspace, it is in `GET /boards` too, with `shared: true`
-and its `workspace`. Create, update, move and complete tickets there exactly
+**Shared boards.** You act for a person — `actsFor` in `GET /me` (your owner,
+or your workspace's owner if you have none). Boards someone shared with that
+person from another workspace are in `GET /boards` too, with `shared: true`
+and their `workspace`. Create, update, move and complete tickets there exactly
 as on your own boards; the board itself (name, columns, archive) stays with
 its workspace (`403 shared_board`).
 

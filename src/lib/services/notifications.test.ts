@@ -115,14 +115,18 @@ test("an update notifies only the people it adds, and withdraws unseen ones it r
   assert.equal((await listNotifications(seed.yuval.id!, seed.yuvalScope)).length, 0);
 });
 
-test("your own agent assigning you is quiet; a workspace agent is not", async () => {
+test("your own agent assigning you is quiet; it tells others, named with whose it is", async () => {
   await clear();
   await createTicket({ boardId: seed.boardId, title: "From Astra", assigneeUserIds: [seed.ilan.id!] }, seed.ilansAgent);
   assert.equal((await listNotifications(seed.ilan.id!, seed.ilanScope)).length, 0);
+  // A workspace-wide agent (no owner) acts for the workspace owner — Ilan here.
   await createTicket({ boardId: seed.boardId, title: "From Hermes", assigneeUserIds: [seed.ilan.id!] }, seed.workspaceAgent);
-  const [n] = await listNotifications(seed.ilan.id!, seed.ilanScope);
-  assert.equal(n.ticketTitle, "From Hermes");
+  assert.equal((await listNotifications(seed.ilan.id!, seed.ilanScope)).length, 0);
+  await createTicket({ boardId: seed.boardId, title: "For Yuval", assigneeUserIds: [seed.yuval.id!] }, seed.workspaceAgent);
+  const [n] = await listNotifications(seed.yuval.id!, seed.yuvalScope);
+  assert.equal(n.ticketTitle, "For Yuval");
   assert.equal(n.actorType, "agent");
+  assert.equal(n.actorName, "Hermes · Ilan");
 });
 
 test("mark read, and deleted or inaccessible tickets drop out", async () => {
